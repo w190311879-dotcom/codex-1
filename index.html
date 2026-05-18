@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PostWave</title>
+  <script src="/config.js"></script>
   <script>
     try {
       document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
@@ -253,6 +254,14 @@
   </div>
 
   <script>
+    const appConfig = window.POSTWAVE_CONFIG || {};
+    function apiPath(path) {
+      const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
+      return base ? `${base}${path}` : path;
+    }
+    function apiOptions(options = {}) {
+      return { credentials: "include", ...options };
+    }
     const defaultSiteConfig = {
       siteName: "PostWave",
       tabs: [
@@ -465,7 +474,7 @@
 
     async function fetchApiPosts() {
       try {
-        const response = await fetch("/api/posts", { cache: "no-store" });
+        const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
         return Array.isArray(data.posts) ? data.posts : [];
@@ -476,11 +485,11 @@
 
     async function syncLocalPostsToApi(source) {
       try {
-        await fetch("/api/posts", {
+        await fetch(apiPath("/api/posts"), apiOptions({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ posts: source })
-        });
+        }));
       } catch (_error) {}
     }
 

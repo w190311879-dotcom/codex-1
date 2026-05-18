@@ -48,18 +48,27 @@
     <a href="index.html" title="返回前台"><i data-lucide="layout-grid"></i></a>
     <a href="app.html" title="App 下载"><i data-lucide="languages"></i></a>
   </div>
+  <script src="/config.js"></script>
   <script>
+    const appConfig = window.POSTWAVE_CONFIG || {};
+    function apiPath(path) {
+      const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
+      return base ? `${base}${path}` : path;
+    }
+    function apiOptions(options = {}) {
+      return { credentials: "include", ...options };
+    }
     window.lucide?.createIcons?.();
     document.querySelector("#loginForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const account = document.querySelector("#loginAccount").value.trim();
       const password = document.querySelector("#loginPassword").value.trim();
       try {
-        const response = await fetch("/api/login", {
+        const response = await fetch(apiPath("/api/login"), apiOptions({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ account, password })
-        });
+        }));
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "账号或密码错误");
         localStorage.setItem("postwave_admin", "1");

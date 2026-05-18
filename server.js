@@ -46,6 +46,22 @@ const bunnyStorageAccessKey = process.env.BUNNY_STORAGE_ACCESS_KEY || "";
 const bunnyStorageHost = process.env.BUNNY_STORAGE_HOST || "storage.bunnycdn.com";
 const bunnyCdnBaseUrl = (process.env.BUNNY_CDN_BASE_URL || "").replace(/\/+$/, "");
 const useBunnyStorage = Boolean(bunnyStorageZone && bunnyStorageAccessKey && bunnyCdnBaseUrl);
+const publicSiteOrigin = (process.env.PUBLIC_SITE_ORIGIN || process.env.FRONTEND_ORIGIN || "").replace(/\/+$/, "");
+const publicAdminOrigin = (process.env.PUBLIC_ADMIN_ORIGIN || "").replace(/\/+$/, "");
+const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").replace(/\/+$/, "");
+const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl || "").replace(/\/+$/, "");
+function originHost(value = "") {
+  if (!value) return "";
+  try {
+    return new URL(value).host;
+  } catch {
+    return String(value).replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  }
+}
+const adminHost = process.env.ADMIN_HOST || originHost(publicAdminOrigin);
+const apiHost = process.env.API_HOST || originHost(publicApiBaseUrl);
+const mediaHost = process.env.MEDIA_HOST || originHost(publicMediaBaseUrl);
+const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || "";
 const defaultAdmins = [
   { id: "author-alun", name: "alun", account: "alun", status: "正常", passwordHash: "$2b$12$U92wyNFjRMMT8su0BmPkE.B6CxgnrR4NyjV0seeXmhTg..2Wwih6m" },
   { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常", passwordHash: "$2b$12$4hR.YJCe/cXyJF0jc1aqeOrV1OOaqjjLzljxDgUNoZmMBVwS2NP.2" }
@@ -62,6 +78,31 @@ const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
 const seedAdmins = envAdmin || defaultAdmins;
 
 app.use(express.json({ limit: "80mb" }));
+
+const allowedOrigins = new Set([
+  publicSiteOrigin,
+  publicAdminOrigin,
+  publicApiBaseUrl,
+  publicMediaBaseUrl,
+  `http://localhost:${port}`,
+  `http://127.0.0.1:${port}`
+].filter(Boolean));
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (allowedOrigins.has(origin) || process.env.CORS_ALLOW_ALL === "1")) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 
 let pool = null;
 
@@ -193,7 +234,7 @@ async function uploadFileLocally(file, storagePath) {
   const filePath = path.join(uploadsDir, storagePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, file.buffer);
-  return `/uploads/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  return publicUploadUrl(storagePath);
 }
 
 async function uploadLocalPathToBunny(localPath, mimeType, storagePath) {
@@ -205,7 +246,12 @@ async function uploadLocalPathLocally(localPath, storagePath) {
   const filePath = path.join(uploadsDir, storagePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.copyFile(localPath, filePath);
-  return `/uploads/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  return publicUploadUrl(storagePath);
+}
+
+function publicUploadUrl(storagePath) {
+  const relativePath = `/uploads/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  return publicMediaBaseUrl ? `${publicMediaBaseUrl}${relativePath}` : relativePath;
 }
 
 async function uploadProcessedVideo(localPath, originalFile, metadata = {}) {
@@ -374,7 +420,8 @@ function readSession(req) {
 
 function sessionCookie(value, maxAge = sessionMaxAgeSeconds) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${sessionCookieName}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`;
+  const domain = cookieDomain ? `; Domain=${cookieDomain}` : "";
+  return `${sessionCookieName}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${domain}${secure}`;
 }
 
 function requireAdminApi(req, res, next) {
@@ -395,6 +442,15 @@ function requireAdminPage(req, res, next) {
   }
   req.admin = session;
   next();
+}
+
+function requestHost(req) {
+  return String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
+}
+
+function hostMatches(req, expectedHost) {
+  if (!expectedHost) return false;
+  return requestHost(req) === String(expectedHost).toLowerCase();
 }
 
 async function findAdmin(account, password) {
@@ -783,6 +839,17 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, storage: storageMode, postgres: Boolean(pool), mediaStorage: useBunnyStorage ? "bunny" : "local" });
 });
 
+app.get("/config.js", (_req, res) => {
+  res.type("application/javascript");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(`window.POSTWAVE_CONFIG=${JSON.stringify({
+    siteOrigin: publicSiteOrigin,
+    adminOrigin: publicAdminOrigin,
+    apiBaseUrl: publicApiBaseUrl,
+    mediaBaseUrl: publicMediaBaseUrl
+  })};`);
+});
+
 app.get("/api/session", (req, res) => {
   const session = readSession(req);
   res.json({ authenticated: Boolean(session), user: session ? { account: session.account, name: session.name } : null });
@@ -932,6 +999,26 @@ app.post("/api/media/video/transcode", requireAdminApi, videoUpload.single("file
   } finally {
     await Promise.all([inputPath, outputPath].filter(Boolean).map((filePath) => fs.rm(filePath, { force: true }).catch(() => {})));
   }
+});
+
+app.get("/", (req, res, next) => {
+  if (hostMatches(req, adminHost)) {
+    res.redirect("/admin.html");
+    return;
+  }
+  if (hostMatches(req, apiHost)) {
+    res.redirect("/api/health");
+    return;
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  if (hostMatches(req, mediaHost) && !req.path.startsWith("/uploads/") && req.path !== "/config.js") {
+    res.status(404).send("Media host only serves uploaded files.");
+    return;
+  }
+  next();
 });
 
 app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {

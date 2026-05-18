@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>帖子详情 - PostWave</title>
+  <script src="/config.js"></script>
   <script>
     try {
       document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
@@ -253,6 +254,14 @@
     </div>
   </div>
   <script>
+    const appConfig = window.POSTWAVE_CONFIG || {};
+    function apiPath(path) {
+      const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
+      return base ? `${base}${path}` : path;
+    }
+    function apiOptions(options = {}) {
+      return { credentials: "include", ...options };
+    }
     const defaultSiteConfig = {
       siteName: "PostWave",
       tabs: [
@@ -388,7 +397,7 @@
 
     async function fetchApiPosts() {
       try {
-        const response = await fetch("/api/posts", { cache: "no-store" });
+        const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
         return Array.isArray(data.posts) ? data.posts : [];
@@ -399,11 +408,11 @@
 
     async function syncLocalPostsToApi(source) {
       try {
-        await fetch("/api/posts", {
+        await fetch(apiPath("/api/posts"), apiOptions({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ posts: source })
-        });
+        }));
       } catch (_error) {}
     }
 
@@ -472,7 +481,7 @@
     }
     async function fetchApprovedComments() {
       try {
-        const response = await fetch(`/api/comments?postId=${encodeURIComponent(current.id)}&status=approved`, { cache: "no-store" });
+        const response = await fetch(apiPath(`/api/comments?postId=${encodeURIComponent(current.id)}&status=approved`), apiOptions({ cache: "no-store" }));
         if (!response.ok) return [];
         const data = await response.json();
         return Array.isArray(data.comments) ? data.comments : [];
@@ -612,11 +621,11 @@
       const text = document.querySelector("#commentText").value.trim();
       if (!text) return;
       try {
-        const response = await fetch("/api/comments", {
+        const response = await fetch(apiPath("/api/comments"), apiOptions({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ postId: current.id, postTitle: current.title, name: user, text })
-        });
+        }));
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "评论提交失败");
         document.querySelector("#commentText").value = "";

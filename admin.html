@@ -306,7 +306,16 @@
     </div>
   </div>
   <div class="toast" id="toast">已保存</div>
+  <script src="/config.js"></script>
   <script>
+    const appConfig = window.POSTWAVE_CONFIG || {};
+    function apiPath(path) {
+      const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
+      return base ? `${base}${path}` : path;
+    }
+    function apiOptions(options = {}) {
+      return { credentials: "include", ...options };
+    }
     let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
     let mediaLibrary = JSON.parse(localStorage.getItem("postwave_media") || "[]");
@@ -403,7 +412,7 @@
       const formData = new FormData();
       formData.append("file", file);
       formData.append("kind", kind);
-      const response = await fetch("/api/media/upload", { method: "POST", body: formData });
+      const response = await fetch(apiPath("/api/media/upload"), apiOptions({ method: "POST", body: formData }));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "媒体文件上传失败");
       return data.media || { url: data.url };
@@ -413,7 +422,8 @@
         const formData = new FormData();
         formData.append("file", file);
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/media/video/transcode");
+        xhr.open("POST", apiPath("/api/media/video/transcode"));
+        xhr.withCredentials = true;
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
           const percent = Math.min(95, Math.round((event.loaded / event.total) * 60));
@@ -473,7 +483,7 @@
     }
     async function fetchApiPosts() {
       try {
-        const response = await fetch("/api/posts", { cache: "no-store" });
+        const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
         return Array.isArray(data.posts) ? data.posts : [];
@@ -483,11 +493,11 @@
     }
     async function syncPostsToApi(posts) {
       try {
-        await fetch("/api/posts", {
+        await fetch(apiPath("/api/posts"), apiOptions({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ posts })
-        });
+        }));
       } catch (_error) {}
     }
     async function loadStoredPostsFromApi() {
@@ -510,7 +520,7 @@
     }
     async function fetchAdminComments() {
       try {
-        const response = await fetch("/api/admin/comments", { cache: "no-store" });
+        const response = await fetch(apiPath("/api/admin/comments"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
         return Array.isArray(data.comments) ? data.comments : [];
@@ -525,16 +535,16 @@
       renderCommentsTable();
     }
     async function updateCommentApi(id, status) {
-      const response = await fetch(`/api/admin/comments/${encodeURIComponent(id)}`, {
+      const response = await fetch(apiPath(`/api/admin/comments/${encodeURIComponent(id)}`), apiOptions({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status })
-      });
+      }));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "评论状态更新失败");
     }
     async function deleteCommentApi(id) {
-      const response = await fetch(`/api/admin/comments/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const response = await fetch(apiPath(`/api/admin/comments/${encodeURIComponent(id)}`), apiOptions({ method: "DELETE" }));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "评论删除失败");
     }
@@ -578,7 +588,7 @@
     }
     async function fetchApiAuthors() {
       try {
-        const response = await fetch("/api/authors", { cache: "no-store" });
+        const response = await fetch(apiPath("/api/authors"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
         return Array.isArray(data.authors) ? data.authors : [];
@@ -595,11 +605,11 @@
       renderAuthorsTable();
     }
     async function saveAuthors() {
-      const response = await fetch("/api/authors", {
+      const response = await fetch(apiPath("/api/authors"), apiOptions({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ authors })
-      });
+      }));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "作者账号保存失败");
       authors.splice(0, authors.length, ...(Array.isArray(data.authors) ? data.authors : authors));
