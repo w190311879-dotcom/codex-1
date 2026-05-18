@@ -310,6 +310,7 @@
     let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
     let mediaLibrary = JSON.parse(localStorage.getItem("postwave_media") || "[]");
+    let serverComments = [];
     let currentCoverData = "";
     let currentVideoData = "";
     let currentBodyImages = [];
@@ -507,6 +508,36 @@
       localStorage.setItem("postwave_posts_api_imported", "1");
       renderTables();
     }
+    async function fetchAdminComments() {
+      try {
+        const response = await fetch("/api/admin/comments", { cache: "no-store" });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data.comments) ? data.comments : [];
+      } catch (_error) {
+        return null;
+      }
+    }
+    async function loadCommentsFromApi() {
+      const comments = await fetchAdminComments();
+      if (!comments) return;
+      serverComments = comments;
+      renderCommentsTable();
+    }
+    async function updateCommentApi(id, status) {
+      const response = await fetch(`/api/admin/comments/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "评论状态更新失败");
+    }
+    async function deleteCommentApi(id) {
+      const response = await fetch(`/api/admin/comments/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "评论删除失败");
+    }
     function toast(message) {
       const el = document.querySelector("#toast");
       el.textContent = message;
@@ -596,6 +627,7 @@
       document.querySelector("#viewLabel").textContent = label;
       document.querySelector("#viewTitle").textContent = label;
       renderTables();
+      if (name === "comments") loadCommentsFromApi();
     }
     document.querySelectorAll(".side-link").forEach((link) => {
       link.addEventListener("click", (event) => {
@@ -874,16 +906,16 @@
       `).join("") : `<div class="table-row posts-row"><strong>暂无作者</strong><span>-</span><span>-</span><span>-</span><span>-</span></div>`);
     }
     function renderCommentsTable() {
-      const pending = JSON.parse(localStorage.getItem("postwave_pending_comments") || "[]");
-      document.querySelector("#commentsTable").innerHTML = `<div class="table-row header posts-row"><span>评论内容</span><span>用户</span><span>状态</span><span>时间</span><span>操作</span></div>` + (pending.length ? pending.map((item, index) => `
+      const comments = serverComments;
+      document.querySelector("#commentsTable").innerHTML = `<div class="table-row header posts-row"><span>评论内容</span><span>用户</span><span>状态</span><span>时间</span><span>操作</span></div>` + (comments.length ? comments.map((item) => `
         <div class="table-row posts-row">
-          <span class="comment-text"><strong>${item.postTitle || "帖子"}</strong><br>${item.text}</span>
-          <span>${item.name}</span>
+          <span class="comment-text"><strong>${escapeHtml(item.postTitle || "帖子")}</strong><br>${escapeHtml(item.text)}</span>
+          <span>${escapeHtml(item.name)}</span>
           <span>${item.status === "approved" ? "已通过" : "待审核"}</span>
-          <span>${item.time}</span>
+          <span>${escapeHtml(item.time || item.createdAt || "刚刚")}</span>
           <span class="mini-actions">
-            <button class="btn" data-approve-comment="${index}" ${item.status === "approved" ? "disabled" : ""}>通过</button>
-            <button class="btn" data-delete-comment="${index}">删除</button>
+            <button class="btn" data-approve-comment="${escapeHtml(item.id)}" ${item.status === "approved" ? "disabled" : ""}>通过</button>
+            <button class="btn" data-delete-comment="${escapeHtml(item.id)}">删除</button>
           </span>
         </div>
       `).join("") : `<div class="table-row posts-row"><strong>暂无待审核评论</strong><span>-</span><span>-</span><span>-</span><span>-</span></div>`);
@@ -1402,28 +1434,22 @@
       renderCategoryPicker();
       toast("外观与栏目已保存，前台刷新后生效");
     });
-    document.querySelector("#commentsTable").addEventListener("click", (event) => {
+    document.querySelector("#commentsTable").addEventListener("click", async (event) => {
       const approve = event.target.closest("[data-approve-comment]");
       const del = event.target.closest("[data-delete-comment]");
-      const pending = JSON.parse(localStorage.getItem("postwave_pending_comments") || "[]");
-      if (approve) {
-        const index = Number(approve.dataset.approveComment);
-        const item = pending[index];
-        if (!item) return;
-        const key = `postwave_comments_${item.postId}`;
-        const approved = JSON.parse(localStorage.getItem(key) || "[]");
-        approved.unshift({ name: item.name, time: item.time || "刚刚", text: item.text });
-        localStorage.setItem(key, JSON.stringify(approved));
-        pending.splice(index, 1);
-        localStorage.setItem("postwave_pending_comments", JSON.stringify(pending));
-        renderCommentsTable();
-        toast("评论已通过并显示到前台");
-      }
-      if (del) {
-        pending.splice(Number(del.dataset.deleteComment), 1);
-        localStorage.setItem("postwave_pending_comments", JSON.stringify(pending));
-        renderCommentsTable();
-        toast("评论已删除");
+      try {
+        if (approve) {
+          await updateCommentApi(approve.dataset.approveComment, "approved");
+          await loadCommentsFromApi();
+          toast("评论已通过并显示到前台");
+        }
+        if (del) {
+          await deleteCommentApi(del.dataset.deleteComment);
+          await loadCommentsFromApi();
+          toast("评论已删除");
+        }
+      } catch (error) {
+        toast(error.message || "评论操作失败");
       }
     });
     document.querySelector("#saveAdConfig").addEventListener("click", () => {
@@ -1454,6 +1480,7 @@
     renderTables();
     loadStoredPostsFromApi();
     loadAuthorsFromApi();
+    loadCommentsFromApi();
     renderAds();
     window.lucide?.createIcons?.();
   </script>

@@ -55,3 +55,18 @@ CREATE TABLE IF NOT EXISTS media_files (
 
 CREATE INDEX IF NOT EXISTS media_files_kind_idx ON media_files (kind);
 CREATE INDEX IF NOT EXISTS media_files_created_at_idx ON media_files (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS comments (
+  id BIGSERIAL PRIMARY KEY,
+  comment_id TEXT NOT NULL UNIQUE,
+  post_id TEXT NOT NULL,
+  post_title TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status);
+CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC);

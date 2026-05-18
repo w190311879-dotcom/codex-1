@@ -18,6 +18,7 @@ const storageMode = databaseUrl ? "postgres" : (process.env.POSTWAVE_STORAGE || 
 const dataDir = path.join(__dirname, "data");
 const postsFile = path.join(dataDir, "posts.json");
 const authorsFile = path.join(dataDir, "authors.json");
+const commentsFile = path.join(dataDir, "comments.json");
 const uploadsDir = path.join(dataDir, "uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
 const mediaRecordsFile = path.join(dataDir, "media.json");
@@ -87,6 +88,19 @@ function normalizePost(post = {}, index = 0) {
     author: post.author || "",
     date: post.date || post.date_text || "",
     sortOrder: Number.isFinite(Number(post.sortOrder ?? post.sort_order)) ? Number(post.sortOrder ?? post.sort_order) : index
+  };
+}
+
+function normalizeComment(comment = {}, index = 0) {
+  return {
+    id: String(comment.id || comment.comment_id || `comment-${Date.now()}-${index}`),
+    postId: String(comment.postId || comment.post_id || ""),
+    postTitle: String(comment.postTitle || comment.post_title || ""),
+    name: String(comment.name || comment.author || ""),
+    text: String(comment.text || comment.body || ""),
+    status: String(comment.status || "pending"),
+    time: String(comment.time || comment.created_at || new Date().toISOString()),
+    createdAt: String(comment.createdAt || comment.created_at || new Date().toISOString())
   };
 }
 
@@ -456,6 +470,21 @@ async function initPostgres() {
   await pool.query("ALTER TABLE media_files ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
   await pool.query("CREATE INDEX IF NOT EXISTS media_files_kind_idx ON media_files (kind)");
   await pool.query("CREATE INDEX IF NOT EXISTS media_files_created_at_idx ON media_files (created_at DESC)");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS comments (
+      id BIGSERIAL PRIMARY KEY,
+      comment_id TEXT NOT NULL UNIQUE,
+      post_id TEXT NOT NULL,
+      post_title TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query("CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status)");
+  await pool.query("CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC)");
   await ensureAuthorsSeeded();
 }
 
@@ -472,6 +501,11 @@ async function initFileStorage() {
     await fs.access(authorsFile);
   } catch {
     await fs.writeFile(authorsFile, "[]");
+  }
+  try {
+    await fs.access(commentsFile);
+  } catch {
+    await fs.writeFile(commentsFile, "[]");
   }
   try {
     await fs.access(mediaRecordsFile);
@@ -595,6 +629,104 @@ async function replaceAuthors(authors) {
   return nextAuthors.map(publicAuthor);
 }
 
+async function readComments({ postId = "", status = "" } = {}) {
+  if (pool) {
+    const clauses = [];
+    const values = [];
+    if (postId) {
+      values.push(postId);
+      clauses.push(`post_id = $${values.length}`);
+    }
+    if (status) {
+      values.push(status);
+      clauses.push(`status = $${values.length}`);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT comment_id AS id, post_id AS "postId", post_title AS "postTitle", name, body AS text, status, created_at AS "createdAt"
+       FROM comments
+       ${where}
+       ORDER BY created_at DESC, id DESC`,
+      values
+    );
+    return rows.map((row, index) => normalizeComment({
+      ...row,
+      time: relativeCommentTime(row.createdAt)
+    }, index));
+  }
+  try {
+    const comments = JSON.parse(await fs.readFile(commentsFile, "utf8"));
+    return (Array.isArray(comments) ? comments : [])
+      .map(normalizeComment)
+      .filter((comment) => (!postId || comment.postId === postId) && (!status || comment.status === status))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  } catch {
+    return [];
+  }
+}
+
+function relativeCommentTime(value) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "刚刚";
+  const diff = Math.max(0, Date.now() - time);
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} 天前`;
+  return new Date(value).toLocaleString();
+}
+
+async function createComment(input = {}) {
+  const comment = normalizeComment({
+    ...input,
+    id: crypto.randomUUID(),
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    time: "刚刚"
+  });
+  if (!comment.postId || !comment.text || !comment.name) throw new Error("评论信息不完整");
+  if (comment.text.length > 2000) throw new Error("评论内容过长");
+  if (pool) {
+    await pool.query(
+      `INSERT INTO comments (comment_id, post_id, post_title, name, body, status)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [comment.id, comment.postId, comment.postTitle, comment.name, comment.text, comment.status]
+    );
+    return comment;
+  }
+  const comments = await readComments();
+  comments.unshift(comment);
+  await fs.writeFile(commentsFile, JSON.stringify(comments, null, 2));
+  return comment;
+}
+
+async function updateCommentStatus(commentId, status) {
+  if (pool) {
+    const { rowCount } = await pool.query("UPDATE comments SET status = $1, updated_at = NOW() WHERE comment_id = $2", [status, commentId]);
+    return rowCount > 0;
+  }
+  const comments = await readComments();
+  const comment = comments.find((item) => item.id === commentId);
+  if (!comment) return false;
+  comment.status = status;
+  await fs.writeFile(commentsFile, JSON.stringify(comments, null, 2));
+  return true;
+}
+
+async function deleteComment(commentId) {
+  if (pool) {
+    const { rowCount } = await pool.query("DELETE FROM comments WHERE comment_id = $1", [commentId]);
+    return rowCount > 0;
+  }
+  const comments = await readComments();
+  const nextComments = comments.filter((item) => item.id !== commentId);
+  await fs.writeFile(commentsFile, JSON.stringify(nextComments, null, 2));
+  return nextComments.length !== comments.length;
+}
+
 async function ensureAuthorsSeeded() {
   const currentAuthors = await readAuthors(true);
   if (currentAuthors.length) return;
@@ -708,6 +840,68 @@ app.put("/api/authors", requireAdminApi, async (req, res, next) => {
   try {
     const authors = Array.isArray(req.body) ? req.body : req.body?.authors;
     res.json({ ok: true, authors: await replaceAuthors(authors) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/comments", async (req, res, next) => {
+  try {
+    const postId = String(req.query.postId || "");
+    const status = String(req.query.status || "approved");
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ comments: await readComments({ postId, status }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/comments", async (req, res, next) => {
+  try {
+    const comment = await createComment({
+      postId: String(req.body?.postId || ""),
+      postTitle: String(req.body?.postTitle || ""),
+      name: String(req.body?.name || "").trim(),
+      text: String(req.body?.text || "").trim()
+    });
+    res.json({ ok: true, comment });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/comments", requireAdminApi, async (_req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ comments: await readComments() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/admin/comments/:id", requireAdminApi, async (req, res, next) => {
+  try {
+    const status = String(req.body?.status || "approved");
+    if (!["pending", "approved"].includes(status)) throw new Error("评论状态无效");
+    const ok = await updateCommentStatus(req.params.id, status);
+    if (!ok) {
+      res.status(404).json({ error: "评论不存在" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/admin/comments/:id", requireAdminApi, async (req, res, next) => {
+  try {
+    const ok = await deleteComment(req.params.id);
+    if (!ok) {
+      res.status(404).json({ error: "评论不存在" });
+      return;
+    }
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }

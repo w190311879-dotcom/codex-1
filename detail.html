@@ -465,13 +465,23 @@
       document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="detail.html?id=${encodeURIComponent(post.id)}"><img src="${post.image}" alt="${post.title}"><h3>${post.title}</h3></a>`).join("");
       window.lucide?.createIcons?.();
     }
-    function renderComments() {
-      const comments = JSON.parse(localStorage.getItem(`postwave_comments_${current.id}`) || "[]");
+    async function fetchApprovedComments() {
+      try {
+        const response = await fetch(`/api/comments?postId=${encodeURIComponent(current.id)}&status=approved`, { cache: "no-store" });
+        if (!response.ok) return [];
+        const data = await response.json();
+        return Array.isArray(data.comments) ? data.comments : [];
+      } catch (_error) {
+        return [];
+      }
+    }
+    async function renderComments() {
+      const comments = await fetchApprovedComments();
       const base = [{ name:"曾经小白菜", time:"3 小时前", text:"6" }, { name:"端庄蓝天", time:"5 天前", text:"签到" }, { name:"认真路人", time:"1 周前", text:"排版清楚，内容展示很完整。" }];
       const rows = [...comments, ...base];
       document.querySelector("#commentCount").textContent = `已有 ${51 + comments.length} 条评论`;
       const commentLogo = siteConfig.commentLogoText || "51暗网";
-      document.querySelector("#commentList").innerHTML = rows.map((item) => `<div class="comment"><div class="comment-logo">${commentLogo}</div><div><strong>${item.name}</strong><small>${item.time}</small><p>${item.text}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("");
+      document.querySelector("#commentList").innerHTML = rows.map((item) => `<div class="comment"><div class="comment-logo">${escapeHtml(commentLogo)}</div><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.time || "刚刚")}</small><p>${escapeHtml(item.text)}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("");
     }
 
     document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
@@ -587,7 +597,7 @@
       document.querySelector("#authOpen").title = "已登录";
       updateCommentUserState();
     });
-    document.querySelector("#submitComment").addEventListener("click", () => {
+    document.querySelector("#submitComment").addEventListener("click", async () => {
       const user = localStorage.getItem("postwave_user") || "";
       if (!user) {
         authLayer.classList.add("active");
@@ -596,11 +606,19 @@
       }
       const text = document.querySelector("#commentText").value.trim();
       if (!text) return;
-      const pending = JSON.parse(localStorage.getItem("postwave_pending_comments") || "[]");
-      pending.unshift({ postId: current.id, postTitle: current.title, name: user, time:"刚刚", text, status:"pending" });
-      localStorage.setItem("postwave_pending_comments", JSON.stringify(pending));
-      document.querySelector("#commentText").value = "";
-      document.querySelector("#commentAuthNote").textContent = "评论已提交，等待后台审核通过后展示。";
+      try {
+        const response = await fetch("/api/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ postId: current.id, postTitle: current.title, name: user, text })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "评论提交失败");
+        document.querySelector("#commentText").value = "";
+        document.querySelector("#commentAuthNote").textContent = "评论已提交，等待后台审核通过后展示。";
+      } catch (error) {
+        document.querySelector("#commentAuthNote").textContent = error.message || "评论提交失败，请稍后重试。";
+      }
     });
     window.addEventListener("storage", (event) => {
       if (event.key === "postwave_ads") {
