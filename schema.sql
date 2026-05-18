@@ -1,0 +1,52 @@
+CREATE TABLE IF NOT EXISTS posts (
+  id BIGSERIAL PRIMARY KEY,
+  client_id TEXT UNIQUE,
+  title TEXT NOT NULL DEFAULT '未命名帖子',
+  body TEXT NOT NULL DEFAULT '',
+  cover_url TEXT NOT NULL DEFAULT '',
+  video_url TEXT NOT NULL DEFAULT '',
+  body_images JSONB NOT NULL DEFAULT '[]'::jsonb,
+  category TEXT NOT NULL DEFAULT '',
+  categories JSONB NOT NULL DEFAULT '[]'::jsonb,
+  keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT '已发布',
+  author TEXT NOT NULL DEFAULT '',
+  date_text TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS posts_sort_order_idx ON posts (sort_order ASC, id ASC);
+CREATE INDEX IF NOT EXISTS posts_status_idx ON posts (status);
+CREATE INDEX IF NOT EXISTS posts_payload_gin_idx ON posts USING GIN (payload);
+
+CREATE TABLE IF NOT EXISTS authors (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  account TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT '正常',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS authors_account_idx ON authors (account);
+
+CREATE TABLE IF NOT EXISTS media_files (
+  id BIGSERIAL PRIMARY KEY,
+  media_id TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL DEFAULT '',
+  original_name TEXT NOT NULL DEFAULT '',
+  mime_type TEXT NOT NULL DEFAULT '',
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  storage_provider TEXT NOT NULL DEFAULT '',
+  storage_path TEXT NOT NULL DEFAULT '',
+  url TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS media_files_kind_idx ON media_files (kind);
+CREATE INDEX IF NOT EXISTS media_files_created_at_idx ON media_files (created_at DESC);

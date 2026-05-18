@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>帖子详情 - PostWave</title>
+  <script>
+    try {
+      document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
+    } catch (error) {}
+  </script>
+  <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" onload="window.lucide?.createIcons?.()"></script>
+  <style>
+    :root { --bg:#0b0f0f; --card:#15191d; --line:#293038; --text:#f5f7f4; --muted:#a5adb5; --green:#28d4b0; --pink:#ef477d; --radius:8px; }
+    :root.light { --bg:#f6f8f5; --card:#fff; --line:#dde6dc; --text:#101611; --muted:#657160; --green:#0ba986; }
+    * { box-sizing:border-box; }
+    body { margin:0; overflow-x:hidden; font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--text); background:var(--bg); letter-spacing:0; }
+    a { color:inherit; text-decoration:none; }
+    button, input, textarea { font:inherit; }
+    .topbar { position:sticky; top:0; z-index:10; background:rgba(16,19,22,.72); backdrop-filter:blur(22px) saturate(150%); -webkit-backdrop-filter:blur(22px) saturate(150%); box-shadow:0 1px 0 rgba(255,255,255,.06),0 14px 40px rgba(0,0,0,.18); }
+    :root.light .topbar { background:rgba(255,255,255,.68); box-shadow:0 1px 0 rgba(20,40,28,.08),0 14px 36px rgba(30,70,45,.08); }
+    .topbar-inner { width:100%; min-height:72px; margin:0; padding:8px 24px; display:grid; grid-template-columns:auto minmax(0, 1fr) auto; align-items:center; gap:18px; }
+    .brand { display:flex; align-items:center; }
+    .brand-mark { width:124px; height:64px; display:grid; place-items:center; overflow:hidden; border:0; border-radius:0; color:var(--green); background:transparent; }
+    .brand-mark img { width:100%; height:100%; object-fit:contain; display:block; }
+    .mobile-nav-toggle { display:none; }
+    .nav { min-width:0; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px 10px; overflow:visible; scrollbar-width:none; }
+    .nav::-webkit-scrollbar { display:none; }
+    .nav a, .nav-more { height:42px; display:inline-flex; align-items:center; padding:0 13px; border:0; border-radius:8px; color:#d8dedb; background:transparent; font-weight:900; white-space:nowrap; cursor:pointer; }
+    .nav a:hover, .nav a.active, .nav-more:hover, .nav-more.active { color:#07110a; background:var(--green); }
+    :root.light .nav a, :root.light .nav-more { color:#3d463f; }
+    .more-wrap { position:relative; display:inline-flex; }
+    .more-menu { position:absolute; top:calc(100% + 10px); right:0; z-index:20; min-width:150px; display:none; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--card); box-shadow:0 18px 48px rgba(0,0,0,.28); }
+    .more-wrap.open .more-menu { display:grid; gap:6px; }
+    .more-menu a { justify-content:flex-start; width:100%; color:var(--text); }
+    .actions { display:flex; align-items:center; gap:9px; }
+    .icon-btn { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:#12161a; cursor:pointer; }
+    :root.light .icon-btn { background:#fff; }
+    .search-panel { display:none; max-width:760px; margin:18px auto 0; }
+    .search-panel.active { display:block; }
+    .search-box { height:50px; display:flex; align-items:center; gap:10px; padding:0 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--muted); }
+    .search-box input { width:100%; border:0; outline:0; color:var(--text); background:transparent; }
+    .search-results { display:grid; gap:8px; margin-top:10px; }
+    .search-results a { padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); font-weight:900; }
+    .page { max-width:1180px; margin:0 auto; padding:30px 18px 52px; }
+    .breadcrumb { color:var(--muted); font-size:24px; line-height:1.4; }
+    .breadcrumb a { color:var(--green); }
+    .article-head { padding:42px 0 34px; text-align:center; }
+    .article-head h1 { max-width:980px; margin:0 auto 22px; color:var(--muted); font-size:clamp(30px,4.2vw,52px); line-height:1.22; font-weight:400; letter-spacing:0; }
+    .meta { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; color:#d8d8d8; font-size:22px; }
+    :root.light .meta { color:#6a716b; }
+    .content { display:grid; gap:18px; margin:0 auto; max-width:940px; }
+    #contentFlow { display:grid; gap:20px; }
+    .body { padding:0; border:0; border-radius:0; background:transparent; color:var(--text); font-size:22px; line-height:1.95; white-space:pre-wrap; }
+    .media { width:min(800px, 100%); margin:0 auto; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+    .image-media { border:0; border-radius:0; background:transparent; }
+    .image-media img { display:block; width:100%; height:auto; object-fit:contain; }
+    .video-media { display:grid; place-items:center; background:#000; }
+    .video-media.ratio-16-9 { aspect-ratio:16 / 9; }
+    .video-media.ratio-9-16 { width:min(420px, 100%); aspect-ratio:9 / 16; }
+    .video-media video { display:block; width:100%; height:100%; object-fit:contain; background:#000; }
+    .tags { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:12px 0 0; }
+    .tag { min-height:34px; display:inline-flex; align-items:center; padding:0 12px; border:1px solid rgba(40,212,176,.55); border-radius:999px; color:var(--green); background:rgba(40,212,176,.08); font-weight:900; }
+    .notice { margin:24px auto 0; max-width:940px; padding:20px; border:1px solid rgba(40,212,176,.48); border-radius:8px; background:rgba(40,212,176,.08); line-height:1.8; }
+    .notice strong { color:var(--green); }
+    .prev-next { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:26px auto; max-width:940px; }
+    .pn { padding:16px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--muted); font-weight:900; }
+    .pn span { display:block; margin-top:6px; color:var(--text); }
+    .ad-stack { display:grid; gap:12px; margin:0 auto 28px; max-width:940px; }
+    .ad-item { min-height:92px; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px; border:1px solid rgba(40,212,176,.45); border-radius:8px; background:linear-gradient(90deg, rgba(17,28,20,.96), rgba(22,24,28,.92)); }
+    .ad-item.has-ad-image { width:100%; min-height:0; aspect-ratio:1300 / 180; padding:0; display:block; border-color:transparent; background:transparent; }
+    .ad-item.has-ad-image img { width:100%; height:100%; object-fit:cover; display:block; }
+    .ad-item > * { position:relative; z-index:1; }
+    :root.light .ad-item { background:#fff; }
+    :root.light .ad-item.has-ad-image { background:transparent; border-color:transparent; }
+    .ad-item strong { display:block; margin-bottom:4px; font-size:20px; }
+    .ad-item span { color:var(--muted); font-weight:800; }
+    .ad-image { display:block; }
+    .text-ad-grid { max-width:940px; margin:0 auto 28px; display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; }
+    .text-ad-grid:empty { display:none; }
+    .text-ad { min-height:76px; display:grid; place-items:center; padding:12px; border:1px solid rgba(255,255,255,.24); border-radius:8px; color:#c9c9c9; background:rgba(255,255,255,.025); font-size:24px; font-weight:800; text-align:center; }
+    .text-ad:hover { color:var(--green); border-color:rgba(40,212,176,.62); background:rgba(40,212,176,.08); }
+    :root.light .text-ad { color:#4f5a55; border-color:#d3ded8; background:#fff; }
+    .ad-section { margin:28px 0; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .section-head h2 { margin:0; color:var(--green); font-size:30px; letter-spacing:0; }
+    .square-grid { display:grid; grid-template-columns:repeat(10, 1fr); gap:10px; }
+    .square-ad { aspect-ratio:1; position:relative; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+    .square-ad img { width:100%; height:100%; object-fit:cover; display:block; }
+    .guess-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+    .guess { position:relative; min-height:170px; overflow:hidden; border:1px solid var(--line); border-radius:8px; isolation:isolate; }
+    .guess img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:-2; }
+    .guess::after { content:""; position:absolute; inset:0; background:linear-gradient(0deg,rgba(4,7,8,.78),rgba(4,7,8,.16)); z-index:-1; }
+    .guess h3 { position:absolute; left:14px; right:14px; bottom:12px; margin:0; color:#fff; font-size:18px; letter-spacing:0; }
+    .refresh { height:38px; border:1px solid var(--line); border-radius:8px; color:var(--green); background:var(--card); cursor:pointer; font-weight:900; }
+    .comments { margin:42px auto 0; max-width:1120px; padding:34px 28px 48px; border:1px solid var(--line); border-radius:8px; background:var(--card); box-shadow:0 18px 60px rgba(0,0,0,.18); }
+    .comments h2 { margin:0 0 24px; color:var(--green); font-size:36px; letter-spacing:0; }
+    .comments textarea { width:100%; height:150px; padding:18px; border:1px solid rgba(40,212,176,.42); border-radius:8px; color:var(--text); background:rgba(8,14,14,.62); resize:vertical; outline:0; font-size:20px; }
+    :root.light .comments textarea,
+    :root.light .comment-row input { background:#fff; }
+    .comments textarea:focus, .comment-row input:focus { border-color:var(--green); box-shadow:0 0 0 3px rgba(40,212,176,.14); }
+    .comments textarea::placeholder, .comment-row input::placeholder { color:var(--muted); }
+    .comment-row { display:flex; gap:14px; margin-top:18px; align-items:center; }
+    .comment-row input { width:310px; height:54px; padding:0 16px; border:1px solid rgba(40,212,176,.42); border-radius:8px; color:var(--text); background:rgba(8,14,14,.62); outline:0; font-size:20px; }
+    .captcha { width:92px; height:42px; display:inline-grid; place-items:center; border:1px solid rgba(40,212,176,.42); border-radius:6px; color:var(--green); background:rgba(40,212,176,.08); font-family:Georgia, serif; font-size:24px; }
+    .submit { width:100%; height:66px; margin-top:18px; border:0; border-radius:8px; color:#07110a; background:var(--green); font-size:24px; font-weight:900; cursor:pointer; }
+    .comment-auth-note { margin:12px 0 0; color:var(--muted); font-size:14px; font-weight:800; }
+    .comment-count { margin:58px 0 24px; color:var(--text); font-size:36px; font-weight:700; }
+    .comment-list { display:grid; gap:0; border-top:1px solid var(--line); }
+    .comment { display:grid; grid-template-columns:92px 1fr auto; gap:20px; align-items:start; padding:24px 0; border-bottom:1px solid var(--line); }
+    .comment-logo { color:var(--text); font-size:28px; font-weight:900; padding-top:10px; }
+    .comment strong { color:var(--green); font-size:24px; }
+    .comment small { display:block; margin-top:8px; color:var(--muted); font-size:18px; }
+    .comment p { margin:18px 0 0; color:var(--text); font-size:20px; line-height:1.7; }
+    .reply { color:var(--green); font-size:20px; font-weight:900; padding-top:20px; }
+    .footer-icons { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:34px 0 26px; }
+    .footer-icons a { min-height:78px; display:grid; place-items:center; gap:6px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--muted); font-weight:900; }
+    .intro { padding:20px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--muted); font-size:15px; line-height:1.8; font-weight:700; }
+    .footer-links { display:flex; flex-wrap:wrap; justify-content:center; gap:14px; margin:24px 0; color:#d8dedb; font-weight:800; }
+    :root.light .footer-links { color:#3d463f; }
+    .social-row { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
+    .legal { border-top:1px solid var(--line); padding-top:18px; color:var(--muted); text-align:center; font-size:12px; line-height:1.8; }
+    .legal a { margin:0 8px; color:var(--muted); }
+    .modal-layer { position:fixed; inset:0; z-index:50; display:none; place-items:center; padding:18px; background:rgba(0,0,0,.58); backdrop-filter:blur(12px); }
+    .modal-layer.active { display:grid; }
+    .auth-modal { width:min(420px,100%); border:1px solid var(--line); border-radius:8px; background:var(--card); box-shadow:0 24px 80px rgba(0,0,0,.35); }
+    .auth-head { display:flex; align-items:center; justify-content:space-between; padding:18px; border-bottom:1px solid var(--line); }
+    .auth-head h2 { margin:0; font-size:24px; letter-spacing:0; }
+    .auth-body { display:grid; gap:12px; padding:18px; }
+    .auth-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .auth-tab, .auth-submit { height:42px; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--bg); font-weight:900; cursor:pointer; }
+    .auth-tab.active, .auth-submit { color:#07110a; border-color:var(--green); background:var(--green); }
+    .auth-body input { height:44px; padding:0 12px; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--bg); outline:0; }
+    .auth-note { margin:0; color:var(--muted); font-size:13px; line-height:1.7; }
+    @media (max-width:900px) {
+      .topbar { background:rgba(18,22,22,.94); overflow:visible; }
+      .topbar-inner { position:relative; height:auto; min-height:84px; grid-template-columns:auto minmax(0, 1fr) auto; padding:10px 14px 4px; gap:8px; }
+      .mobile-nav-toggle { min-width:92px; height:42px; display:inline-flex; align-items:center; justify-content:center; gap:6px; border:0; border-radius:999px; color:#e9efec; background:rgba(255,255,255,.12); font-weight:900; cursor:pointer; }
+      .brand { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); justify-self:center; }
+      .brand-mark { width:clamp(112px, 34vw, 150px); height:68px; }
+      .actions { justify-self:end; gap:6px; }
+      .icon-btn { width:42px; height:42px; border-radius:999px; background:rgba(255,255,255,.1); }
+      .mobile-hide { display:none; }
+      .nav { position:fixed; left:0; top:0; bottom:auto; z-index:60; width:min(280px, 78vw); height:100vh; min-height:100dvh; display:flex; flex-direction:column; justify-content:flex-start; align-items:stretch; gap:8px; padding:86px 16px 18px; overflow-y:auto; transform:translate3d(-105%, 0, 0); transition:transform .22s ease; border-right:1px solid var(--line); background:rgba(15,19,21,.98); box-shadow:18px 0 48px rgba(0,0,0,.32); }
+      .nav.open { transform:translateX(0); }
+      .nav a, .nav-more { width:100%; justify-content:flex-start; min-height:44px; }
+      .more-wrap { display:grid; }
+      .more-menu { position:static; display:grid; min-width:0; margin-top:6px; box-shadow:none; }
+      .search-panel { display:block; max-width:none; margin:6px 14px 10px; }
+      .search-box { height:56px; border-radius:999px; padding:0 16px 0 20px; background:rgba(255,255,255,.12); }
+      .page { padding:24px 14px 40px; }
+      .breadcrumb { font-size:18px; }
+      .article-head { padding:28px 0 24px; }
+      .article-head h1 { font-size:clamp(28px, 8vw, 40px); }
+      .meta { font-size:17px; }
+      .square-grid { grid-template-columns:repeat(5,1fr); }
+      .guess-grid, .prev-next, .footer-icons { grid-template-columns:1fr; }
+      .comment-row { flex-direction:column; align-items:stretch; }
+      .comment-row input, .captcha { width:100%; }
+      .comment { grid-template-columns:1fr; }
+      .comments { padding:24px 18px 34px; }
+      .comments h2, .comment-count { font-size:32px; }
+      .text-ad-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+      .text-ad { min-height:64px; font-size:19px; }
+      .ad-item { flex-direction:column; align-items:flex-start; }
+      .ad-image { width:100%; height:120px; flex-basis:auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <button class="mobile-nav-toggle" id="mobileNavToggle" type="button" aria-label="打开导航">
+        <i data-lucide="menu"></i><span>导航</span>
+      </button>
+      <a class="brand" href="index.html"><span class="brand-mark" id="brandMark"><i data-lucide="play"></i></span></a>
+      <nav class="nav" id="mainNav" aria-label="主导航"></nav>
+      <div class="actions">
+        <button class="icon-btn mobile-hide" id="searchToggle" title="搜索"><i data-lucide="search"></i></button>
+        <a class="icon-btn mobile-hide" href="app.html" title="App 下载"><i data-lucide="smartphone"></i></a>
+        <a class="icon-btn mobile-hide" href="qq.html" target="_blank" rel="noreferrer" title="QQ群"><i data-lucide="message-circle"></i></a>
+        <a class="icon-btn" href="https://t.me/example_group" target="_blank" rel="noreferrer" title="Telegram"><i data-lucide="send"></i></a>
+        <a class="icon-btn" href="https://x.com/example" target="_blank" rel="noreferrer" title="X">X</a>
+        <button class="icon-btn mobile-hide" id="themeToggle" title="日间夜间模式"><i data-lucide="sun-moon"></i></button>
+        <button class="icon-btn" id="authOpen" title="登录/注册"><i data-lucide="user-round"></i></button>
+      </div>
+    </div>
+    <section class="search-panel" id="searchPanel">
+      <label class="search-box">
+        <i data-lucide="search"></i>
+        <input id="searchInput" placeholder="搜索标题、正文、标签">
+      </label>
+      <div class="search-results" id="searchResults"></div>
+    </section>
+  </header>
+  <main class="page">
+    <nav class="breadcrumb"><a href="index.html">首页</a> &gt; <a href="index.html">内容</a> &gt; <span id="crumbTitle">帖子详情</span></nav>
+    <header class="article-head">
+      <h1 id="title">帖子详情</h1>
+      <div class="meta"><span id="author"></span><span>·</span><span id="date"></span><span>·</span><span id="category"></span></div>
+    </header>
+    <section class="ad-stack" id="detailTopAds"></section>
+    <section class="text-ad-grid" id="detailTextAds" aria-label="文字广告"></section>
+
+    <article class="content">
+      <div id="contentFlow"></div>
+      <div class="tags" id="tags"></div>
+    </article>
+
+    <section class="notice"><strong>官方公告：</strong><span id="officialNotice"></span></section>
+    <nav class="prev-next"><a class="pn" id="prevPost">上一篇<span></span></a><a class="pn" id="nextPost">下一篇<span></span></a></nav>
+    <section class="ad-stack" id="detailBannerAds"></section>
+
+    <section class="ad-section"><div class="section-head"><h2>站长推荐</h2></div><div class="square-grid" id="stationAds"></div></section>
+    <section class="ad-section"><div class="section-head"><h2>最新上架</h2></div><div class="square-grid" id="latestAds"></div></section>
+    <section class="ad-section"><div class="section-head"><h2>瓜友推荐广告</h2></div><div class="square-grid" id="friendAds"></div></section>
+    <section class="ad-section">
+      <div class="section-head"><h2>猜你喜欢</h2><button class="refresh" id="refreshGuess">换一换</button></div>
+      <div class="guess-grid" id="guessGrid"></div>
+    </section>
+
+    <section class="comments">
+      <h2>添加新评论</h2>
+      <textarea id="commentText" placeholder="在这里输入你的评论..."></textarea>
+      <div class="comment-row"><input id="commentName" placeholder="称呼 *"><span class="captcha">OuO</span></div>
+      <p class="comment-auth-note" id="commentAuthNote">评论需要登录/注册，提交后由后台审核，通过后展示。</p>
+      <button class="submit" id="submitComment">提交评论</button>
+      <div class="comment-count" id="commentCount">已有 51 条评论</div>
+      <div class="comment-list" id="commentList"></div>
+    </section>
+
+    <section class="footer-icons">
+      <a href="index.html"><i data-lucide="home"></i><span>首页</span></a>
+      <a href="app.html"><i data-lucide="smartphone"></i><span>App</span></a>
+      <a href="qq.html" target="_blank" rel="noreferrer"><i data-lucide="message-circle"></i><span>Q群</span></a>
+      <a href="#site-map"><i data-lucide="map"></i><span>网站导航</span></a>
+    </section>
+    <section class="intro" id="site-map">PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。</section>
+    <nav class="footer-links"><a href="#archive">往期回顾</a><a href="index.html">回家的路</a><a href="admin-login.html">我要投稿</a><a href="mailto:business@example.com">商务合作</a><a href="mailto:join@example.com">加入我们</a><a href="#about">关于我们</a></nav>
+    <div class="social-row"><a class="icon-btn" href="https://x.com/example" target="_blank" rel="noreferrer">X</a><a class="icon-btn" href="https://t.me/example_group" target="_blank" rel="noreferrer"><i data-lucide="send"></i></a></div>
+    <footer class="legal"><div><a href="#terms">用户协议</a><a href="#privacy">隐私政策</a><a href="#dmca">DMCA</a><a href="#compliance">2257合规声明</a></div><div>Copyright © 2026 PostWave. All rights reserved.</div></footer>
+  </main>
+  <div class="modal-layer" id="authLayer" role="dialog" aria-modal="true" aria-label="登录注册">
+    <div class="auth-modal">
+      <div class="auth-head"><h2 id="authTitle">登录</h2><button class="icon-btn" id="authClose" aria-label="关闭"><i data-lucide="x"></i></button></div>
+      <form class="auth-body" id="authForm">
+        <div class="auth-tabs"><button class="auth-tab active" type="button" data-auth-mode="login">登录</button><button class="auth-tab" type="button" data-auth-mode="register">注册</button></div>
+        <input id="authAccount" placeholder="邮箱或用户名" autocomplete="username">
+        <input id="authPassword" type="password" placeholder="密码" autocomplete="current-password">
+        <button class="auth-submit">继续</button>
+        <p class="auth-note">未登录用户也可以完整浏览所有内容。</p>
+      </form>
+    </div>
+  </div>
+  <script>
+    const defaultSiteConfig = {
+      siteName: "PostWave",
+      tabs: [
+        { name: "首页", subtitle: "精选图文与视频内容，按发布时间聚合展示。" },
+        { name: "视频", subtitle: "视频内容列表，适合接入媒体 CDN 和在线播放。" },
+        { name: "图文", subtitle: "图片、长文和专题内容的展示入口。" },
+        { name: "影评", subtitle: "影评、片单和内容推荐的聚合页面。" },
+        { name: "旅行", subtitle: "旅行路线、风景图集和短视频合集。" },
+        { name: "科技", subtitle: "科技资讯、工具教程和产品观察。" },
+        { name: "专题", subtitle: "按主题整理的合集页面。" }
+      ]
+    };
+    const siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || defaultSiteConfig;
+    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${siteConfig.logoImage}" alt="${siteConfig.siteName || "Logo"}">`;
+    document.querySelector("#site-map").textContent = `${siteConfig.siteName || "PostWave"} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
+    document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteConfig.siteName || "PostWave"}. All rights reserved.`;
+    function renderNav() {
+      const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
+      const visibleLimit = 14;
+      const visibleTabs = tabs.slice(0, visibleLimit);
+      const moreTabs = tabs.slice(visibleLimit);
+      document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `<a class="${index === 0 ? "active" : ""}" href="index.html#${encodeURIComponent(tab.name)}">${tab.name}</a>`).join("") + (moreTabs.length ? `
+        <span class="more-wrap" id="moreWrap">
+          <button class="nav-more" type="button" id="moreNav">更多</button>
+          <span class="more-menu">${moreTabs.map((tab) => `<a href="index.html#${encodeURIComponent(tab.name)}">${tab.name}</a>`).join("")}</span>
+        </span>
+      ` : "");
+    }
+    renderNav();
+    document.querySelector("#mainNav").addEventListener("click", (event) => {
+      if (event.target.closest("#moreNav")) {
+        event.preventDefault();
+        document.querySelector("#moreWrap")?.classList.toggle("open");
+        return;
+      }
+      if (event.target.closest("a")) {
+        document.querySelector("#mainNav").classList.remove("open");
+      }
+    });
+    document.querySelector("#mobileNavToggle").addEventListener("click", () => {
+      document.querySelector("#mainNav").classList.toggle("open");
+    });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("#mainNav") && !event.target.closest("#mobileNavToggle")) {
+        document.querySelector("#mainNav").classList.remove("open");
+      }
+    });
+    const images = [
+      "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1483058712412-4245e9b90334?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1600&q=82"
+    ];
+    const titles = ["城市夜景延时：从街口到天际线的灯光变化","周末山谷路线：十张图看完轻徒步风景","内容展示站的后台字段：标题、媒体、标签和审核状态","小型现场演出记录：镜头、灯光和声音的组合","工作室布景参考：适合内容站封面图的构图方式","如何规划帖子流：分类筛选、热榜、推荐位和举报入口","建筑外立面灵感：几何、光影和城市肌理","从 MVP 到社区投稿：审核队列和用户权限怎么加","午后城市散步：街区、咖啡和橱窗","移动端内容流设计：一屏只处理一个重点","视频封面怎么选：主体、留白和标题可读性","专题页规划：把分散内容整理成合集","旅行短片剪辑：节奏、转场和音乐","后台广告位控制：新增、排序和下架","CDN 分发思路：主站和媒体文件分开走","图文内容排版：让封面承担第一眼信息","社区投稿前应该先准备哪些审核规则","科技工具清单：内容团队的日常效率组合","高清图集上传：尺寸、压缩和存储建议","网站导航页应该放哪些入口","首页分页体验：少即是多的内容节奏","影评栏目结构：标题、封面和摘要","长条广告位：后台可控的商业入口","作者主页设计：头像、作品和标签","站点页脚：协议、版权和合规声明","内容站第一版上线检查清单","备用入口和状态页的设计方式","移动端底部入口如何保持清爽","发布后台字段设计：标题、封面、正文和热度","媒体列表如何管理图片和视频"];
+    const categoryNames = (siteConfig.tabs || defaultSiteConfig.tabs).filter((tab) => tab.name !== "首页").map((tab) => tab.name);
+    const seedPosts = titles.map((title, index) => ({ id:`seed-${index}`, title, image:images[index % images.length], author:"瓜哥", date:"2026 年 05 月 13 日", category:categoryNames[index % Math.max(1, categoryNames.length)] || "视频分类", keywords:["内容","展示","推荐"], tags:["今日推荐","内容展示","精选"], body:"这里会按照后台编辑器上传和排版的顺序展示文案、图片、视频。正文区域只显示实际文字内容，媒体文件按插入顺序展示。" }));
+    const mediaLibrary = JSON.parse(localStorage.getItem("postwave_media") || "[]");
+    function mapAdminPosts(source) {
+      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:`admin-${index}`, title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
+    }
+    const localAdminPostSource = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
+    let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
+    let adminPosts = mapAdminPosts(adminPostSource);
+    let posts = [...adminPosts, ...seedPosts];
+    let current = posts.find((post) => post.id === new URLSearchParams(location.search).get("id")) || posts[0];
+    let index = Math.max(0, posts.findIndex((post) => post.id === current.id));
+    function normalizeAdPlacement(ad) {
+      const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
+      const key = raw.toLowerCase();
+      const title = String(ad.title || "");
+      const aliases = {
+        "home-banner": ["home-banner", "home", "首页广告"],
+        "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
+        "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
+        "detail-text": ["detail-text", "text-ad", "post-title-text-ad", "帖子标题文字广告", "标题文字广告", "纯文字广告"],
+        "detail-banner": ["detail-banner", "detail-inner", "post-inner", "post-banner", "帖子内广告", "帖子内容广告", "正文后广告"],
+        "station-square": ["station-square", "station", "站长推荐", "站长推荐方形广告"],
+        "latest-square": ["latest-square", "latest", "最新上架", "最新上架方形广告"],
+        "friend-square": ["friend-square", "friend", "瓜友推荐", "瓜友推荐广告", "瓜友推荐方形广告"]
+      };
+      for (const [placement, names] of Object.entries(aliases)) {
+        if (names.some((name) => raw === name || key === name.toLowerCase())) return placement;
+      }
+      if (raw === "square" || raw === "方形广告") {
+        if (/最新/.test(title)) return "latest-square";
+        if (/瓜友|友/.test(title)) return "friend-square";
+        return "station-square";
+      }
+      return raw || "home-banner";
+    }
+    function normalizeAd(ad) {
+      const possibleUrl = String(ad.url || "");
+      const urlIsImage = /^(data:image|blob:)|\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(possibleUrl);
+      return {
+        ...ad,
+        title: ad.title || "",
+        desc: ad.desc || "",
+        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+        image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        imageKey: ad.imageKey || ad.assetKey || "",
+        slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
+        placement: normalizeAdPlacement(ad)
+      };
+    }
+    function loadAds() {
+      const stored = JSON.parse(localStorage.getItem("postwave_ads") || "[]");
+      return Array.isArray(stored) ? stored.map(normalizeAd) : [];
+    }
+    const config = JSON.parse(localStorage.getItem("postwave_ad_config") || '{"station":10,"latest":10,"friend":10}');
+    const notice = localStorage.getItem("postwave_notice") || "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。";
+    const fallbackSquare = Array.from({ length: 30 }, (_, i) => ({ title:`广告 ${i + 1}`, image:images[i % images.length], link:"app.html" }));
+    async function adImageUrl(ad) {
+      if (!ad) return "";
+      if (ad.image) return ad.image;
+      return "";
+    }
+    async function mediaUrl(item) {
+      if (!item) return "";
+      if (item.url) return item.url;
+      if (item.data) return item.data;
+      return "";
+    }
+
+    async function fetchApiPosts() {
+      try {
+        const response = await fetch("/api/posts", { cache: "no-store" });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data.posts) ? data.posts : [];
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    async function syncLocalPostsToApi(source) {
+      try {
+        await fetch("/api/posts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ posts: source })
+        });
+      } catch (_error) {}
+    }
+
+    async function refreshPostsFromApiForDetail() {
+      const apiPosts = await fetchApiPosts();
+      if (!apiPosts) return;
+      if (!apiPosts.length && adminPostSource.length) {
+        if (localStorage.getItem("postwave_posts_api_imported") !== "1") {
+          syncLocalPostsToApi(adminPostSource);
+          localStorage.setItem("postwave_posts_api_imported", "1");
+        }
+        return;
+      }
+      if (!apiPosts.length) return;
+      const apiText = JSON.stringify(apiPosts);
+      if (apiText === JSON.stringify(adminPostSource)) return;
+      localStorage.setItem("postwave_posts", apiText);
+      localStorage.setItem("postwave_posts_api_imported", "1");
+      location.reload();
+    }
+
+    function byPlacement(name) { return loadAds().filter((ad) => ad.placement === name); }
+    async function fillAds(name, count) {
+      const source = byPlacement(name).filter((ad) => ad.image).slice(0, count);
+      const rows = await Promise.all(source.map(async (ad) => {
+        const img = await adImageUrl(ad);
+        return img ? `<a class="square-ad" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"></a>` : "";
+      }));
+      return rows.join("");
+    }
+    async function bannerMarkup(ad) {
+      const img = await adImageUrl(ad);
+      return img ? `<a class="ad-item has-ad-image" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"></a>` : "";
+    }
+    async function renderBannerPlacement(name, target, fallback) {
+      const source = byPlacement(name).filter((ad) => ad.image).sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
+      const rows = await Promise.all((source.length ? source : fallback).map(bannerMarkup));
+      document.querySelector(target).innerHTML = rows.join("");
+    }
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[char]));
+    }
+    function renderTextAds() {
+      const source = byPlacement("detail-text")
+        .sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0))
+        .slice(0, 20);
+      document.querySelector("#detailTextAds").innerHTML = source.map((ad) => {
+        const text = escapeHtml(ad.title || ad.text || ad.desc || "文字广告");
+        return `<a class="text-ad" href="${escapeHtml(ad.link || "app.html")}">${text}</a>`;
+      }).join("");
+    }
+    async function bannerAds() {
+      await Promise.all([
+        renderBannerPlacement("detail-top", "#detailTopAds", []),
+        renderBannerPlacement("detail-banner", "#detailBannerAds", [])
+      ]);
+      renderTextAds();
+    }
+    async function renderDetailAds() {
+      await bannerAds();
+      document.querySelector("#stationAds").innerHTML = await fillAds("station-square", Number(config.station) || 10);
+      document.querySelector("#latestAds").innerHTML = await fillAds("latest-square", Number(config.latest) || 10);
+      document.querySelector("#friendAds").innerHTML = await fillAds("friend-square", Number(config.friend) || 10);
+    }
+    function guess() {
+      const shuffled = [...posts].sort(() => Math.random() - .5).slice(0, 4);
+      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="detail.html?id=${encodeURIComponent(post.id)}"><img src="${post.image}" alt="${post.title}"><h3>${post.title}</h3></a>`).join("");
+      window.lucide?.createIcons?.();
+    }
+    function renderComments() {
+      const comments = JSON.parse(localStorage.getItem(`postwave_comments_${current.id}`) || "[]");
+      const base = [{ name:"曾经小白菜", time:"3 小时前", text:"6" }, { name:"端庄蓝天", time:"5 天前", text:"签到" }, { name:"认真路人", time:"1 周前", text:"排版清楚，内容展示很完整。" }];
+      const rows = [...comments, ...base];
+      document.querySelector("#commentCount").textContent = `已有 ${51 + comments.length} 条评论`;
+      const commentLogo = siteConfig.commentLogoText || "51暗网";
+      document.querySelector("#commentList").innerHTML = rows.map((item) => `<div class="comment"><div class="comment-logo">${commentLogo}</div><div><strong>${item.name}</strong><small>${item.time}</small><p>${item.text}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("");
+    }
+
+    document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
+    document.querySelector("#crumbTitle").textContent = current.title;
+    document.querySelector("#title").textContent = current.title;
+    document.querySelector("#author").textContent = current.author;
+    document.querySelector("#date").textContent = current.date;
+    document.querySelector("#category").textContent = current.category;
+    function renderContentFlow() {
+      const flow = document.querySelector("#contentFlow");
+      const body = current.body || "";
+      if (!body.includes("[图片") && !body.includes("[视频")) {
+        flow.innerHTML = `<div class="body"></div>`;
+        flow.querySelector(".body").textContent = body;
+        return;
+      }
+      const parts = body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g);
+      flow.innerHTML = "";
+      parts.forEach((part) => {
+        if (!part) return;
+        if (part.startsWith("[图片")) {
+          const match = part.match(/\[图片(?::(\d+))?\]/);
+          const imgIndex = match && match[1] ? Number(match[1]) : 0;
+          const img = (current.bodyImages || [])[imgIndex] || "";
+          if (img) flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><img src="${img}" alt="${current.title}"></div>`);
+        } else if (part.startsWith("[视频")) {
+          const match = part.match(/\[视频(?::([^\]]+))?\]/);
+          const videoId = match && match[1] ? match[1] : "";
+          const mediaVideo = mediaLibrary.find((item) => item.id === videoId);
+          const ratio = mediaVideo?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
+          if (mediaVideo && mediaVideo.status === "ready") flow.insertAdjacentHTML("beforeend", `<div class="media video-media ${ratio}"><video data-media-video="${mediaVideo.id}" controls></video></div>`);
+        } else {
+          if (!part.trim()) return;
+          const div = document.createElement("div");
+          div.className = "body";
+          div.textContent = part.replace(/^\n+|\n+$/g, "");
+          flow.appendChild(div);
+        }
+      });
+      flow.querySelectorAll("[data-media-video]").forEach((videoEl) => {
+        const item = mediaLibrary.find((media) => media.id === videoEl.dataset.mediaVideo);
+        mediaUrl(item).then((url) => {
+          if (url) videoEl.src = url;
+          else videoEl.closest(".media")?.remove();
+        }).catch(() => videoEl.closest(".media")?.remove());
+      });
+    }
+    renderContentFlow();
+    function cleanTag(tag) { return String(tag).replace(/^#+/, ""); }
+    document.querySelector("#tags").innerHTML = current.tags.map((tag) => `<span class="tag">${cleanTag(tag)}</span>`).join("");
+    document.querySelector("#officialNotice").textContent = notice;
+    const prev = posts[(index - 1 + posts.length) % posts.length];
+    const next = posts[(index + 1) % posts.length];
+    document.querySelector("#prevPost").href = `detail.html?id=${encodeURIComponent(prev.id)}`;
+    document.querySelector("#prevPost span").textContent = prev.title;
+    document.querySelector("#nextPost").href = `detail.html?id=${encodeURIComponent(next.id)}`;
+    document.querySelector("#nextPost span").textContent = next.title;
+    renderDetailAds();
+    guess();
+    renderComments();
+    document.querySelector("#refreshGuess").addEventListener("click", guess);
+    document.querySelector("#themeToggle").addEventListener("click", () => {
+      const isLight = document.documentElement.classList.toggle("light");
+      localStorage.setItem("postwave_theme", isLight ? "light" : "dark");
+    });
+    function normalizeSearchValue(value) {
+      if (Array.isArray(value)) return value.join(" ");
+      return String(value || "");
+    }
+    function postSearchText(post) {
+      return [
+        post.title,
+        post.body,
+        post.keywords,
+        post.tags,
+        post.category,
+        post.categories
+      ].map(normalizeSearchValue).join(" ").replace(/#/g, "").toLowerCase();
+    }
+    document.querySelector("#searchToggle").addEventListener("click", () => {
+      document.querySelector("#searchPanel").classList.toggle("active");
+      document.querySelector("#searchInput").focus();
+    });
+    document.querySelector("#searchInput").addEventListener("input", (event) => {
+      const q = event.target.value.trim().replace(/#/g, "").toLowerCase();
+      const results = q ? posts.filter((post) => postSearchText(post).includes(q)).slice(0, 8) : [];
+      document.querySelector("#searchResults").innerHTML = results.map((post) => `<a href="detail.html?id=${encodeURIComponent(post.id)}">${post.title}</a>`).join("");
+    });
+    const authLayer = document.querySelector("#authLayer");
+    function updateCommentUserState() {
+      const user = localStorage.getItem("postwave_user") || "";
+      document.querySelector("#commentName").value = user ? user : "";
+      document.querySelector("#commentName").placeholder = user ? "已登录用户" : "请先登录/注册后评论";
+      document.querySelector("#commentName").readOnly = Boolean(user);
+      document.querySelector("#commentAuthNote").textContent = user ? `当前登录：${user}。评论提交后进入后台审核，通过后展示。` : "评论需要登录/注册，提交后由后台审核，通过后展示。";
+    }
+    document.querySelector("#authOpen").addEventListener("click", () => authLayer.classList.add("active"));
+    document.querySelector("#authClose").addEventListener("click", () => authLayer.classList.remove("active"));
+    authLayer.addEventListener("click", (event) => {
+      if (event.target === authLayer) authLayer.classList.remove("active");
+    });
+    document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        document.querySelector("#authTitle").textContent = button.dataset.authMode === "login" ? "登录" : "注册";
+      });
+    });
+    document.querySelector("#authForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      localStorage.setItem("postwave_user", document.querySelector("#authAccount").value || "guest");
+      authLayer.classList.remove("active");
+      document.querySelector("#authOpen").title = "已登录";
+      updateCommentUserState();
+    });
+    document.querySelector("#submitComment").addEventListener("click", () => {
+      const user = localStorage.getItem("postwave_user") || "";
+      if (!user) {
+        authLayer.classList.add("active");
+        document.querySelector("#commentAuthNote").textContent = "请先登录/注册，再提交评论。";
+        return;
+      }
+      const text = document.querySelector("#commentText").value.trim();
+      if (!text) return;
+      const pending = JSON.parse(localStorage.getItem("postwave_pending_comments") || "[]");
+      pending.unshift({ postId: current.id, postTitle: current.title, name: user, time:"刚刚", text, status:"pending" });
+      localStorage.setItem("postwave_pending_comments", JSON.stringify(pending));
+      document.querySelector("#commentText").value = "";
+      document.querySelector("#commentAuthNote").textContent = "评论已提交，等待后台审核通过后展示。";
+    });
+    window.addEventListener("storage", (event) => {
+      if (event.key === "postwave_ads") {
+        renderDetailAds();
+      }
+    });
+    updateCommentUserState();
+    refreshPostsFromApiForDetail();
+    window.lucide?.createIcons?.();
+  </script>
+</body>
+</html>

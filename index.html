@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PostWave</title>
+  <script>
+    try {
+      document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
+    } catch (error) {}
+  </script>
+  <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" onload="window.lucide?.createIcons?.()"></script>
+  <style>
+    :root {
+      --bg: #0b0f0f;
+      --bar: #101316;
+      --card: #15191d;
+      --line: #293038;
+      --text: #f5f7f4;
+      --muted: #a5adb5;
+      --green: #45f06a;
+      --green-soft: rgba(69, 240, 106, .14);
+      --radius: 8px;
+    }
+    :root.light {
+      --bg: #f6f8f5;
+      --bar: #fff;
+      --card: #fff;
+      --line: #dde6dc;
+      --text: #101611;
+      --muted: #657160;
+      --green: #24d65a;
+      --green-soft: rgba(36, 214, 90, .13);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow-x: hidden; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); letter-spacing: 0; }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    .topbar { position: sticky; top: 0; z-index: 10; border-bottom: 0; background: rgba(16, 19, 22, .72); backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 14px 40px rgba(0,0,0,.18); }
+    :root.light .topbar { background: rgba(255,255,255,.68); box-shadow: 0 1px 0 rgba(20,40,28,.08), 0 14px 36px rgba(30,70,45,.08); }
+    :root.light body { background: radial-gradient(circle at top, #ffffff 0, #f6f8f5 420px, #eef3ee 100%); }
+    .topbar-inner { width: 100%; min-height: 72px; margin: 0; padding: 8px 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; }
+    .brand { display: flex; align-items: center; white-space: nowrap; }
+    .brand-mark { width: 124px; height: 64px; display: grid; place-items: center; overflow: hidden; border: 0; border-radius: 0; color: var(--green); background: transparent; }
+    .brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    :root.light .brand-mark { color: #0ba83a; background: transparent; }
+    .mobile-nav-toggle { display: none; }
+    .nav { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 10px; overflow: visible; scrollbar-width: none; }
+    .nav::-webkit-scrollbar { display: none; }
+    .nav a, .nav-more { display: inline-flex; align-items: center; height: 42px; padding: 0 13px; border: 0; border-radius: var(--radius); color: #d8dedb; background: transparent; font-weight: 800; white-space: nowrap; cursor: pointer; }
+    :root.light .nav a, :root.light .nav-more { color: #3d463f; }
+    .nav a.active, .nav a:hover, .nav-more:hover, .nav-more.active { color: #07110a; background: var(--green); }
+    .more-wrap { position: relative; display: inline-flex; }
+    .more-menu { position: absolute; top: calc(100% + 10px); right: 0; z-index: 20; min-width: 150px; display: none; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: 0 18px 48px rgba(0,0,0,.28); }
+    .more-wrap.open .more-menu { display: grid; gap: 6px; }
+    .more-menu a { justify-content: flex-start; width: 100%; color: var(--text); }
+    .actions { display: flex; align-items: center; gap: 9px; }
+    .icon-btn { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); background: #12161a; cursor: pointer; }
+    :root.light .icon-btn { background: #fff; box-shadow: 0 1px 0 rgba(15,23,42,.04); }
+    .icon-btn:hover { color: var(--green); border-color: var(--green); background: var(--green-soft); }
+    .page { max-width: 1180px; margin: 0 auto; padding: 0 18px 40px; }
+    .hero { padding: 44px 16px 34px; text-align: center; }
+    :root.light .hero { border: 1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, #fff, #f8fbf7); box-shadow: 0 12px 35px rgba(30, 70, 45, .07); }
+    .page-title { margin: 0; font-size: clamp(44px, 7vw, 86px); line-height: 1; letter-spacing: 0; }
+    .page-subtitle { max-width: 720px; margin: 16px auto 0; color: var(--muted); font-size: 20px; font-weight: 800; line-height: 1.6; }
+    .search-panel { display: none; margin: 0 auto 18px; max-width: 680px; }
+    .search-panel.active { display: block; }
+    .search-box { height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); }
+    :root.light .search-box,
+    :root.light .intro,
+    :root.light .footer-icons a {
+      box-shadow: 0 10px 30px rgba(30, 70, 45, .08);
+    }
+    .search-box input { width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; }
+    .content-list { display: grid; gap: 14px; }
+    .post-row { position: relative; overflow: hidden; min-height: 280px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); isolation: isolate; contain: layout paint; }
+    .post-row img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: translateZ(0) scale(1.01); backface-visibility: hidden; transition: transform .2s ease; z-index: -2; }
+    .post-row::after { display: none; }
+    .post-row:hover { border-color: rgba(69, 240, 106, .72); }
+    .post-row:hover img { transform: translateZ(0) scale(1.045); }
+    .post-content { min-height: 280px; padding: 26px 36px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 10px; text-align: center; }
+    .post-title { margin: 0; color: #fff; font-size: clamp(18px, 2.15vw, 28px); line-height: 1.28; font-weight: 500; letter-spacing: 0; text-shadow: 0 2px 10px rgba(0,0,0,.72); }
+    .post-meta { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; color: rgba(255,255,255,.9); font-size: 14px; line-height: 1.5; font-weight: 500; text-shadow: 0 2px 8px rgba(0,0,0,.72); }
+    .feed-ad::after { display: none; }
+    .feed-ad .post-content { pointer-events: none; }
+    .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 22px 0 36px; }
+    .page-btn { min-width: 42px; height: 42px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--card); cursor: pointer; font-weight: 900; }
+    .page-btn.active, .page-btn:hover { color: #07110a; border-color: var(--green); background: var(--green); }
+    .page-jump { width: 82px; height: 42px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--card); outline: 0; font-weight: 900; }
+    .section-title { margin: 0 0 16px; font-size: 28px; letter-spacing: 0; }
+    .recommend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .recommend-card { position: relative; min-height: 190px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); isolation: isolate; }
+    .recommend-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+    .recommend-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(4,7,8,.78), rgba(4,7,8,.18)); z-index: -1; }
+    .recommend-card h3 { position: absolute; left: 18px; right: 18px; bottom: 16px; margin: 0; color: #fff; font-size: 24px; letter-spacing: 0; text-shadow: 0 3px 16px rgba(0,0,0,.7); }
+    .ad-stack { display: grid; gap: 12px; margin: 0 0 28px; }
+    .ad-item { min-height: 88px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid rgba(69,240,106,.45); border-radius: var(--radius); background: linear-gradient(90deg, rgba(17,28,20,.96), rgba(22,24,28,.92)); }
+    .ad-item.has-ad-image { width: 100%; min-height: 0; aspect-ratio: 1300 / 180; padding: 0; display: block; border-color: transparent; background: transparent; }
+    .ad-item.has-ad-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ad-item > * { position: relative; z-index: 1; }
+    .ad-copy { min-width: 0; }
+    :root.light .ad-item { border-color: #b9efc8; background: linear-gradient(90deg, #ffffff, #effaf2); box-shadow: 0 10px 30px rgba(30, 70, 45, .08); }
+    :root.light .ad-item.has-ad-image { border-color: transparent; background: transparent; box-shadow: none; }
+    .ad-item strong { display: block; margin-bottom: 4px; font-size: 20px; }
+    .ad-item span { color: var(--muted); font-weight: 700; }
+    .ad-image { display: block; }
+    .footer-icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0 0 26px; }
+    .footer-icons a { min-height: 78px; display: grid; place-items: center; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-weight: 900; }
+    .footer-icons a:hover { color: var(--green); border-color: var(--green); }
+    .intro { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-size: 15px; line-height: 1.8; font-weight: 700; }
+    .footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 24px 0; color: #d8dedb; font-weight: 800; }
+    :root.light .footer-links { color: #3d463f; }
+    .social-row { display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; }
+    .legal { border-top: 1px solid var(--line); padding-top: 18px; color: var(--muted); text-align: center; font-size: 12px; line-height: 1.8; }
+    .legal a { margin: 0 8px; color: var(--muted); }
+    .empty { display: none; padding: 40px; text-align: center; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); font-weight: 900; }
+    .modal-layer { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; padding: 18px; background: rgba(0,0,0,.58); backdrop-filter: blur(12px); }
+    .modal-layer.active { display: grid; }
+    .auth-modal { width: min(420px, 100%); border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: 0 24px 80px rgba(0,0,0,.35); }
+    .auth-head { display: flex; align-items: center; justify-content: space-between; padding: 18px; border-bottom: 1px solid var(--line); }
+    .auth-head h2 { margin: 0; font-size: 24px; letter-spacing: 0; }
+    .auth-body { display: grid; gap: 12px; padding: 18px; }
+    .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .auth-tab, .auth-submit { height: 42px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--bg); font-weight: 900; cursor: pointer; }
+    .auth-tab.active, .auth-submit { color: #07110a; border-color: var(--green); background: var(--green); }
+    .auth-body input { height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--bg); outline: 0; }
+    .auth-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    @media (max-width: 900px) {
+      .topbar { background: rgba(18, 22, 22, .94); overflow: visible; }
+      .topbar-inner { position: relative; height: auto; min-height: 84px; grid-template-columns: auto minmax(0, 1fr) auto; padding: 10px 14px 4px; gap: 8px; }
+      .mobile-nav-toggle { min-width: 92px; height: 42px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 999px; color: #e9efec; background: rgba(255,255,255,.12); font-weight: 900; cursor: pointer; }
+      .brand { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); justify-self: center; }
+      .brand-mark { width: clamp(112px, 34vw, 150px); height: 68px; }
+      .actions { justify-self: end; gap: 6px; }
+      .icon-btn { width: 42px; height: 42px; border-radius: 999px; background: rgba(255,255,255,.1); }
+      .mobile-hide { display: none; }
+      .nav { position: fixed; left: 0; top: 0; bottom: auto; z-index: 60; width: min(280px, 78vw); height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; gap: 8px; padding: 86px 16px 18px; overflow-y: auto; transform: translate3d(-105%, 0, 0); transition: transform .22s ease; border-right: 1px solid var(--line); background: rgba(15,19,21,.98); box-shadow: 18px 0 48px rgba(0,0,0,.32); }
+      .nav.open { transform: translateX(0); }
+      .nav a, .nav-more { width: 100%; justify-content: flex-start; min-height: 44px; }
+      .more-wrap { display: grid; }
+      .more-menu { position: static; display: grid; min-width: 0; margin-top: 6px; box-shadow: none; }
+      .search-panel { display: block; max-width: none; margin: 6px 14px 10px; }
+      .search-box { height: 56px; border-radius: 999px; padding: 0 16px 0 20px; background: rgba(255,255,255,.12); }
+      .page { padding: 0 14px 34px; }
+      .hero { padding: 26px 8px 22px; }
+      .page-subtitle { font-size: 16px; }
+      .post-row, .post-content { min-height: 230px; }
+      .post-content { padding: 18px; }
+      .recommend-grid, .footer-icons { grid-template-columns: 1fr; }
+      .ad-item { align-items: flex-start; flex-direction: column; }
+      .ad-image { width: 100%; height: 110px; flex-basis: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <button class="mobile-nav-toggle" id="mobileNavToggle" type="button" aria-label="打开导航">
+        <i data-lucide="menu"></i><span>导航</span>
+      </button>
+      <a class="brand" href="index.html">
+        <span class="brand-mark" id="brandMark"><i data-lucide="play"></i></span>
+      </a>
+      <nav class="nav" id="mainNav" aria-label="主导航"></nav>
+      <div class="actions">
+        <button class="icon-btn mobile-hide" id="searchToggle" aria-label="搜索" title="搜索"><i data-lucide="search"></i></button>
+        <a class="icon-btn mobile-hide" href="app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
+        <a class="icon-btn mobile-hide" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
+        <a class="icon-btn" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><i data-lucide="send"></i></a>
+        <a class="icon-btn" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X">X</a>
+        <button class="icon-btn mobile-hide" id="themeToggle" aria-label="日间夜间模式" title="日间夜间模式"><i data-lucide="sun-moon"></i></button>
+        <button class="icon-btn" id="authOpen" aria-label="登录注册" title="登录/注册"><i data-lucide="user-round"></i></button>
+      </div>
+    </div>
+    <section class="search-panel" id="searchPanel">
+      <label class="search-box">
+        <i data-lucide="search"></i>
+        <input id="searchInput" placeholder="输入关键词搜索标题、正文、标签">
+      </label>
+    </section>
+  </header>
+
+  <main class="page">
+    <section class="hero">
+      <h1 class="page-title" id="pageTitle">首页</h1>
+      <p class="page-subtitle" id="pageSubtitle">精选图文与视频内容，按发布时间聚合展示。</p>
+    </section>
+
+    <section class="content-list" id="postList" aria-label="内容列表"></section>
+    <div class="empty" id="emptyState">没有找到匹配内容</div>
+    <nav class="pager" id="pager" aria-label="分页"></nav>
+
+    <section id="hot">
+      <h2 class="section-title">热门推荐</h2>
+      <div class="recommend-grid" id="recommendGrid"></div>
+    </section>
+
+    <section class="ad-stack" id="adStack" aria-label="广告位"></section>
+
+    <section class="footer-icons">
+      <a href="index.html"><i data-lucide="home"></i><span>首页</span></a>
+      <a href="app.html"><i data-lucide="smartphone"></i><span>App</span></a>
+      <a href="qq.html" target="_blank" rel="noreferrer"><i data-lucide="message-circle"></i><span>Q群</span></a>
+      <a href="#site-map"><i data-lucide="map"></i><span>网站导航</span></a>
+    </section>
+
+    <section class="intro" id="site-map">
+      PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。
+    </section>
+
+    <nav class="footer-links">
+      <a href="#archive">往期回顾</a>
+      <a href="index.html">回家的路</a>
+      <a href="admin-login.html">我要投稿</a>
+      <a href="mailto:business@example.com">商务合作</a>
+      <a href="mailto:join@example.com">加入我们</a>
+      <a href="#about">关于我们</a>
+    </nav>
+
+    <div class="social-row">
+      <a class="icon-btn" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X">X</a>
+      <a class="icon-btn" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram"><i data-lucide="send"></i></a>
+    </div>
+
+    <footer class="legal">
+      <div>
+        <a id="terms" href="#terms">用户协议</a>
+        <a id="privacy" href="#privacy">隐私政策</a>
+        <a id="dmca" href="#dmca">DMCA</a>
+        <a id="compliance" href="#compliance">2257合规声明</a>
+      </div>
+      <div>Copyright © 2026 PostWave. All rights reserved.</div>
+    </footer>
+  </main>
+
+  <div class="modal-layer" id="authLayer" role="dialog" aria-modal="true" aria-label="登录注册">
+    <div class="auth-modal">
+      <div class="auth-head">
+        <h2 id="authTitle">登录</h2>
+        <button class="icon-btn" id="authClose" aria-label="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <form class="auth-body" id="authForm">
+        <div class="auth-tabs">
+          <button class="auth-tab active" type="button" data-auth-mode="login">登录</button>
+          <button class="auth-tab" type="button" data-auth-mode="register">注册</button>
+        </div>
+        <input id="authAccount" placeholder="邮箱或用户名" autocomplete="username">
+        <input id="authPassword" type="password" placeholder="密码" autocomplete="current-password">
+        <button class="auth-submit">继续</button>
+        <p class="auth-note">登录注册只是轻量入口。未登录用户也可以完整浏览所有内容。</p>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const defaultSiteConfig = {
+      siteName: "PostWave",
+      tabs: [
+        { name: "首页", subtitle: "精选图文与视频内容，按发布时间聚合展示。" },
+        { name: "视频", subtitle: "视频内容列表，适合接入媒体 CDN 和在线播放。" },
+        { name: "图文", subtitle: "图片、长文和专题内容的展示入口。" },
+        { name: "影评", subtitle: "影评、片单和内容推荐的聚合页面。" },
+        { name: "旅行", subtitle: "旅行路线、风景图集和短视频合集。" },
+        { name: "科技", subtitle: "科技资讯、工具教程和产品观察。" },
+        { name: "专题", subtitle: "按主题整理的合集页面。" }
+      ]
+    };
+    const siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || defaultSiteConfig;
+    document.title = siteConfig.siteName || "PostWave";
+    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${siteConfig.logoImage}" alt="${siteConfig.siteName || "Logo"}">`;
+    document.querySelector("#site-map").textContent = `${siteConfig.siteName || "PostWave"} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
+    document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteConfig.siteName || "PostWave"}. All rights reserved.`;
+    const images = [
+      "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1483058712412-4245e9b90334?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=1600&q=82",
+      "https://images.unsplash.com/photo-1526378722484-bd91ca387e72?auto=format&fit=crop&w=1600&q=82"
+    ];
+    const titles = [
+      "城市夜景延时：从街口到天际线的灯光变化",
+      "周末山谷路线：十张图看完轻徒步风景",
+      "内容展示站的后台字段：标题、媒体、标签和审核状态",
+      "小型现场演出记录：镜头、灯光和声音的组合",
+      "工作室布景参考：适合内容站封面图的构图方式",
+      "如何规划帖子流：分类筛选、热榜、推荐位和举报入口",
+      "建筑外立面灵感：几何、光影和城市肌理",
+      "从 MVP 到社区投稿：审核队列和用户权限怎么加",
+      "午后城市散步：街区、咖啡和橱窗",
+      "移动端内容流设计：一屏只处理一个重点",
+      "视频封面怎么选：主体、留白和标题可读性",
+      "专题页规划：把分散内容整理成合集",
+      "旅行短片剪辑：节奏、转场和音乐",
+      "后台广告位控制：新增、排序和下架",
+      "CDN 分发思路：主站和媒体文件分开走",
+      "图文内容排版：让封面承担第一眼信息",
+      "社区投稿前应该先准备哪些审核规则",
+      "科技工具清单：内容团队的日常效率组合",
+      "高清图集上传：尺寸、压缩和存储建议",
+      "网站导航页应该放哪些入口",
+      "首页分页体验：少即是多的内容节奏",
+      "影评栏目结构：标题、封面和摘要",
+      "长条广告位：后台可控的商业入口",
+      "作者主页设计：头像、作品和标签",
+      "站点页脚：协议、版权和合规声明",
+      "内容站第一版上线检查清单",
+      "备用入口和状态页的设计方式",
+      "移动端底部入口如何保持清爽",
+      "发布后台字段设计：标题、封面、正文和热度",
+      "媒体列表如何管理图片和视频"
+    ];
+    const categoryNames = (siteConfig.tabs || defaultSiteConfig.tabs).filter((tab) => tab.name !== "首页").map((tab) => tab.name);
+    const seedPosts = titles.map((title, index) => ({
+      id: `seed-${index}`,
+      title,
+      image: images[index % images.length],
+      author: "瓜哥",
+      date: "2026 年 05 月 13 日",
+      category: categoryNames[index % Math.max(1, categoryNames.length)] || "视频",
+      categories: [categoryNames[index % Math.max(1, categoryNames.length)] || "视频"],
+      tags: ["今日推荐", "内容展示", "精选"],
+      keywords: ["内容", "展示", "推荐"],
+      body: "这里会显示帖子正文、图片、视频、标签、发布时间、相关推荐和举报入口。"
+    }));
+    function mapAdminPosts(source) {
+      return (Array.isArray(source) ? source : []).map((post, index) => ({
+        id: `admin-${index}`,
+        title: post.title || "未命名帖子",
+        image: post.cover || images[index % images.length],
+        author: post.author || "alun",
+        date: post.date || "2026 年 05 月 13 日",
+        category: post.category || (post.categories || [])[0] || "视频",
+        categories: post.categories || (post.category ? String(post.category).split("、") : []),
+        tags: post.tags || [],
+        keywords: post.keywords || [],
+        body: post.body || "这篇内容来自后台发布系统。"
+      }));
+    }
+    const localAdminPostSource = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
+    let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
+    let adminPosts = mapAdminPosts(adminPostSource);
+    let posts = [...adminPosts, ...seedPosts];
+    const defaultAds = [
+      { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
+      { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "home-banner" }
+    ];
+    function normalizeAdPlacement(ad) {
+      const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
+      const key = raw.toLowerCase();
+      const title = String(ad.title || "");
+      const aliases = {
+        "home-banner": ["home-banner", "home", "首页广告"],
+        "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
+        "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
+        "detail-banner": ["detail-banner", "detail-inner", "post-inner", "post-banner", "帖子内广告", "帖子内容广告", "正文后广告"],
+        "station-square": ["station-square", "station", "站长推荐", "站长推荐方形广告"],
+        "latest-square": ["latest-square", "latest", "最新上架", "最新上架方形广告"],
+        "friend-square": ["friend-square", "friend", "瓜友推荐", "瓜友推荐广告", "瓜友推荐方形广告"]
+      };
+      for (const [placement, names] of Object.entries(aliases)) {
+        if (names.some((name) => raw === name || key === name.toLowerCase())) return placement;
+      }
+      if (raw === "square" || raw === "方形广告") {
+        if (/最新/.test(title)) return "latest-square";
+        if (/瓜友|友/.test(title)) return "friend-square";
+        return "station-square";
+      }
+      return raw || "home-banner";
+    }
+    function normalizeAd(ad) {
+      const possibleUrl = String(ad.url || "");
+      const urlIsImage = /^(data:image|blob:)|\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(possibleUrl);
+      return {
+        ...ad,
+        title: ad.title || "",
+        desc: ad.desc || "",
+        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+        image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        imageKey: ad.imageKey || ad.assetKey || "",
+        slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
+        placement: normalizeAdPlacement(ad)
+      };
+    }
+    function loadAds() {
+      const stored = JSON.parse(localStorage.getItem("postwave_ads") || "null");
+      return Array.isArray(stored) && stored.length ? stored.map(normalizeAd) : defaultAds.map(normalizeAd);
+    }
+    async function adImageUrl(ad) {
+      if (!ad) return "";
+      if (ad.image) return ad.image;
+      return "";
+    }
+    let currentPage = 1;
+    let activeCategory = "首页";
+    const perPage = 26;
+    const postList = document.querySelector("#postList");
+    const pager = document.querySelector("#pager");
+    const emptyState = document.querySelector("#emptyState");
+    const searchInput = document.querySelector("#searchInput");
+
+    function renderNav() {
+      const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
+      const visibleLimit = 14;
+      const visibleTabs = tabs.slice(0, visibleLimit);
+      const moreTabs = tabs.slice(visibleLimit);
+      const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
+      const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.name === hashTab));
+      document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `
+        <a class="${index === activeIndex ? "active" : ""}" href="#" data-title="${tab.name}" data-subtitle="${tab.subtitle || `${tab.name}内容聚合展示。`}">${tab.name}</a>
+      `).join("") + (moreTabs.length ? `
+        <span class="more-wrap" id="moreWrap">
+          <button class="nav-more ${activeIndex >= visibleLimit ? "active" : ""}" type="button" id="moreNav">更多</button>
+          <span class="more-menu">
+            ${moreTabs.map((tab, index) => `<a class="${index + visibleLimit === activeIndex ? "active" : ""}" href="#" data-title="${tab.name}" data-subtitle="${tab.subtitle || `${tab.name}内容聚合展示。`}">${tab.name}</a>`).join("")}
+          </span>
+        </span>
+      ` : "");
+      const activeTab = tabs[activeIndex] || tabs[0] || defaultSiteConfig.tabs[0];
+      activeCategory = activeTab.name;
+      document.querySelector("#pageTitle").textContent = activeTab.name;
+      document.querySelector("#pageSubtitle").textContent = activeTab.subtitle || `${activeTab.name}内容聚合展示。`;
+    }
+
+    function normalizeSearchValue(value) {
+      if (Array.isArray(value)) return value.join(" ");
+      return String(value || "");
+    }
+
+    function postSearchText(post) {
+      return [
+        post.title,
+        post.body,
+        post.keywords,
+        post.tags
+      ].map(normalizeSearchValue).join(" ").replace(/#/g, "").toLowerCase();
+    }
+
+    function filteredPosts() {
+      const terms = searchInput.value.trim().replace(/#/g, "").toLowerCase().split(/\s+/).filter(Boolean);
+      return posts.filter((post) => {
+        const categories = post.categories && post.categories.length ? post.categories : [post.category];
+        const matchCategory = activeCategory === "首页" || categories.includes(activeCategory);
+        if (!terms.length) return matchCategory;
+        const text = postSearchText(post);
+        return terms.every((term) => text.includes(term));
+      });
+    }
+
+    async function feedAdMarkup(ad) {
+      const img = await adImageUrl(ad);
+      if (!img) return "";
+      return `<a class="post-row feed-ad" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"><div class="post-content" aria-hidden="true"></div></a>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+    }
+
+    async function fetchApiPosts() {
+      try {
+        const response = await fetch("/api/posts", { cache: "no-store" });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data.posts) ? data.posts : [];
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    async function syncLocalPostsToApi(source) {
+      try {
+        await fetch("/api/posts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ posts: source })
+        });
+      } catch (_error) {}
+    }
+
+    async function loadPostsFromApi() {
+      const apiPosts = await fetchApiPosts();
+      if (!apiPosts) return;
+      if (!apiPosts.length && adminPostSource.length) {
+        if (localStorage.getItem("postwave_posts_api_imported") !== "1") {
+          syncLocalPostsToApi(adminPostSource);
+          localStorage.setItem("postwave_posts_api_imported", "1");
+        }
+        return;
+      }
+      if (!apiPosts.length) return;
+      const localText = JSON.stringify(adminPostSource);
+      const apiText = JSON.stringify(apiPosts);
+      if (localText === apiText) return;
+      adminPostSource = apiPosts;
+      adminPosts = mapAdminPosts(adminPostSource);
+      posts = [...adminPosts, ...seedPosts];
+      localStorage.setItem("postwave_posts", apiText);
+      localStorage.setItem("postwave_posts_api_imported", "1");
+      currentPage = 1;
+      renderPosts();
+      renderRecommend();
+    }
+
+    async function renderPosts() {
+      const items = filteredPosts();
+      const totalPages = Math.max(1, Math.ceil(items.length / perPage));
+      currentPage = Math.min(currentPage, totalPages);
+      const start = (currentPage - 1) * perPage;
+      const pageItems = items.slice(start, start + perPage);
+      const feedAds = activeCategory === "首页" ? loadAds().filter((ad) => ad.placement === "home-feed" && ad.image).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
+      const rows = pageItems.map((post) => `
+        <a class="post-row" href="detail.html?id=${encodeURIComponent(post.id)}">
+          <img src="${post.image}" alt="${escapeHtml(post.title)}">
+          <div class="post-content">
+            <h2 class="post-title">${escapeHtml(post.title)}</h2>
+            <p class="post-meta"><span>${escapeHtml(post.author || "alun")}</span><span>·</span><span>${escapeHtml(post.date || "")}</span><span>·</span><span>${escapeHtml((post.categories && post.categories.length ? post.categories.join("、") : post.category) || "内容")}</span></p>
+          </div>
+        </a>
+      `);
+      feedAds.forEach((ad, order) => {
+        const slot = Math.max(1, Math.min(rows.length + 1, Number(ad.slot) || order + 1));
+        rows.splice(slot - 1, 0, ad);
+      });
+      for (let i = 0; i < rows.length; i += 1) {
+        if (typeof rows[i] !== "string") rows[i] = await feedAdMarkup(rows[i]);
+      }
+      postList.innerHTML = rows.join("");
+      emptyState.style.display = pageItems.length ? "none" : "block";
+      pager.innerHTML = `
+        <button class="page-btn" data-prev ${currentPage === 1 ? "disabled" : ""}>上一页</button>
+        ${Array.from({ length: totalPages }, (_, i) => `<button class="page-btn ${i + 1 === currentPage ? "active" : ""}" data-page="${i + 1}">${i + 1}</button>`).join("")}
+        <button class="page-btn" data-next ${currentPage === totalPages ? "disabled" : ""}>下一页</button>
+        <input class="page-jump" id="pageJumpInput" type="number" min="1" max="${totalPages}" value="${currentPage}" aria-label="跳转页码">
+        <button class="page-btn" data-jump>跳转</button>
+      `;
+      window.lucide?.createIcons?.();
+    }
+
+    function renderRecommend() {
+      document.querySelector("#recommendGrid").innerHTML = posts.slice(0, 4).map((post) => `
+        <a class="recommend-card" href="detail.html?id=${encodeURIComponent(post.id)}">
+          <img src="${post.image}" alt="${post.title}">
+          <h3>${post.title}</h3>
+        </a>
+      `).join("");
+    }
+
+    async function renderAds() {
+      const ads = loadAds();
+      const homeAds = ads.filter((ad) => (!ad.placement || ad.placement === "home-banner") && ad.image);
+      const rows = await Promise.all(homeAds.map(async (ad) => {
+        const img = await adImageUrl(ad);
+        return img ? `<a class="ad-item has-ad-image" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"></a>` : "";
+      }));
+      document.querySelector("#adStack").innerHTML = rows.join("");
+    }
+
+    document.querySelector("#searchToggle").addEventListener("click", () => {
+      document.querySelector("#searchPanel").classList.toggle("active");
+      searchInput.focus();
+    });
+    document.querySelector("#mobileNavToggle").addEventListener("click", () => {
+      document.querySelector("#mainNav").classList.toggle("open");
+    });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("#mainNav") && !event.target.closest("#mobileNavToggle")) {
+        document.querySelector("#mainNav").classList.remove("open");
+      }
+    });
+    searchInput.addEventListener("input", () => { currentPage = 1; renderPosts(); });
+    pager.addEventListener("click", (event) => {
+      if (event.target.closest("[data-prev]")) currentPage = Math.max(1, currentPage - 1);
+      if (event.target.closest("[data-next]")) currentPage += 1;
+      if (event.target.closest("[data-jump]")) {
+        const value = Number(document.querySelector("#pageJumpInput")?.value || currentPage);
+        currentPage = Math.max(1, value);
+      }
+      const button = event.target.closest("[data-page]");
+      if (button) currentPage = Number(button.dataset.page);
+      if (!button && !event.target.closest("[data-prev]") && !event.target.closest("[data-next]") && !event.target.closest("[data-jump]")) return;
+      renderPosts();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    document.querySelector("#themeToggle").addEventListener("click", () => {
+      const isLight = document.documentElement.classList.toggle("light");
+      localStorage.setItem("postwave_theme", isLight ? "light" : "dark");
+    });
+    const authLayer = document.querySelector("#authLayer");
+    document.querySelector("#authOpen").addEventListener("click", () => authLayer.classList.add("active"));
+    document.querySelector("#authClose").addEventListener("click", () => authLayer.classList.remove("active"));
+    authLayer.addEventListener("click", (event) => {
+      if (event.target === authLayer) authLayer.classList.remove("active");
+    });
+    document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.remove("active"));
+        button.classList.add("active");
+        document.querySelector("#authTitle").textContent = button.dataset.authMode === "login" ? "登录" : "注册";
+      });
+    });
+    document.querySelector("#authForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      localStorage.setItem("postwave_user", document.querySelector("#authAccount").value || "guest");
+      authLayer.classList.remove("active");
+      document.querySelector("#authOpen").title = "已登录";
+    });
+    document.querySelector("#mainNav").addEventListener("click", (event) => {
+      const moreButton = event.target.closest("#moreNav");
+      if (moreButton) {
+        event.preventDefault();
+        document.querySelector("#moreWrap")?.classList.toggle("open");
+        return;
+      }
+      const link = event.target.closest("a");
+      if (link) {
+        event.preventDefault();
+        document.querySelectorAll(".nav a, .nav-more").forEach((item) => item.classList.remove("active"));
+        if (link.closest(".more-menu")) document.querySelector("#moreNav")?.classList.add("active");
+        document.querySelector("#moreWrap")?.classList.remove("open");
+        link.classList.add("active");
+        activeCategory = link.dataset.title;
+        history.replaceState(null, "", `#${encodeURIComponent(activeCategory)}`);
+        currentPage = 1;
+        document.querySelector("#pageTitle").textContent = link.dataset.title;
+        document.querySelector("#pageSubtitle").textContent = link.dataset.subtitle;
+        document.querySelector("#mainNav").classList.remove("open");
+        renderPosts();
+      }
+    });
+    window.addEventListener("storage", (event) => {
+      if (event.key === "postwave_ads") {
+        renderPosts();
+        renderAds();
+      }
+    });
+
+    renderNav();
+    renderPosts();
+    renderRecommend();
+    renderAds();
+    loadPostsFromApi();
+    window.lucide?.createIcons?.();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1428 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PublishHub 后台</title>
+  <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" onload="window.lucide?.createIcons?.()"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #0f172a; background: #fff; letter-spacing: 0; }
+    body.admin-dark { color: #e5e7eb; background: #0f172a; }
+    button, input, select, textarea { font: inherit; }
+    a { color: inherit; text-decoration: none; }
+    .app { min-height: 100vh; display: grid; grid-template-columns: 228px 1fr; }
+    .sidebar { border-right: 1px solid #dbe4ef; padding: 18px 10px; display: flex; flex-direction: column; gap: 24px; background: #fff; }
+    body.admin-dark .sidebar,
+    body.admin-dark .main,
+    body.admin-dark .top,
+    body.admin-dark .tabbar,
+    body.admin-dark .page-title { background: #0f172a; border-color: #253044; }
+    body.admin-dark .side-link.active,
+    body.admin-dark .side-link:hover,
+    body.admin-dark .tab-label { color: #fff; background: #1e293b; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; font-weight: 900; }
+    .brand-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: #18181b; }
+    .brand small { display: block; font-weight: 700; }
+    .group-title { margin: 14px 10px 8px; color: #64748b; font-size: 13px; font-weight: 900; }
+    .side-link { height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 8px; font-weight: 900; }
+    .side-link.active, .side-link:hover { background: #eef3f8; }
+    .user { margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 10px; }
+    .avatar { width: 36px; height: 36px; border-radius: 999px; background: linear-gradient(135deg, #ffd1e1, #e7f3ff); }
+    .main { min-width: 0; }
+    .top { height: 66px; border-bottom: 1px solid #dbe4ef; display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 14px; }
+    .top-left { display: flex; align-items: center; gap: 18px; }
+    .top-icon { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #dbe4ef; border-radius: 8px; background: #fff; cursor: pointer; }
+    .admin-search { width: 260px; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid #dbe4ef; border-radius: 8px; color: #64748b; }
+    .admin-search input { width: 100%; border: 0; outline: 0; }
+    .top-actions { display: flex; align-items: center; gap: 22px; }
+    .tabbar { height: 66px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #dbe4ef; padding: 0 24px 0 14px; }
+    .tab-label { padding: 12px 18px; border-radius: 8px; background: #eef3f8; font-size: 18px; font-weight: 900; }
+    .page-title { height: 68px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 32px; border-bottom: 1px solid #eef2f7; }
+    h1 { margin: 0; font-size: 32px; letter-spacing: 0; }
+    .btn { height: 42px; padding: 0 18px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
+    .btn:hover, .top-icon:hover, .toolbar button:hover { border-color: #111827; background: #eef3f8; }
+    .btn.dark { color: #fff; border-color: #18181b; background: #18181b; }
+    .workspace { padding: 18px 24px; display: flex; gap: 14px; align-items: flex-start; width: 100%; overflow: hidden; }
+    .left-form { flex: 0 0 420px; width: 420px; min-width: 0; display: grid; gap: 10px; }
+    .field { width: 100%; min-height: 44px; border: 1px solid #cbd5e1; border-radius: 7px; padding: 0 14px; outline: 0; background: #fff; }
+    .category-picker { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
+    .category-picker label { min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #e2e8f0; border-radius: 7px; color: #334155; font-weight: 900; cursor: pointer; }
+    .category-picker label:has(input:checked) { color: #065f46; border-color: #34d399; background: #d1fae5; }
+    .category-picker input { width: 16px; height: 16px; accent-color: #10b981; }
+    .cover { position: relative; height: 170px; display: grid; place-items: center; color: #64748b; border: 1px dashed #94a3b8; border-radius: 7px; background: #fff; cursor: pointer; text-align: center; padding: 12px; overflow: hidden; }
+    .cover.has-image { padding: 0; border-style: solid; }
+    .cover.has-image #coverText { width: 100%; height: 100%; display: block; }
+    .cover-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cover-caption { position: absolute; inset: auto 10px 10px; padding: 6px 8px; border-radius: 6px; color: #fff; background: rgba(15,23,42,.74); font-size: 12px; font-weight: 900; }
+    .time-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .editor { flex: 1 1 auto; min-width: 0; width: calc(100% - 434px); position: relative; z-index: 0; border: 1px solid #dbe4ef; border-radius: 8px; overflow: hidden; background: #fff; box-shadow: 0 1px 4px rgba(15,23,42,.08); }
+    .toolbar { min-height: 54px; display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #dbe4ef; color: #0f172a; overflow-x: auto; scrollbar-width: none; }
+    .toolbar::-webkit-scrollbar { display: none; }
+    .toolbar button, .toolbar select { min-width: 34px; height: 32px; border: 1px solid transparent; border-radius: 6px; background: transparent; font-weight: 900; cursor: pointer; }
+    .editor textarea { width: 100%; min-height: 300px; padding: 34px 44px; border: 0; outline: 0; resize: vertical; font-size: 18px; display: block; }
+    .inserted-preview { display: grid; gap: 10px; padding: 14px 16px; border-top: 1px solid #dbe4ef; background: #f8fafc; }
+    .inserted-preview strong { color: #334155; }
+    .inserted-media-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 10px; }
+    .preview-card { min-height: 104px; display: grid; gap: 6px; align-content: start; padding: 8px; border: 1px solid #dbe4ef; border-radius: 7px; background: #fff; color: #475569; font-size: 12px; font-weight: 800; }
+    .preview-card img, .preview-card video { width: 100%; height: 86px; border-radius: 6px; object-fit: contain; background: #0f172a; }
+    .preview-card.empty { place-items: center; color: #94a3b8; }
+    .editor-foot { min-height: 72px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid #dbe4ef; }
+    .switch-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; font-weight: 900; }
+    .switch { display: inline-flex; align-items: center; gap: 8px; }
+    .hidden { display: none; }
+    .table, .settings, .ads { margin: 18px 24px; border: 1px solid #dbe4ef; border-radius: 8px; overflow: hidden; }
+    .table-row { display: grid; grid-template-columns: 1fr 120px 140px 150px; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #eef2f7; align-items: center; }
+    .table-row.posts-row { grid-template-columns: 1fr 110px 110px 150px 260px; }
+    .table-row.header { color: #64748b; background: #f8fafc; font-weight: 900; }
+    .settings { padding: 18px; display: grid; gap: 12px; max-width: 620px; }
+    .ads { padding: 18px; display: grid; gap: 14px; max-width: 980px; }
+    .ad-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ad-tab { height: 40px; padding: 0 16px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
+    .ad-tab.active { color: #fff; border-color: #18181b; background: #18181b; }
+    .ad-editor { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+    .ad-upload-row { display: grid; grid-template-columns: 1fr 160px 220px 160px; gap: 10px; }
+    .ad-config-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .ad-list { display: grid; gap: 8px; }
+    .ad-admin-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 12px; border: 1px solid #dbe4ef; border-radius: 7px; }
+    .ad-preview { width: 150px; height: 58px; object-fit: contain; border: 1px solid #dbe4ef; border-radius: 6px; margin-top: 8px; background: #0f172a; }
+    .ad-upload-preview { display: none; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; padding: 10px; border: 1px solid #dbe4ef; border-radius: 7px; background: #f8fafc; color: #64748b; font-weight: 800; }
+    .ad-upload-preview.active { display: grid; }
+    .ad-upload-preview img { width: 180px; height: 78px; object-fit: contain; border-radius: 6px; background: #0f172a; }
+    .feed-order-panel { display: none; gap: 10px; padding: 14px; border: 1px solid #dbe4ef; border-radius: 8px; background: #f8fafc; }
+    .feed-order-panel.active { display: grid; }
+    .feed-order-panel h3 { margin: 0; font-size: 18px; letter-spacing: 0; }
+    .feed-order-note { margin: 0; color: #64748b; font-weight: 800; line-height: 1.6; }
+    .feed-order-list { display: grid; gap: 8px; }
+    .feed-order-item { display: grid; grid-template-columns: 56px 1fr auto; gap: 10px; align-items: center; padding: 10px; border: 1px solid #dbe4ef; border-radius: 7px; background: #fff; }
+    .feed-order-index { color: #64748b; font-weight: 900; }
+    .feed-order-title strong { display: block; }
+    .feed-order-title small { color: #64748b; font-weight: 800; }
+    .tag-preview { min-height: 38px; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; border: 1px solid #dbe4ef; border-radius: 7px; background: #f8fafc; }
+    .tag-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 999px; color: #065f46; background: #d1fae5; font-size: 12px; font-weight: 900; }
+    .site-tabs-editor { display: grid; gap: 8px; }
+    .site-tab-row { display: grid; grid-template-columns: 130px 1fr auto; gap: 8px; align-items: center; }
+    .author-editor { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 10px; }
+    .logo-config { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: center; }
+    .logo-preview { width: 96px; height: 96px; display: grid; place-items: center; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 10px; color: #64748b; background: #f8fafc; font-weight: 900; }
+    .logo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .video-aspect-note { min-height: 44px; display: flex; align-items: center; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 7px; color: #64748b; background: #f8fafc; font-weight: 900; }
+    .comment-text { color: #475569; line-height: 1.6; }
+    .progress { height: 10px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+    .progress span { display: block; width: 0%; height: 100%; border-radius: inherit; background: #111827; transition: width .2s ease; }
+    .status-ready { color: #047857; font-weight: 900; }
+    .status-failed { color: #b91c1c; font-weight: 900; }
+    .modal-layer { position: fixed; inset: 0; z-index: 30; display: none; place-items: center; padding: 20px; background: rgba(15, 23, 42, .45); backdrop-filter: blur(8px); }
+    .modal-layer.active { display: grid; }
+    .picker { width: min(720px, 100%); max-height: 80vh; overflow: auto; padding: 18px; border: 1px solid #dbe4ef; border-radius: 10px; background: #fff; box-shadow: 0 24px 80px rgba(15,23,42,.25); }
+    .picker-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .picker-head h2 { margin: 0; }
+    .video-choice { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid #dbe4ef; border-radius: 8px; margin-top: 8px; }
+    .mini-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .mini-actions .btn { height: 34px; padding: 0 10px; }
+    .toast { position: fixed; right: 18px; bottom: 18px; z-index: 20; min-width: 220px; padding: 12px 14px; border-radius: 8px; color: #fff; background: #111827; box-shadow: 0 14px 40px rgba(15,23,42,.25); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .18s ease; font-weight: 900; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .sidebar-collapsed .app { grid-template-columns: 0 1fr; }
+    .sidebar-collapsed .sidebar { display: none; }
+    @media (max-width: 1280px) { .left-form { flex-basis: 360px; width: 360px; } .editor { width: calc(100% - 374px); } }
+    @media (max-width: 1100px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .workspace { flex-direction: column; overflow: visible; } .left-form, .editor { width: 100%; flex-basis: auto; } .author-editor { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="index.html"><span class="brand-icon"><i data-lucide="command"></i></span><span>PublishHub<small>Ver 1.0.1</small></span></a>
+      <nav>
+        <div class="group-title">常规</div>
+        <a class="side-link active" href="#" data-view="publish"><i data-lucide="route"></i>帖子发布</a>
+        <a class="side-link" href="#" data-view="posts"><i data-lucide="files"></i>帖子列表</a>
+        <a class="side-link" href="#" data-view="drafts"><i data-lucide="pencil"></i>草稿箱</a>
+        <div class="group-title">页面</div>
+        <a class="side-link" href="#" data-view="videos"><i data-lucide="upload-cloud"></i>视频上传</a>
+        <a class="side-link" href="#" data-view="media"><i data-lucide="clipboard-list"></i>媒体列表</a>
+        <a class="side-link" href="#" data-view="recommend"><i data-lucide="flame"></i>推荐管理</a>
+        <div class="group-title">设置</div>
+        <a class="side-link" href="#" data-view="appearance"><i data-lucide="palette"></i>外观</a>
+        <a class="side-link" href="#" data-view="ads"><i data-lucide="badge-percent"></i>广告位</a>
+        <a class="side-link" href="#" data-view="notice"><i data-lucide="megaphone"></i>官方公告</a>
+        <a class="side-link" href="#" data-view="footer"><i data-lucide="layout-list"></i>导航页脚</a>
+        <a class="side-link" href="#" data-view="comments"><i data-lucide="message-square-check"></i>评论审核</a>
+        <a class="side-link" href="#" data-view="authors"><i data-lucide="user-pen"></i>作者管理</a>
+        <a class="side-link" href="#" data-view="users"><i data-lucide="users"></i>用户举报</a>
+      </nav>
+      <div class="user"><span class="avatar"></span><span><strong id="currentAdminName">alun</strong><br><small>作者账号</small></span><i data-lucide="chevrons-up-down"></i></div>
+    </aside>
+
+    <main class="main">
+      <header class="top">
+        <div class="top-left">
+          <button class="top-icon" id="sidebarToggle" title="折叠侧边栏"><i data-lucide="panel-left"></i></button>
+          <label class="admin-search"><i data-lucide="search"></i><input id="adminSearch" placeholder="搜索..."><span>⌘ K</span></label>
+        </div>
+        <div class="top-actions">
+          <a href="index.html" title="前台预览"><i data-lucide="image-up"></i></a>
+          <button class="top-icon" id="celebrateBtn" title="发布庆祝"><i data-lucide="party-popper"></i></button>
+          <button class="top-icon" id="themeAdmin" title="切换后台主题"><i data-lucide="moon"></i></button>
+          <button class="top-icon" id="fullScreenBtn" title="全屏"><i data-lucide="scan"></i></button>
+          <a class="avatar" href="admin-login.html" title="账户"></a>
+        </div>
+      </header>
+      <div class="tabbar"><span class="tab-label" id="viewLabel">帖子发布</span><button class="top-icon" id="moreBtn" title="更多操作"><i data-lucide="ellipsis"></i></button></div>
+      <section class="page-title"><h1 id="viewTitle">帖子发布</h1><button class="btn" id="resetBtn">重置 <i data-lucide="rotate-cw" size="16"></i></button></section>
+
+      <section class="view" id="publishView">
+        <div class="workspace">
+          <form class="left-form">
+            <input class="field" id="postTitle" placeholder="请输入标题">
+            <label class="cover" id="coverBox"><span id="coverText">点击上传封面</span><input id="coverInput" type="file" accept="image/*" hidden></label>
+            <div class="category-picker" id="postCategory"></div>
+            <select class="field" id="postAuthor"></select>
+            <input class="field" id="keywordInput" placeholder="关键词，例如 推荐 热门">
+            <input class="field" id="tagInput" placeholder="输入标签，例如 #黑 #白 #红">
+            <div class="tag-preview" id="tagPreview"><span class="tag-chip">输入 #标签 后自动生成</span></div>
+            <input class="field" type="date" value="2026-05-13">
+            <div class="time-row"><input class="field" value="17"><input class="field" value="12"><input class="field" value="54"></div>
+            <input class="field" placeholder="热度">
+          </form>
+          <div class="editor">
+            <div class="toolbar">
+              <button data-command="undo" title="撤销"><i data-lucide="undo-2"></i></button><button data-command="redo" title="重做"><i data-lucide="redo-2"></i></button>
+              <select><option>正文</option><option>标题</option></select>
+              <button data-command="bold" title="加粗">B</button><button data-command="italic" title="斜体"><em>I</em></button><button data-command="underline" title="下划线"><u>U</u></button><button data-command="strikeThrough" title="删除线">S</button>
+              <button data-insert="无序列表" title="无序列表"><i data-lucide="list"></i></button><button data-insert="有序列表" title="有序列表"><i data-lucide="list-ordered"></i></button><button data-insert="左对齐" title="左对齐"><i data-lucide="align-left"></i></button>
+              <button data-insert="链接" title="链接"><i data-lucide="link"></i></button><button id="insertImageBtn" type="button" title="插入图片"><i data-lucide="image"></i></button><button id="insertVideoBtn" type="button" title="插入视频"><i data-lucide="video"></i></button><button id="previewBtn" type="button" title="预览"><i data-lucide="eye"></i></button>
+              <input id="inlineImageInput" type="file" accept="image/*,.gif" multiple hidden>
+            </div>
+            <textarea id="bodyText" placeholder="请输入正文"></textarea>
+            <div class="inserted-preview">
+              <strong>正文媒体预览</strong>
+              <div class="inserted-media-list" id="insertedMediaList"><div class="preview-card empty">尚未插入图片或视频</div></div>
+            </div>
+            <div class="editor-foot">
+              <strong id="charCount">0 字符</strong>
+              <div class="switch-row">
+                <label class="switch"><input type="checkbox"> 图片描述</label>
+                <label class="switch"><input type="checkbox"> 置顶帖子</label>
+                <button class="btn dark" id="saveDraft" type="button">存草稿</button>
+                <button class="btn dark" id="publishPost" type="button">发布</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view hidden" id="postsView"><div class="table" id="postsTable"></div></section>
+      <section class="view hidden" id="draftsView"><div class="table" id="draftsTable"></div></section>
+      <section class="view hidden" id="videosView">
+        <div class="settings">
+          <h2>视频上传</h2>
+          <label class="cover" id="videoBox"><span id="videoText">点击上传视频</span><input id="videoInput" type="file" accept="video/*" hidden></label>
+          <div class="video-aspect-note" id="videoAspectLabel">自动识别尺寸：请选择视频</div>
+          <div class="progress"><span id="videoProgress"></span></div>
+          <div id="videoStatus" style="color:#64748b;font-weight:800">等待上传</div>
+          <button class="btn dark" id="uploadVideoBtn">开始上传并转 H.264</button>
+        </div>
+      </section>
+      <section class="view hidden" id="mediaView"><div class="table" id="mediaTable"></div></section>
+      <section class="view hidden" id="recommendView"><div class="settings"><h2>推荐管理</h2><select class="field"><option>热门推荐：展示最新 4 条</option><option>热门推荐：展示后台置顶</option></select><button class="btn dark" id="saveRecommend">保存推荐规则</button></div></section>
+      <section class="view hidden" id="appearanceView">
+        <div class="settings">
+          <h2>外观与栏目</h2>
+          <input class="field" id="siteNameInput" value="PostWave" placeholder="网站名称，仅用于标题和版权">
+          <div class="logo-config">
+            <div class="logo-preview" id="logoPreview">上传 Logo 图片</div>
+            <label class="btn" style="display:grid;place-items:center">上传 Logo 图片<input id="logoImageInput" type="file" accept="image/*,.gif" hidden></label>
+          </div>
+          <input class="field" id="commentLogoInput" value="51暗网" placeholder="评论列表左侧标识文字">
+          <select class="field" id="themeSelect"><option>深色荧光绿主题</option><option>浅色主题</option></select>
+          <div class="site-tabs-editor" id="siteTabsEditor"></div>
+          <button class="btn" id="addSiteTab" type="button">增加栏目</button>
+          <button class="btn dark" id="saveAppearance" type="button">保存外观与栏目</button>
+        </div>
+      </section>
+      <section class="view hidden" id="adsView">
+        <div class="ads">
+          <h2>广告位管理</h2>
+          <div class="ad-tabs" id="adTabs">
+            <button class="ad-tab active" data-ad-section="home-banner" type="button">首页广告</button>
+            <button class="ad-tab" data-ad-section="home-feed" type="button">首页内容流广告</button>
+            <button class="ad-tab" data-ad-section="detail-top" type="button">帖子标题下广告</button>
+            <button class="ad-tab" data-ad-section="detail-text" type="button">标题文字广告</button>
+            <button class="ad-tab" data-ad-section="detail-banner" type="button">帖子内广告</button>
+            <button class="ad-tab" data-ad-section="square" type="button">方形广告</button>
+          </div>
+          <div class="ad-editor"><input class="field" id="adTitle" placeholder="广告标题"><input class="field" id="adDesc" placeholder="广告描述"><button class="btn dark" id="addAd">添加广告</button></div>
+          <div class="ad-upload-row">
+            <input class="field" id="adLink" placeholder="广告链接，例如 app.html">
+            <input class="field" id="adSlot" type="number" min="1" value="1" placeholder="插入位置">
+            <select class="field" id="squarePlacement">
+              <option value="station-square">站长推荐方形广告</option>
+              <option value="latest-square">最新上架方形广告</option>
+              <option value="friend-square">瓜友推荐方形广告</option>
+            </select>
+            <label class="btn" style="display:grid;place-items:center">上传图片/GIF<input id="adImageInput" type="file" accept="image/*,.gif" hidden></label>
+          </div>
+          <div class="ad-upload-preview" id="adImagePreview"><img id="adPreviewImg" alt="广告预览"><span id="adImageName">支持 GIF、PNG、JPG、WebP</span></div>
+          <div class="ad-config-row">
+            <input class="field" id="stationCount" type="number" min="1" max="30" value="10" placeholder="站长推荐数量">
+            <input class="field" id="latestCount" type="number" min="1" max="30" value="10" placeholder="最新上架数量">
+            <input class="field" id="friendCount" type="number" min="1" max="30" value="10" placeholder="瓜友推荐数量">
+          </div>
+          <button class="btn dark" id="saveAdConfig">保存方形广告数量</button>
+          <div class="ad-list" id="adList"></div>
+          <div class="feed-order-panel" id="feedOrderPanel">
+            <h3>首页内容流排序</h3>
+            <p class="feed-order-note">这里控制首页帖子和首页内容流广告的混排顺序。广告会插入到帖子之间，排序保存后前台刷新或实时同步即可生效。</p>
+            <div class="feed-order-list" id="feedOrderList"></div>
+          </div>
+        </div>
+      </section>
+      <section class="view hidden" id="footerView"><div class="settings"><h2>导航页脚</h2><input class="field" value="往期回顾 / 回家的路 / 我要投稿 / 商务合作 / 加入我们 / 关于我们"><input class="field" value="用户协议 / 隐私政策 / DMCA / 2257合规声明"><button class="btn dark" id="saveFooter">保存导航页脚</button></div></section>
+      <section class="view hidden" id="noticeView"><div class="settings"><h2>官方公告</h2><textarea class="field" id="noticeText" style="min-height:140px;padding:14px">欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。</textarea><button class="btn dark" id="saveNotice">保存公告</button></div></section>
+      <section class="view hidden" id="commentsView"><div class="table" id="commentsTable"></div></section>
+      <section class="view hidden" id="authorsView">
+        <div class="settings">
+          <h2>作者管理</h2>
+          <div class="author-editor">
+            <input class="field" id="authorNameInput" placeholder="作者显示名">
+            <input class="field" id="authorAccountInput" placeholder="后台登录账号">
+            <input class="field" id="authorPasswordInput" type="password" autocomplete="new-password" placeholder="新后台登录密码（新增必填，编辑留空不修改）">
+            <button class="btn dark" id="saveAuthorBtn" type="button">保存作者</button>
+            <button class="btn" id="cancelAuthorEditBtn" type="button">取消编辑</button>
+          </div>
+        </div>
+        <div class="table" id="authorsTable"></div>
+      </section>
+      <section class="view hidden" id="usersView"><div class="table" id="usersTable"></div></section>
+    </main>
+  </div>
+  <div class="modal-layer" id="videoPicker">
+    <div class="picker">
+      <div class="picker-head">
+        <h2>选择已处理视频</h2>
+        <button class="btn" id="closeVideoPicker">关闭</button>
+      </div>
+      <div id="videoPickerList"></div>
+    </div>
+  </div>
+  <div class="toast" id="toast">已保存</div>
+  <script>
+    let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
+    const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
+    let mediaLibrary = JSON.parse(localStorage.getItem("postwave_media") || "[]");
+    let currentCoverData = "";
+    let currentVideoData = "";
+    let currentBodyImages = [];
+    let editingPostIndex = null;
+    let selectedUploadVideo = null;
+    let selectedVideoAspect = "16-9";
+    let currentAdImage = "";
+    let currentAdFile = null;
+    let currentAdSection = "home-banner";
+    let currentLogoImage = "";
+    let pendingBodyInsertionRange = null;
+    let editingAuthorIndex = null;
+    const defaultAuthors = [
+      { id: "author-alun", name: "alun", account: "alun", status: "正常" },
+      { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常" }
+    ];
+    let authors = defaultAuthors.slice();
+    localStorage.removeItem("postwave_authors");
+    const defaultSiteConfig = {
+      siteName: "PostWave",
+      logoImage: "",
+      commentLogoText: "51暗网",
+      tabs: [
+        { name: "首页", subtitle: "精选图文与视频内容，按发布时间聚合展示。" },
+        { name: "视频", subtitle: "视频内容列表，适合接入媒体 CDN 和在线播放。" },
+        { name: "图文", subtitle: "图片、长文和专题内容的展示入口。" },
+        { name: "影评", subtitle: "影评、片单和内容推荐的聚合页面。" },
+        { name: "旅行", subtitle: "旅行路线、风景图集和短视频合集。" },
+        { name: "科技", subtitle: "科技资讯、工具教程和产品观察。" },
+        { name: "专题", subtitle: "按主题整理的合集页面。" }
+      ]
+    };
+    let siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || {
+      siteName: localStorage.getItem("postwave_site_name") || defaultSiteConfig.siteName,
+      logoImage: "",
+      commentLogoText: "51暗网",
+      tabs: defaultSiteConfig.tabs
+    };
+    currentLogoImage = siteConfig.logoImage || "";
+    function normalizeAdPlacement(ad) {
+      const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
+      const key = raw.toLowerCase();
+      const title = String(ad.title || "");
+      const aliases = {
+        "home-banner": ["home-banner", "home", "首页广告"],
+        "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
+        "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
+        "detail-text": ["detail-text", "text-ad", "post-title-text-ad", "帖子标题文字广告", "标题文字广告", "纯文字广告"],
+        "detail-banner": ["detail-banner", "detail-inner", "post-inner", "post-banner", "帖子内广告", "帖子内容广告", "正文后广告"],
+        "station-square": ["station-square", "station", "站长推荐", "站长推荐方形广告"],
+        "latest-square": ["latest-square", "latest", "最新上架", "最新上架方形广告"],
+        "friend-square": ["friend-square", "friend", "瓜友推荐", "瓜友推荐广告", "瓜友推荐方形广告"]
+      };
+      for (const [placement, names] of Object.entries(aliases)) {
+        if (names.some((name) => raw === name || key === name.toLowerCase())) return placement;
+      }
+      if (raw === "square" || raw === "方形广告") {
+        if (/最新/.test(title)) return "latest-square";
+        if (/瓜友|友/.test(title)) return "friend-square";
+        return "station-square";
+      }
+      return raw || "home-banner";
+    }
+    function normalizeAd(ad) {
+      const possibleUrl = String(ad.url || "");
+      const urlIsImage = /^(data:image|blob:)|\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(possibleUrl);
+      return {
+        ...ad,
+        title: ad.title || "",
+        desc: ad.desc || "",
+        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+        image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        imageKey: ad.imageKey || ad.assetKey || "",
+        slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
+        placement: normalizeAdPlacement(ad)
+      };
+    }
+    let ads = JSON.parse(localStorage.getItem("postwave_ads") || "null") || [
+      { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
+      { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "detail-banner" }
+    ];
+    ads = ads.map(normalizeAd);
+    const previewObjectUrls = new Set();
+    function previewObjectUrl(file) {
+      const url = URL.createObjectURL(file);
+      previewObjectUrls.add(url);
+      return url;
+    }
+    async function uploadMediaFile(file, kind) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("kind", kind);
+      const response = await fetch("/api/media/upload", { method: "POST", body: formData });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "媒体文件上传失败");
+      return data.media || { url: data.url };
+    }
+    async function mediaUrl(item) {
+      if (!item) return "";
+      if (item.url) return item.url;
+      if (item.data) return item.data;
+      return "";
+    }
+    async function adImageUrl(ad) {
+      if (!ad) return "";
+      if (ad.image) return ad.image;
+      return "";
+    }
+    let mediaChanged = false;
+    mediaLibrary = mediaLibrary.map((item) => {
+      if (item.status === "processing" && Number(item.progress) >= 100) {
+        mediaChanged = true;
+        return item.url || item.data ? { ...item, status: "ready", progress: 100 } : { ...item, status: "failed", progress: 100 };
+      }
+      return item;
+    });
+    if (mediaChanged) save("postwave_media", mediaLibrary);
+    const adConfig = JSON.parse(localStorage.getItem("postwave_ad_config") || '{"station":10,"latest":10,"friend":10}');
+    document.querySelector("#currentAdminName").textContent = localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
+    document.querySelector("#stationCount").value = adConfig.station || 10;
+    document.querySelector("#latestCount").value = adConfig.latest || 10;
+    document.querySelector("#friendCount").value = adConfig.friend || 10;
+    document.querySelector("#noticeText").value = localStorage.getItem("postwave_notice") || document.querySelector("#noticeText").value;
+    document.querySelector("#siteNameInput").value = siteConfig.siteName;
+    document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
+    document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${currentLogoImage}" alt="Logo 预览">` : "Logo";
+
+    function save(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+        if (key === "postwave_posts") syncPostsToApi(value);
+        return true;
+      } catch (error) {
+        console.error(error);
+        if (key === "postwave_posts") syncPostsToApi(value);
+        if (key === "postwave_ads") toast("广告配置保存失败：浏览器本地存储已满");
+        return false;
+      }
+    }
+    async function fetchApiPosts() {
+      try {
+        const response = await fetch("/api/posts", { cache: "no-store" });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data.posts) ? data.posts : [];
+      } catch (_error) {
+        return null;
+      }
+    }
+    async function syncPostsToApi(posts) {
+      try {
+        await fetch("/api/posts", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ posts })
+        });
+      } catch (_error) {}
+    }
+    async function loadStoredPostsFromApi() {
+      const apiPosts = await fetchApiPosts();
+      if (!apiPosts) return;
+      if (!apiPosts.length && storedPosts.length) {
+        if (localStorage.getItem("postwave_posts_api_imported") !== "1") {
+          syncPostsToApi(storedPosts);
+          localStorage.setItem("postwave_posts_api_imported", "1");
+        }
+        return;
+      }
+      if (!apiPosts.length) return;
+      const apiText = JSON.stringify(apiPosts);
+      if (apiText === JSON.stringify(storedPosts)) return;
+      storedPosts.splice(0, storedPosts.length, ...apiPosts);
+      localStorage.setItem("postwave_posts", apiText);
+      localStorage.setItem("postwave_posts_api_imported", "1");
+      renderTables();
+    }
+    function toast(message) {
+      const el = document.querySelector("#toast");
+      el.textContent = message;
+      el.classList.add("show");
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+    }
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+    }
+    function categoryTabs() {
+      const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
+      return tabs.filter((tab) => tab.name !== "首页");
+    }
+    function renderCategoryPicker(selected = []) {
+      const categories = categoryTabs();
+      document.querySelector("#postCategory").innerHTML = categories.map((tab) => `
+        <label><input type="checkbox" value="${tab.name}" ${selected.includes(tab.name) ? "checked" : ""}>${tab.name}</label>
+      `).join("");
+    }
+    function renderAuthorSelect(selected = "") {
+      const currentAuthor = selected || localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
+      document.querySelector("#postAuthor").innerHTML = `<option value="">选择作者</option>` + authors.map((author) => `
+        <option value="${escapeHtml(author.name)}" ${author.name === currentAuthor ? "selected" : ""}>${escapeHtml(author.name)}</option>
+      `).join("");
+    }
+    function clearAuthorEditor() {
+      editingAuthorIndex = null;
+      document.querySelector("#authorNameInput").value = "";
+      document.querySelector("#authorAccountInput").value = "";
+      document.querySelector("#authorPasswordInput").value = "";
+      document.querySelector("#saveAuthorBtn").textContent = "保存作者";
+    }
+    async function fetchApiAuthors() {
+      try {
+        const response = await fetch("/api/authors", { cache: "no-store" });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data.authors) ? data.authors : [];
+      } catch (_error) {
+        return null;
+      }
+    }
+    async function loadAuthorsFromApi() {
+      const apiAuthors = await fetchApiAuthors();
+      if (!apiAuthors) return;
+      authors.splice(0, authors.length, ...apiAuthors);
+      localStorage.removeItem("postwave_authors");
+      renderAuthorSelect();
+      renderAuthorsTable();
+    }
+    async function saveAuthors() {
+      const response = await fetch("/api/authors", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ authors })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "作者账号保存失败");
+      authors.splice(0, authors.length, ...(Array.isArray(data.authors) ? data.authors : authors));
+      localStorage.removeItem("postwave_authors");
+      renderAuthorSelect();
+      renderAuthorsTable();
+    }
+    function renderSiteTabsEditor() {
+      const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
+      document.querySelector("#siteTabsEditor").innerHTML = tabs.map((tab, index) => `
+        <div class="site-tab-row" data-tab-row="${index}">
+          <input class="field" data-tab-name="${index}" value="${tab.name}" placeholder="栏目名">
+          <input class="field" data-tab-subtitle="${index}" value="${tab.subtitle || ""}" placeholder="栏目副标题">
+          <button class="btn" type="button" data-remove-tab="${index}" ${tabs.length <= 1 ? "disabled" : ""}>删除</button>
+        </div>
+      `).join("");
+    }
+    function collectSiteTabs() {
+      return [...document.querySelectorAll("[data-tab-row]")].map((row) => {
+        const index = row.dataset.tabRow;
+        return {
+          name: document.querySelector(`[data-tab-name="${index}"]`).value.trim(),
+          subtitle: document.querySelector(`[data-tab-subtitle="${index}"]`).value.trim()
+        };
+      }).filter((tab) => tab.name);
+    }
+    function switchView(name, label) {
+      document.querySelectorAll(".view").forEach((view) => view.classList.add("hidden"));
+      document.querySelector(`#${name}View`).classList.remove("hidden");
+      document.querySelector("#viewLabel").textContent = label;
+      document.querySelector("#viewTitle").textContent = label;
+      renderTables();
+    }
+    document.querySelectorAll(".side-link").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        document.querySelectorAll(".side-link").forEach((item) => item.classList.remove("active"));
+        link.classList.add("active");
+        switchView(link.dataset.view, link.textContent.trim());
+      });
+    });
+
+    document.querySelector("#sidebarToggle").addEventListener("click", () => {
+      document.body.classList.toggle("sidebar-collapsed");
+      toast(document.body.classList.contains("sidebar-collapsed") ? "侧边栏已折叠" : "侧边栏已展开");
+    });
+    document.querySelector("#celebrateBtn").addEventListener("click", () => toast("今天也很适合发布内容"));
+    document.querySelector("#fullScreenBtn").addEventListener("click", () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.();
+        toast("已进入全屏");
+      } else {
+        document.exitFullscreen?.();
+        toast("已退出全屏");
+      }
+    });
+    document.querySelector("#moreBtn").addEventListener("click", () => toast("更多操作：刷新、导出、批量管理"));
+    document.querySelector("#adminSearch").addEventListener("input", (event) => {
+      const q = event.target.value.trim().toLowerCase();
+      document.querySelectorAll(".table-row:not(.header)").forEach((row) => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+
+    document.querySelector("#bodyText").addEventListener("input", () => {
+      document.querySelector("#charCount").textContent = `${document.querySelector("#bodyText").value.length} 字符`;
+      renderInsertedMediaPreview();
+    });
+    function parseTags() {
+      return document.querySelector("#tagInput").value
+        .split(/[\s,，]+/)
+        .map((tag) => tag.trim().replace(/^#+/, ""))
+        .filter(Boolean);
+    }
+    function parseKeywords() {
+      return document.querySelector("#keywordInput").value
+        .split(/[\s,，]+/)
+        .map((keyword) => keyword.trim().replace(/^#+/, ""))
+        .filter(Boolean);
+    }
+    function renderTagPreview() {
+      const tags = parseTags();
+      document.querySelector("#tagPreview").innerHTML = tags.length
+        ? tags.map((tag) => `<span class="tag-chip">${tag}</span>`).join("")
+        : '<span class="tag-chip">输入 #标签 后自动生成</span>';
+    }
+    document.querySelector("#tagInput").addEventListener("input", renderTagPreview);
+    document.querySelector("#coverInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const localPreview = previewObjectUrl(file);
+      const coverBox = document.querySelector("#coverBox");
+      coverBox.classList.add("has-image");
+      document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${localPreview}" alt="封面预览"><span class="cover-caption">上传中：${file.name}</span>`;
+      try {
+        const media = await uploadMediaFile(file, "cover");
+        currentCoverData = media.url;
+        const coverBox = document.querySelector("#coverBox");
+        coverBox.classList.add("has-image");
+        document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${media.url}" alt="封面预览"><span class="cover-caption">${file.name}</span>`;
+        toast("封面已上传");
+      } catch (error) {
+        console.error(error);
+        currentCoverData = "";
+        document.querySelector("#coverText").textContent = "点击上传封面";
+        toast(error.message || "封面上传失败");
+      }
+    });
+    document.querySelector("#videoInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      selectedUploadVideo = file;
+      document.querySelector("#videoText").innerHTML = `<strong>${file.name}</strong><small>视频已选择，点击可重新上传</small>`;
+      const preview = document.createElement("video");
+      preview.preload = "metadata";
+      preview.onloadedmetadata = () => {
+        selectedVideoAspect = preview.videoHeight > preview.videoWidth ? "9-16" : "16-9";
+        document.querySelector("#videoAspectLabel").textContent = `自动识别尺寸：${selectedVideoAspect === "9-16" ? "9:16 竖屏视频" : "16:9 横屏视频"}`;
+        URL.revokeObjectURL(preview.src);
+      };
+      preview.src = previewObjectUrl(file);
+      toast("视频已选择");
+    });
+    document.querySelector("#uploadVideoBtn").addEventListener("click", async () => {
+      if (!selectedUploadVideo) {
+        toast("请先选择视频文件");
+        return;
+      }
+      const progress = document.querySelector("#videoProgress");
+      const status = document.querySelector("#videoStatus");
+      const uploadFile = selectedUploadVideo;
+      const mediaId = `video-${Date.now()}`;
+      const processingItem = {
+        id: mediaId,
+        name: uploadFile.name.replace(/\.[^.]+$/, "") + ".mp4",
+        originalName: uploadFile.name,
+        url: "",
+        type: "video",
+        status: "processing",
+        progress: 0,
+        format: "H.264 MP4",
+        quality: "medium",
+        aspect: selectedVideoAspect,
+        segments: 0,
+        date: new Date().toLocaleString()
+      };
+      mediaLibrary.unshift(processingItem);
+      save("postwave_media", mediaLibrary);
+      renderTables();
+      status.textContent = "上传中 0%";
+      progress.style.width = "0%";
+      let value = 0;
+      const timer = setInterval(() => {
+        value = Math.min(92, value + 8);
+        processingItem.progress = value;
+        processingItem.segments = Math.min(7, Math.floor(value / 13));
+        save("postwave_media", mediaLibrary);
+        renderTables();
+        progress.style.width = `${value}%`;
+        if (value < 55) status.textContent = `上传中 ${value}%`;
+        else if (value < 85) status.textContent = `切片中 ${value}%`;
+        else status.textContent = `转码 H.264 中 ${value}%`;
+      }, 160);
+      try {
+        const media = await uploadMediaFile(uploadFile, "video");
+        clearInterval(timer);
+        processingItem.status = "ready";
+        processingItem.progress = 100;
+        processingItem.segments = 8;
+        processingItem.size = uploadFile.size;
+        processingItem.url = media.url;
+        processingItem.storagePath = media.storagePath || "";
+        save("postwave_media", mediaLibrary);
+        progress.style.width = "100%";
+        status.textContent = "已完成：切片 8 段，H.264，中等品质";
+        selectedUploadVideo = null;
+        document.querySelector("#videoInput").value = "";
+        renderTables();
+        toast("视频处理完成，可在发布页插入");
+      } catch (error) {
+        clearInterval(timer);
+        processingItem.status = "failed";
+        processingItem.progress = 100;
+        save("postwave_media", mediaLibrary);
+        status.textContent = "处理失败：请重新上传视频";
+        renderTables();
+        toast(error.message || "视频上传失败，请重试");
+      }
+    });
+    function resetPublishForm(showToast = true) {
+      document.querySelector("#postTitle").value = "";
+      document.querySelector("#bodyText").value = "";
+      document.querySelector("#charCount").textContent = "0 字符";
+      document.querySelector("#coverBox").classList.remove("has-image");
+      document.querySelector("#coverText").textContent = "点击上传封面";
+      document.querySelector("#coverInput").value = "";
+      document.querySelector("#inlineImageInput").value = "";
+      renderCategoryPicker();
+      renderAuthorSelect();
+      document.querySelectorAll(".left-form input.field").forEach((input) => { input.value = ""; });
+      currentCoverData = "";
+      currentVideoData = "";
+      currentBodyImages = [];
+      editingPostIndex = null;
+      document.querySelector("#tagInput").value = "";
+      renderTagPreview();
+      renderInsertedMediaPreview();
+      if (showToast) toast("表单已重置");
+    }
+    document.querySelector("#resetBtn").addEventListener("click", () => resetPublishForm());
+    function collectPost(status) {
+      const categories = [...document.querySelectorAll("#postCategory input:checked")].map((input) => input.value);
+      const fallbackCategory = categoryTabs()[0]?.name || "视频分类";
+      const selectedAuthor = document.querySelector("#postAuthor").value || localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
+      return {
+        title: document.querySelector("#postTitle").value || "未命名帖子",
+        body: document.querySelector("#bodyText").value || "这是一篇从后台发布的帖子正文。",
+        cover: currentCoverData,
+        video: currentVideoData,
+        bodyImages: currentBodyImages,
+        category: categories.length ? categories.join("、") : fallbackCategory,
+        categories,
+        keywords: parseKeywords(),
+        tags: parseTags().length ? parseTags() : ["后台标签"],
+        status,
+        date: new Date().toLocaleString(),
+        author: selectedAuthor
+      };
+    }
+    document.querySelector("#saveDraft").addEventListener("click", () => {
+      storedDrafts.unshift(collectPost("草稿"));
+      save("postwave_drafts", storedDrafts);
+      toast("已存入草稿箱");
+    });
+    document.querySelector("#publishPost").addEventListener("click", () => {
+      const post = collectPost("已发布");
+      if (editingPostIndex !== null) {
+        storedPosts[editingPostIndex] = post;
+        editingPostIndex = null;
+      } else {
+        storedPosts.unshift(post);
+      }
+      save("postwave_posts", storedPosts);
+      renderTables();
+      resetPublishForm(false);
+      toast("已发布到帖子列表，表单已清空");
+    });
+    function tableRows(items) {
+      const rows = items.length ? items : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
+      return `<div class="table-row header"><span>标题</span><span>状态</span><span>作者</span><span>时间</span></div>` + rows.map((item, index) => `<div class="table-row"><strong>${item.title}</strong><span>${item.status}</span><span>${item.author}</span><span>${item.date}</span></div>`).join("");
+    }
+    function postRows() {
+      const rows = storedPosts.length ? storedPosts : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
+      return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
+        <div class="table-row posts-row">
+          <strong>${item.title}</strong>
+          <span>${item.status}</span>
+          <span>${item.author}</span>
+          <span>${item.date}</span>
+          <span class="mini-actions">
+            <button class="btn" data-edit-post="${index}">编辑</button>
+            <button class="btn" data-delete-post="${index}">删除</button>
+            <button class="btn" data-move-post="${index}" data-dir="-1">上移</button>
+            <button class="btn" data-move-post="${index}" data-dir="1">下移</button>
+          </span>
+        </div>
+      `).join("");
+    }
+    function renderTables() {
+      document.querySelector("#postsTable").innerHTML = postRows();
+      document.querySelector("#draftsTable").innerHTML = tableRows(storedDrafts);
+      document.querySelector("#mediaTable").innerHTML = `<div class="table-row header"><span>媒体</span><span>格式</span><span>状态</span><span>时间</span></div>` + (mediaLibrary.length ? mediaLibrary.map((item) => {
+        const progress = Math.min(100, Math.max(0, Number(item.progress) || 0));
+        let statusCell = `<span>处理中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+        if (item.status === "ready") statusCell = '<span class="status-ready">已完成</span>';
+        if (item.status === "failed") statusCell = '<span class="status-failed">处理失败，请重新上传</span>';
+        return `<div class="table-row"><strong>${item.name}</strong><span>${item.format}</span><span>${statusCell}</span><span>${item.date}</span></div>`;
+      }).join("") : `<div class="table-row"><strong>暂无视频</strong><span>视频</span><span>等待上传</span><span>-</span></div>`);
+      document.querySelector("#usersTable").innerHTML = `<div class="table-row header"><span>对象</span><span>类型</span><span>状态</span><span>时间</span></div><div class="table-row"><strong>guest@example.com</strong><span>用户</span><span>正常</span><span>2026/5/13</span></div><div class="table-row"><strong>示例举报</strong><span>举报</span><span>待处理</span><span>2026/5/13</span></div>`;
+      renderAuthorsTable();
+      renderCommentsTable();
+      renderAds();
+    }
+    function renderAuthorsTable() {
+      document.querySelector("#authorsTable").innerHTML = `<div class="table-row header posts-row"><span>作者名</span><span>账号</span><span>密码</span><span>状态</span><span>操作</span></div>` + (authors.length ? authors.map((author, index) => `
+        <div class="table-row posts-row">
+          <strong>${escapeHtml(author.name)}</strong>
+          <span>${escapeHtml(author.account)}</span>
+          <span>已加密保存</span>
+          <span>${escapeHtml(author.status || "正常")}</span>
+          <span class="mini-actions">
+            <button class="btn" data-edit-author="${index}">编辑</button>
+            <button class="btn" data-delete-author="${index}">删除</button>
+          </span>
+        </div>
+      `).join("") : `<div class="table-row posts-row"><strong>暂无作者</strong><span>-</span><span>-</span><span>-</span><span>-</span></div>`);
+    }
+    function renderCommentsTable() {
+      const pending = JSON.parse(localStorage.getItem("postwave_pending_comments") || "[]");
+      document.querySelector("#commentsTable").innerHTML = `<div class="table-row header posts-row"><span>评论内容</span><span>用户</span><span>状态</span><span>时间</span><span>操作</span></div>` + (pending.length ? pending.map((item, index) => `
+        <div class="table-row posts-row">
+          <span class="comment-text"><strong>${item.postTitle || "帖子"}</strong><br>${item.text}</span>
+          <span>${item.name}</span>
+          <span>${item.status === "approved" ? "已通过" : "待审核"}</span>
+          <span>${item.time}</span>
+          <span class="mini-actions">
+            <button class="btn" data-approve-comment="${index}" ${item.status === "approved" ? "disabled" : ""}>通过</button>
+            <button class="btn" data-delete-comment="${index}">删除</button>
+          </span>
+        </div>
+      `).join("") : `<div class="table-row posts-row"><strong>暂无待审核评论</strong><span>-</span><span>-</span><span>-</span><span>-</span></div>`);
+    }
+    function adPlacementLabel(placement) {
+      return {
+        "home-banner": "首页广告",
+        "home-feed": "首页内容流广告",
+        "detail-top": "帖子标题下广告",
+        "detail-text": "标题文字广告",
+        "detail-banner": "帖子内广告",
+        "station-square": "站长推荐方形广告",
+        "latest-square": "最新上架方形广告",
+        "friend-square": "瓜友推荐方形广告"
+      }[placement] || placement;
+    }
+    function currentAdPlacement() {
+      return currentAdSection === "square" ? document.querySelector("#squarePlacement").value : currentAdSection;
+    }
+    function adEntriesForCurrentSection() {
+      const square = ["station-square", "latest-square", "friend-square"];
+      const entries = ads
+        .map((ad, index) => ({ ad, index }))
+        .filter(({ ad }) => currentAdSection === "square" ? square.includes(ad.placement) : ad.placement === currentAdSection);
+      if (["home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
+        return entries.sort((a, b) => (Number(a.ad.slot) || 1) - (Number(b.ad.slot) || 1) || a.index - b.index);
+      }
+      return entries;
+    }
+    function renderAdControls() {
+      const isTextAd = currentAdSection === "detail-text";
+      const imageButton = document.querySelector("#adImageInput").closest("label");
+      document.querySelector("#squarePlacement").style.display = currentAdSection === "square" ? "" : "none";
+      document.querySelector("#adSlot").style.display = ["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? "" : "none";
+      document.querySelector("#adSlot").max = isTextAd ? "20" : "";
+      document.querySelector("#adTitle").placeholder = isTextAd ? "文字广告内容，例如 33直播" : "广告标题";
+      document.querySelector("#adDesc").style.display = isTextAd ? "none" : "";
+      imageButton.style.display = isTextAd ? "none" : "grid";
+      if (isTextAd) document.querySelector("#adImagePreview").classList.remove("active");
+      document.querySelector(".ad-config-row").style.display = currentAdSection === "square" ? "grid" : "none";
+      document.querySelector("#saveAdConfig").style.display = currentAdSection === "square" ? "" : "none";
+      document.querySelector("#feedOrderPanel").classList.toggle("active", currentAdSection === "home-feed");
+    }
+    function buildHomeFeedStream() {
+      const stream = storedPosts.map((post, index) => ({ type: "post", index, title: post.title || "未命名帖子" }));
+      const feedAds = ads
+        .map((ad, index) => ({ type: "ad", index, title: ad.title || "首页内容流广告", ad }))
+        .filter((item) => item.ad.placement === "home-feed" && item.ad.image)
+        .sort((a, b) => (Number(a.ad.slot) || 1) - (Number(b.ad.slot) || 1) || a.index - b.index);
+      feedAds.forEach((item, order) => {
+        const slot = Math.max(1, Math.min(stream.length + 1, Number(item.ad.slot) || order + 1));
+        stream.splice(slot - 1, 0, item);
+      });
+      return stream;
+    }
+    function saveHomeFeedStream(stream) {
+      const nextPosts = stream
+        .filter((item) => item.type === "post")
+        .map((item) => storedPosts[item.index])
+        .filter(Boolean);
+      storedPosts.splice(0, storedPosts.length, ...nextPosts);
+      stream.forEach((item, position) => {
+        if (item.type === "ad" && ads[item.index]) ads[item.index].slot = position + 1;
+      });
+      save("postwave_posts", storedPosts);
+      save("postwave_ads", ads);
+    }
+    async function renderHomeFeedOrder() {
+      const list = document.querySelector("#feedOrderList");
+      if (!list) return;
+      const stream = buildHomeFeedStream();
+      if (!stream.length) {
+        list.innerHTML = `<div class="feed-order-item"><span class="feed-order-index">-</span><span class="feed-order-title"><strong>暂无可排序内容</strong><small>先发布帖子，或添加首页内容流广告。</small></span></div>`;
+        return;
+      }
+      const rows = await Promise.all(stream.map(async (item, position) => {
+        let preview = "";
+        if (item.type === "ad") {
+          const src = await adImageUrl(item.ad);
+          preview = src ? `<br><img class="ad-preview" src="${src}" alt="${item.title}">` : "";
+        }
+        return `
+          <div class="feed-order-item">
+            <span class="feed-order-index">${position + 1}</span>
+            <span class="feed-order-title">
+              <strong>${item.title}</strong>
+              <small>${item.type === "post" ? "帖子" : `首页内容流广告 · 插入位置 ${position + 1}`}</small>${preview}
+            </span>
+            <span class="mini-actions">
+              <button class="btn" data-move-feed="${position}" data-dir="-1" ${position === 0 ? "disabled" : ""}>上移</button>
+              <button class="btn" data-move-feed="${position}" data-dir="1" ${position === stream.length - 1 ? "disabled" : ""}>下移</button>
+            </span>
+          </div>
+        `;
+      }));
+      list.innerHTML = rows.join("");
+    }
+    async function renderAds() {
+      renderAdControls();
+      const entries = adEntriesForCurrentSection();
+      const rows = await Promise.all(entries.map(async ({ ad, index }, position) => {
+        const preview = await adImageUrl(ad);
+        return `
+        <div class="ad-admin-item">
+          <span><strong>${ad.title}</strong>${ad.desc ? `<br>${ad.desc}` : ""}<br><small>位置：${adPlacementLabel(ad.placement)}${ad.slot ? ` · 插入位置 ${ad.slot}` : ""} · ${ad.link || "app.html"}</small>${preview ? `<br><img class="ad-preview" src="${preview}" alt="${ad.title}">` : ""}</span>
+          <span class="mini-actions">
+            <button class="btn" data-move-ad="${index}" data-dir="-1" ${["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((Number(ad.slot) || 1) <= 1 ? "disabled" : "") : (position === 0 ? "disabled" : "")}>上移</button>
+            <button class="btn" data-move-ad="${index}" data-dir="1" ${["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((currentAdSection === "detail-text" && (Number(ad.slot) || 1) >= 20) ? "disabled" : "") : (position === entries.length - 1 ? "disabled" : "")}>下移</button>
+            <button class="btn" data-remove-ad="${index}">删除</button>
+          </span>
+        </div>
+      `;
+      }));
+      document.querySelector("#adList").innerHTML = entries.length ? rows.join("") : `<div class="ad-admin-item"><span><strong>暂无${currentAdSection === "square" ? "方形广告" : adPlacementLabel(currentAdSection)}</strong><br>${currentAdSection === "detail-text" ? "填写文字内容和位置后点击添加广告。" : "上传图片/GIF 后点击添加广告。"}</span></div>`;
+      if (currentAdSection === "home-feed") renderHomeFeedOrder();
+    }
+    document.querySelectorAll(".toolbar button[data-command]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const textarea = document.querySelector("#bodyText");
+        textarea.focus();
+        document.execCommand(button.dataset.command);
+        toast(`${button.title || "工具"} 已执行`);
+      });
+    });
+    document.querySelectorAll(".toolbar button[data-insert]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const textarea = document.querySelector("#bodyText");
+        textarea.value += `\n[${button.dataset.insert}] `;
+        textarea.dispatchEvent(new Event("input"));
+        textarea.focus();
+        toast(`${button.dataset.insert} 已插入`);
+      });
+    });
+    function currentBodySelectionRange() {
+      const textarea = document.querySelector("#bodyText");
+      return {
+        start: textarea.selectionStart ?? textarea.value.length,
+        end: textarea.selectionEnd ?? textarea.selectionStart ?? textarea.value.length
+      };
+    }
+    function insertBodyMarkers(markers, range = currentBodySelectionRange()) {
+      const textarea = document.querySelector("#bodyText");
+      const start = Math.max(0, Math.min(range.start, textarea.value.length));
+      const end = Math.max(start, Math.min(range.end, textarea.value.length));
+      const before = textarea.value.slice(0, start);
+      const after = textarea.value.slice(end);
+      const insertion = markers.join("\n");
+      const prefix = before && !before.endsWith("\n") ? "\n" : "";
+      const suffix = after && !after.startsWith("\n") ? "\n" : "";
+      const nextCaret = before.length + prefix.length + insertion.length;
+      textarea.value = `${before}${prefix}${insertion}${suffix}${after}`;
+      textarea.dispatchEvent(new Event("input"));
+      textarea.focus();
+      textarea.selectionStart = nextCaret;
+      textarea.selectionEnd = nextCaret;
+    }
+    function appendToBody(marker) {
+      insertBodyMarkers([marker], pendingBodyInsertionRange || currentBodySelectionRange());
+      pendingBodyInsertionRange = null;
+    }
+    function renderInsertedMediaPreview() {
+      const body = document.querySelector("#bodyText").value;
+      const markers = [...body.matchAll(/\[(图片|视频)(?::([^\]]+))?\]/g)];
+      const list = document.querySelector("#insertedMediaList");
+      if (!markers.length) {
+        list.innerHTML = '<div class="preview-card empty">尚未插入图片或视频</div>';
+        return;
+      }
+      list.innerHTML = markers.map((match) => {
+        if (match[1] === "图片") {
+          const index = Number(match[2] || 0);
+          const src = currentBodyImages[index] || "";
+          return src
+            ? `<div class="preview-card"><img src="${src}" alt="正文图片 ${index + 1}"><span>图片 ${index + 1}</span></div>`
+            : `<div class="preview-card empty">图片 ${index + 1} 不存在</div>`;
+        }
+        const video = mediaLibrary.find((item) => item.id === match[2]);
+        return video && video.status === "ready"
+          ? `<div class="preview-card"><video data-preview-video="${video.id}" muted controls></video><span>${video.name} · ${video.aspect === "9-16" ? "9:16" : "16:9"}</span></div>`
+          : `<div class="preview-card empty">视频未处理完成</div>`;
+      }).join("");
+      list.querySelectorAll("[data-preview-video]").forEach((videoEl) => {
+        const item = mediaLibrary.find((media) => media.id === videoEl.dataset.previewVideo);
+        mediaUrl(item).then((url) => { if (url) videoEl.src = url; });
+      });
+    }
+    document.querySelector("#insertImageBtn").addEventListener("click", () => {
+      pendingBodyInsertionRange = currentBodySelectionRange();
+      document.querySelector("#inlineImageInput").click();
+    });
+    document.querySelector("#insertVideoBtn").addEventListener("click", () => {
+      pendingBodyInsertionRange = currentBodySelectionRange();
+      renderVideoPicker();
+      document.querySelector("#videoPicker").classList.add("active");
+    });
+    document.querySelector("#closeVideoPicker").addEventListener("click", () => document.querySelector("#videoPicker").classList.remove("active"));
+    document.querySelector("#videoPicker").addEventListener("click", (event) => {
+      if (event.target.id === "videoPicker") document.querySelector("#videoPicker").classList.remove("active");
+    });
+    document.querySelector("#inlineImageInput").addEventListener("change", async (event) => {
+      const files = [...event.target.files];
+      if (!files.length) return;
+      try {
+        toast(`正在上传 ${files.length} 张图片`);
+        const uploaded = await Promise.all(files.map((file) => uploadMediaFile(file, "body-image")));
+        const markers = uploaded.map((media) => {
+          const src = media.url || "";
+          const index = currentBodyImages.push(src) - 1;
+          return `[图片:${index}]`;
+        });
+        insertBodyMarkers(markers, pendingBodyInsertionRange || currentBodySelectionRange());
+        pendingBodyInsertionRange = null;
+        event.target.value = "";
+        toast(`已插入 ${files.length} 张图片`);
+      } catch (error) {
+        console.error(error);
+        toast(error.message || "图片上传失败");
+      }
+    });
+    function renderVideoPicker() {
+      const ready = mediaLibrary.filter((item) => item.type === "video" && item.status === "ready");
+      document.querySelector("#videoPickerList").innerHTML = ready.length ? ready.map((item) => `
+        <div class="video-choice">
+          <span><strong>${item.name}</strong><br><small>${item.format} · ${item.quality} · ${item.aspect === "9-16" ? "9:16" : "16:9"} · ${item.segments} 段切片</small></span>
+          <button class="btn dark" data-pick-video="${item.id}">插入</button>
+        </div>
+      `).join("") : `<div class="video-choice"><span>暂无已处理视频，请先到“视频上传”完成上传和转码。</span><button class="btn" type="button">等待</button></div>`;
+    }
+    document.querySelector("#videoPickerList").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-pick-video]");
+      if (!button) return;
+      appendToBody(`[视频:${button.dataset.pickVideo}]`);
+      document.querySelector("#videoPicker").classList.remove("active");
+      toast("视频已插入正文");
+    });
+    document.querySelector("#previewBtn").addEventListener("click", () => {
+      const title = document.querySelector("#postTitle").value || "未命名帖子";
+      toast(`预览：${title}`);
+    });
+    document.querySelector("#adImageInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      currentAdFile = file;
+      if (currentAdImage && currentAdImage.startsWith("blob:")) URL.revokeObjectURL(currentAdImage);
+      currentAdImage = previewObjectUrl(file);
+      document.querySelector("#adImagePreview").classList.add("active");
+      document.querySelector("#adPreviewImg").src = currentAdImage;
+      document.querySelector("#adImageName").textContent = `已选择：${file.name}`;
+      toast("广告图片已选择");
+    });
+    document.querySelector("#logoImageInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const localPreview = previewObjectUrl(file);
+      document.querySelector("#logoPreview").innerHTML = `<img src="${localPreview}" alt="Logo 预览">`;
+      try {
+        const media = await uploadMediaFile(file, "logo");
+        currentLogoImage = media.url;
+        document.querySelector("#logoPreview").innerHTML = `<img src="${currentLogoImage}" alt="Logo 预览">`;
+        toast("Logo 图片已上传");
+      } catch (error) {
+        console.error(error);
+        toast(error.message || "Logo 上传失败");
+      }
+    });
+    document.querySelector("#adTabs").addEventListener("click", (event) => {
+      const tab = event.target.closest("[data-ad-section]");
+      if (!tab) return;
+      currentAdSection = tab.dataset.adSection;
+      document.querySelectorAll(".ad-tab").forEach((item) => item.classList.remove("active"));
+      tab.classList.add("active");
+      renderAds();
+    });
+    document.querySelector("#addAd").addEventListener("click", async () => {
+      if (currentAdSection === "detail-text") {
+        const entries = adEntriesForCurrentSection();
+        if (entries.length >= 20) {
+          toast("标题文字广告最多 20 个");
+          return;
+        }
+        const text = document.querySelector("#adTitle").value.trim();
+        if (!text) {
+          toast("请输入文字广告内容");
+          return;
+        }
+        ads.push({
+          title: text,
+          desc: "",
+          link: document.querySelector("#adLink").value || "app.html",
+          image: "",
+          imageKey: "",
+          slot: Math.max(1, Math.min(20, Number(document.querySelector("#adSlot").value || entries.length + 1))),
+          placement: "detail-text"
+        });
+        if (!save("postwave_ads", ads)) {
+          ads.pop();
+          return;
+        }
+        document.querySelector("#adTitle").value = "";
+        document.querySelector("#adLink").value = "";
+        document.querySelector("#adSlot").value = "1";
+        renderAds();
+        toast("文字广告已添加，前台刷新后可见");
+        return;
+      }
+      const file = currentAdFile || document.querySelector("#adImageInput").files[0];
+      if (!file) {
+        toast("请先上传广告图片/GIF");
+        return;
+      }
+      let uploadedAd = null;
+      try {
+        uploadedAd = await uploadMediaFile(file, "ad");
+      } catch (error) {
+        console.error(error);
+        toast(error.message || "广告图片上传失败，请换小一点的文件重试");
+        return;
+      }
+      const nextAd = {
+        title: document.querySelector("#adTitle").value || "新广告位",
+        desc: document.querySelector("#adDesc").value || "广告描述",
+        link: document.querySelector("#adLink").value || "app.html",
+        image: uploadedAd.url,
+        imageKey: "",
+        slot: ["home-feed", "detail-top"].includes(currentAdSection) ? Number(document.querySelector("#adSlot").value || 1) : 0,
+        placement: currentAdPlacement()
+      };
+      ads.push(nextAd);
+      if (!save("postwave_ads", ads)) {
+        ads.pop();
+        return;
+      }
+      document.querySelector("#adTitle").value = "";
+      document.querySelector("#adDesc").value = "";
+      document.querySelector("#adLink").value = "";
+      document.querySelector("#adSlot").value = "1";
+      document.querySelector("#adImagePreview").classList.remove("active");
+      document.querySelector("#adPreviewImg").removeAttribute("src");
+      document.querySelector("#adImageName").textContent = "支持 GIF、PNG、JPG、WebP";
+      document.querySelector("#adImageInput").value = "";
+      if (currentAdImage && currentAdImage.startsWith("blob:")) URL.revokeObjectURL(currentAdImage);
+      currentAdImage = "";
+      currentAdFile = null;
+      renderAds();
+      toast("广告已添加，前台刷新后可见");
+    });
+    document.querySelector("#adList").addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-remove-ad]");
+      const move = event.target.closest("[data-move-ad]");
+      if (remove) {
+        ads.splice(Number(remove.dataset.removeAd), 1);
+        save("postwave_ads", ads);
+        renderAds();
+        toast("广告已删除");
+      }
+      if (move) {
+        const index = Number(move.dataset.moveAd);
+        const dir = Number(move.dataset.dir);
+        if (["home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
+          const maxSlot = currentAdSection === "detail-text" ? 20 : Number.MAX_SAFE_INTEGER;
+          ads[index].slot = Math.max(1, Math.min(maxSlot, (Number(ads[index].slot) || 1) + dir));
+          save("postwave_ads", ads);
+          renderAds();
+          toast("广告插入位置已更新");
+          return;
+        }
+        const entries = adEntriesForCurrentSection();
+        const position = entries.findIndex((entry) => entry.index === index);
+        const target = entries[position + dir]?.index;
+        if (target === undefined) return;
+        [ads[index], ads[target]] = [ads[target], ads[index]];
+        save("postwave_ads", ads);
+        renderAds();
+        toast("广告排序已更新");
+      }
+    });
+    document.querySelector("#feedOrderList").addEventListener("click", (event) => {
+      const move = event.target.closest("[data-move-feed]");
+      if (!move) return;
+      const position = Number(move.dataset.moveFeed);
+      const dir = Number(move.dataset.dir);
+      const stream = buildHomeFeedStream();
+      const target = position + dir;
+      if (target < 0 || target >= stream.length) return;
+      [stream[position], stream[target]] = [stream[target], stream[position]];
+      saveHomeFeedStream(stream);
+      renderTables();
+      currentAdSection = "home-feed";
+      document.querySelectorAll(".ad-tab").forEach((item) => item.classList.toggle("active", item.dataset.adSection === "home-feed"));
+      renderAds();
+      toast("首页内容流排序已更新");
+    });
+    document.querySelector("#postsTable").addEventListener("click", (event) => {
+      const edit = event.target.closest("[data-edit-post]");
+      const del = event.target.closest("[data-delete-post]");
+      const move = event.target.closest("[data-move-post]");
+      if (edit) {
+        const index = Number(edit.dataset.editPost);
+        const post = storedPosts[index];
+        if (!post) return;
+        editingPostIndex = index;
+        document.querySelector("#postTitle").value = post.title || "";
+        document.querySelector("#bodyText").value = post.body || "";
+        document.querySelector("#bodyText").dispatchEvent(new Event("input"));
+        document.querySelector("#keywordInput").value = (post.keywords || []).map((keyword) => String(keyword).replace(/^#+/, "")).join(" ");
+        currentCoverData = post.cover || "";
+        currentBodyImages = post.bodyImages || (post.bodyImage ? [post.bodyImage] : []);
+        currentVideoData = post.video || "";
+        document.querySelector("#tagInput").value = (post.tags || []).map((tag) => String(tag).replace(/^#+/, "")).join(" ");
+        renderTagPreview();
+        renderAuthorSelect(post.author || "");
+        document.querySelectorAll("#postCategory input").forEach((input) => {
+          input.checked = (post.categories || []).includes(input.value) || post.category === input.value;
+        });
+        document.querySelector("#coverBox").classList.toggle("has-image", Boolean(currentCoverData));
+        document.querySelector("#coverText").innerHTML = currentCoverData ? `<img class="cover-thumb" src="${currentCoverData}" alt="封面预览"><span class="cover-caption">已载入原封面，可重新上传</span>` : "点击上传封面";
+        renderInsertedMediaPreview();
+        document.querySelector('[data-view="publish"]').click();
+        toast("已载入帖子，可编辑后重新发布");
+      }
+      if (del) {
+        const index = Number(del.dataset.deletePost);
+        storedPosts.splice(index, 1);
+        save("postwave_posts", storedPosts);
+        renderTables();
+        toast("帖子已删除");
+      }
+      if (move) {
+        const index = Number(move.dataset.movePost);
+        const dir = Number(move.dataset.dir);
+        const target = index + dir;
+        if (target < 0 || target >= storedPosts.length) return;
+        [storedPosts[index], storedPosts[target]] = [storedPosts[target], storedPosts[index]];
+        save("postwave_posts", storedPosts);
+        renderTables();
+        toast("帖子排序已更新");
+      }
+    });
+    document.querySelector("#saveAuthorBtn").addEventListener("click", async () => {
+      const name = document.querySelector("#authorNameInput").value.trim();
+      const account = document.querySelector("#authorAccountInput").value.trim();
+      const password = document.querySelector("#authorPasswordInput").value.trim();
+      if (!name || !account || (editingAuthorIndex === null && !password)) {
+        toast(editingAuthorIndex === null ? "请填写作者名、账号和密码" : "请填写作者名和账号");
+        return;
+      }
+      if (authors.some((author, index) => index !== editingAuthorIndex && author.account === account)) {
+        toast("这个后台登录账号已存在");
+        return;
+      }
+      const baseAuthor = editingAuthorIndex !== null ? authors[editingAuthorIndex] || {} : {};
+      const nextAuthor = { id: baseAuthor.id, name, account, status: baseAuthor.status || "正常" };
+      if (password) nextAuthor.password = password;
+      if (editingAuthorIndex !== null) {
+        authors[editingAuthorIndex] = nextAuthor;
+      } else {
+        authors.push(nextAuthor);
+      }
+      try {
+        await saveAuthors();
+        clearAuthorEditor();
+        toast("作者账号已保存");
+      } catch (error) {
+        toast(error.message || "作者账号保存失败");
+      }
+    });
+    document.querySelector("#cancelAuthorEditBtn").addEventListener("click", () => {
+      clearAuthorEditor();
+      toast("已取消编辑");
+    });
+    document.querySelector("#authorsTable").addEventListener("click", (event) => {
+      const edit = event.target.closest("[data-edit-author]");
+      const del = event.target.closest("[data-delete-author]");
+      if (edit) {
+        const index = Number(edit.dataset.editAuthor);
+        const author = authors[index];
+        if (!author) return;
+        editingAuthorIndex = index;
+        document.querySelector("#authorNameInput").value = author.name || "";
+        document.querySelector("#authorAccountInput").value = author.account || "";
+        document.querySelector("#authorPasswordInput").value = "";
+        document.querySelector("#saveAuthorBtn").textContent = "保存修改";
+      }
+      if (del) {
+        authors.splice(Number(del.dataset.deleteAuthor), 1);
+        saveAuthors().then(() => {
+          clearAuthorEditor();
+          toast("作者已删除");
+        }).catch((error) => toast(error.message || "作者删除失败"));
+      }
+    });
+    document.querySelector("#siteTabsEditor").addEventListener("click", (event) => {
+      const remove = event.target.closest("[data-remove-tab]");
+      if (!remove) return;
+      const nextTabs = collectSiteTabs();
+      nextTabs.splice(Number(remove.dataset.removeTab), 1);
+      siteConfig.tabs = nextTabs.length ? nextTabs : defaultSiteConfig.tabs;
+      renderSiteTabsEditor();
+      renderCategoryPicker();
+    });
+    document.querySelector("#addSiteTab").addEventListener("click", () => {
+      siteConfig.tabs = collectSiteTabs();
+      siteConfig.tabs.push({ name: "新栏目", subtitle: "新栏目内容聚合展示。" });
+      renderSiteTabsEditor();
+    });
+    document.querySelector("#saveAppearance").addEventListener("click", () => {
+      const tabs = collectSiteTabs();
+      siteConfig = {
+        siteName: document.querySelector("#siteNameInput").value.trim() || "PostWave",
+        logoImage: currentLogoImage,
+        commentLogoText: document.querySelector("#commentLogoInput").value.trim() || "51暗网",
+        tabs: tabs.length ? tabs : defaultSiteConfig.tabs
+      };
+      localStorage.setItem("postwave_site_name", siteConfig.siteName);
+      save("postwave_site_config", siteConfig);
+      renderCategoryPicker();
+      toast("外观与栏目已保存，前台刷新后生效");
+    });
+    document.querySelector("#commentsTable").addEventListener("click", (event) => {
+      const approve = event.target.closest("[data-approve-comment]");
+      const del = event.target.closest("[data-delete-comment]");
+      const pending = JSON.parse(localStorage.getItem("postwave_pending_comments") || "[]");
+      if (approve) {
+        const index = Number(approve.dataset.approveComment);
+        const item = pending[index];
+        if (!item) return;
+        const key = `postwave_comments_${item.postId}`;
+        const approved = JSON.parse(localStorage.getItem(key) || "[]");
+        approved.unshift({ name: item.name, time: item.time || "刚刚", text: item.text });
+        localStorage.setItem(key, JSON.stringify(approved));
+        pending.splice(index, 1);
+        localStorage.setItem("postwave_pending_comments", JSON.stringify(pending));
+        renderCommentsTable();
+        toast("评论已通过并显示到前台");
+      }
+      if (del) {
+        pending.splice(Number(del.dataset.deleteComment), 1);
+        localStorage.setItem("postwave_pending_comments", JSON.stringify(pending));
+        renderCommentsTable();
+        toast("评论已删除");
+      }
+    });
+    document.querySelector("#saveAdConfig").addEventListener("click", () => {
+      localStorage.setItem("postwave_ad_config", JSON.stringify({
+        station: document.querySelector("#stationCount").value || 10,
+        latest: document.querySelector("#latestCount").value || 10,
+        friend: document.querySelector("#friendCount").value || 10
+      }));
+      toast("广告数量配置已保存");
+    });
+    document.querySelector("#saveNotice").addEventListener("click", () => {
+      localStorage.setItem("postwave_notice", document.querySelector("#noticeText").value);
+      toast("官方公告已保存");
+    });
+    document.querySelector("#saveRecommend").addEventListener("click", () => toast("推荐规则已保存"));
+    document.querySelector("#saveFooter").addEventListener("click", () => toast("导航页脚已保存"));
+    document.querySelector("#themeAdmin").addEventListener("click", () => {
+      document.body.classList.toggle("admin-dark");
+      toast(document.body.classList.contains("admin-dark") ? "已切换深色后台" : "已切换浅色后台");
+    });
+    document.querySelector("#themeSelect").addEventListener("change", (event) => {
+      document.body.classList.toggle("admin-dark", event.target.value.includes("深色"));
+      toast("主题已切换");
+    });
+    renderSiteTabsEditor();
+    renderCategoryPicker();
+    renderAuthorSelect();
+    renderTables();
+    loadStoredPostsFromApi();
+    loadAuthorsFromApi();
+    renderAds();
+    window.lucide?.createIcons?.();
+  </script>
+</body>
+</html>
