@@ -10,7 +10,7 @@
       document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
     } catch (error) {}
   </script>
-  <script defer src="https://unpkg.com/lucide@latest/dist/umd/lucide.js" onload="window.lucide?.createIcons?.()"></script>
+  <script defer src="/vendor/lucide/lucide.min.js" onload="window.lucide?.createIcons?.()"></script>
   <style>
     :root { --bg:#0b0f0f; --card:#15191d; --line:#293038; --text:#f5f7f4; --muted:#a5adb5; --green:#28d4b0; --pink:#ef477d; --radius:8px; }
     :root.light { --bg:#f6f8f5; --card:#fff; --line:#dde6dc; --text:#101611; --muted:#657160; --green:#0ba986; }
