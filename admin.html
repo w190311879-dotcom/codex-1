@@ -407,6 +407,27 @@
       if (!response.ok) throw new Error(data.error || "媒体文件上传失败");
       return data.media || { url: data.url };
     }
+    function uploadVideoForTranscode(file, onProgress) {
+      return new Promise((resolve, reject) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/media/video/transcode");
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          const percent = Math.min(95, Math.round((event.loaded / event.total) * 60));
+          onProgress(percent, `上传中 ${percent}%`);
+        };
+        xhr.onload = () => {
+          const data = JSON.parse(xhr.responseText || "{}");
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data.media || { url: data.url });
+          else reject(new Error(data.error || "视频转码失败"));
+        };
+        xhr.onerror = () => reject(new Error("视频上传失败，请检查网络或服务状态"));
+        onProgress(1, "上传中 1%");
+        xhr.send(formData);
+      });
+    }
     async function mediaUrl(item) {
       if (!item) return "";
       if (item.url) return item.url;
@@ -694,40 +715,52 @@
       renderTables();
       status.textContent = "上传中 0%";
       progress.style.width = "0%";
-      let value = 0;
-      const timer = setInterval(() => {
-        value = Math.min(92, value + 8);
-        processingItem.progress = value;
-        processingItem.segments = Math.min(7, Math.floor(value / 13));
-        save("postwave_media", mediaLibrary);
-        renderTables();
-        progress.style.width = `${value}%`;
-        if (value < 55) status.textContent = `上传中 ${value}%`;
-        else if (value < 85) status.textContent = `切片中 ${value}%`;
-        else status.textContent = `转码 H.264 中 ${value}%`;
-      }, 160);
+      let transcodeTimer = null;
       try {
-        const media = await uploadMediaFile(uploadFile, "video");
-        clearInterval(timer);
+        const media = await uploadVideoForTranscode(uploadFile, (value, message) => {
+          processingItem.progress = value;
+          save("postwave_media", mediaLibrary);
+          renderTables();
+          progress.style.width = `${value}%`;
+          status.textContent = message;
+          if (value >= 60 && !transcodeTimer) {
+            status.textContent = "服务端转码 H.264 中，请勿关闭页面";
+            transcodeTimer = setInterval(() => {
+              const next = Math.min(95, (Number(processingItem.progress) || 60) + 1);
+              processingItem.progress = next;
+              progress.style.width = `${next}%`;
+              status.textContent = `服务端转码 H.264 中 ${next}%`;
+              save("postwave_media", mediaLibrary);
+              renderTables();
+            }, 900);
+          }
+        });
+        if (transcodeTimer) clearInterval(transcodeTimer);
         processingItem.status = "ready";
         processingItem.progress = 100;
-        processingItem.segments = 8;
-        processingItem.size = uploadFile.size;
+        processingItem.segments = media.segments || 1;
+        processingItem.size = media.size || uploadFile.size;
         processingItem.url = media.url;
         processingItem.storagePath = media.storagePath || "";
+        processingItem.name = media.name || processingItem.name;
+        processingItem.aspect = media.aspect || processingItem.aspect;
+        processingItem.width = media.width || 0;
+        processingItem.height = media.height || 0;
+        processingItem.duration = media.duration || 0;
+        processingItem.storageProvider = media.storageProvider || "";
         save("postwave_media", mediaLibrary);
         progress.style.width = "100%";
-        status.textContent = "已完成：切片 8 段，H.264，中等品质";
+        status.textContent = `已完成：H.264 MP4，中等品质${media.storageProvider === "bunny" ? "，已上传 Storage/CDN" : "，本地存储"}`;
         selectedUploadVideo = null;
         document.querySelector("#videoInput").value = "";
         renderTables();
         toast("视频处理完成，可在发布页插入");
       } catch (error) {
-        clearInterval(timer);
+        if (transcodeTimer) clearInterval(transcodeTimer);
         processingItem.status = "failed";
         processingItem.progress = 100;
         save("postwave_media", mediaLibrary);
-        status.textContent = "处理失败：请重新上传视频";
+        status.textContent = `处理失败：${error.message || "请重新上传视频"}`;
         renderTables();
         toast(error.message || "视频上传失败，请重试");
       }

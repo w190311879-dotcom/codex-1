@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS media_files (
   storage_provider TEXT NOT NULL DEFAULT '',
   storage_path TEXT NOT NULL DEFAULT '',
   url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ready',
+  width INTEGER NOT NULL DEFAULT 0,
+  height INTEGER NOT NULL DEFAULT 0,
+  duration DOUBLE PRECISION NOT NULL DEFAULT 0,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
