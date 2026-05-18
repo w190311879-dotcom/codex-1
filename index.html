@@ -267,7 +267,15 @@
     };
     const siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || defaultSiteConfig;
     document.title = siteConfig.siteName || "PostWave";
-    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${siteConfig.logoImage}" alt="${siteConfig.siteName || "Logo"}">`;
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+    }
+    function safeUrl(value, fallback = "") {
+      const url = String(value || "").trim();
+      if (/^(https?:|data:image\/|\/uploads\/|app\.html|admin-login\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
+      return fallback;
+    }
+    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteConfig.siteName || "Logo")}">`;
     document.querySelector("#site-map").textContent = `${siteConfig.siteName || "PostWave"} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
     document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteConfig.siteName || "PostWave"}. All rights reserved.`;
     const images = [
@@ -409,12 +417,12 @@
       const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
       const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.name === hashTab));
       document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `
-        <a class="${index === activeIndex ? "active" : ""}" href="#" data-title="${tab.name}" data-subtitle="${tab.subtitle || `${tab.name}内容聚合展示。`}">${tab.name}</a>
+        <a class="${index === activeIndex ? "active" : ""}" href="#" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>
       `).join("") + (moreTabs.length ? `
         <span class="more-wrap" id="moreWrap">
           <button class="nav-more ${activeIndex >= visibleLimit ? "active" : ""}" type="button" id="moreNav">更多</button>
           <span class="more-menu">
-            ${moreTabs.map((tab, index) => `<a class="${index + visibleLimit === activeIndex ? "active" : ""}" href="#" data-title="${tab.name}" data-subtitle="${tab.subtitle || `${tab.name}内容聚合展示。`}">${tab.name}</a>`).join("")}
+            ${moreTabs.map((tab, index) => `<a class="${index + visibleLimit === activeIndex ? "active" : ""}" href="#" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>`).join("")}
           </span>
         </span>
       ` : "");
@@ -452,11 +460,7 @@
     async function feedAdMarkup(ad) {
       const img = await adImageUrl(ad);
       if (!img) return "";
-      return `<a class="post-row feed-ad" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"><div class="post-content" aria-hidden="true"></div></a>`;
-    }
-
-    function escapeHtml(value) {
-      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+      return `<a class="post-row feed-ad" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}"><div class="post-content" aria-hidden="true"></div></a>`;
     }
 
     async function fetchApiPosts() {
@@ -513,7 +517,7 @@
       const feedAds = activeCategory === "首页" ? loadAds().filter((ad) => ad.placement === "home-feed" && ad.image).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
       const rows = pageItems.map((post) => `
         <a class="post-row" href="detail.html?id=${encodeURIComponent(post.id)}">
-          <img src="${post.image}" alt="${escapeHtml(post.title)}">
+          <img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}">
           <div class="post-content">
             <h2 class="post-title">${escapeHtml(post.title)}</h2>
             <p class="post-meta"><span>${escapeHtml(post.author || "alun")}</span><span>·</span><span>${escapeHtml(post.date || "")}</span><span>·</span><span>${escapeHtml((post.categories && post.categories.length ? post.categories.join("、") : post.category) || "内容")}</span></p>
@@ -542,8 +546,8 @@
     function renderRecommend() {
       document.querySelector("#recommendGrid").innerHTML = posts.slice(0, 4).map((post) => `
         <a class="recommend-card" href="detail.html?id=${encodeURIComponent(post.id)}">
-          <img src="${post.image}" alt="${post.title}">
-          <h3>${post.title}</h3>
+          <img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}">
+          <h3>${escapeHtml(post.title)}</h3>
         </a>
       `).join("");
     }
@@ -553,7 +557,7 @@
       const homeAds = ads.filter((ad) => (!ad.placement || ad.placement === "home-banner") && ad.image);
       const rows = await Promise.all(homeAds.map(async (ad) => {
         const img = await adImageUrl(ad);
-        return img ? `<a class="ad-item has-ad-image" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"></a>` : "";
+        return img ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}"></a>` : "";
       }));
       document.querySelector("#adStack").innerHTML = rows.join("");
     }

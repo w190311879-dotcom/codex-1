@@ -266,7 +266,15 @@
       ]
     };
     const siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || defaultSiteConfig;
-    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${siteConfig.logoImage}" alt="${siteConfig.siteName || "Logo"}">`;
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[char]));
+    }
+    function safeUrl(value, fallback = "") {
+      const url = String(value || "").trim();
+      if (/^(https?:|data:image\/|\/uploads\/|app\.html|admin-login\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
+      return fallback;
+    }
+    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteConfig.siteName || "Logo")}">`;
     document.querySelector("#site-map").textContent = `${siteConfig.siteName || "PostWave"} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
     document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteConfig.siteName || "PostWave"}. All rights reserved.`;
     function renderNav() {
@@ -274,10 +282,10 @@
       const visibleLimit = 14;
       const visibleTabs = tabs.slice(0, visibleLimit);
       const moreTabs = tabs.slice(visibleLimit);
-      document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `<a class="${index === 0 ? "active" : ""}" href="index.html#${encodeURIComponent(tab.name)}">${tab.name}</a>`).join("") + (moreTabs.length ? `
+      document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `<a class="${index === 0 ? "active" : ""}" href="index.html#${encodeURIComponent(tab.name)}">${escapeHtml(tab.name)}</a>`).join("") + (moreTabs.length ? `
         <span class="more-wrap" id="moreWrap">
           <button class="nav-more" type="button" id="moreNav">更多</button>
-          <span class="more-menu">${moreTabs.map((tab) => `<a href="index.html#${encodeURIComponent(tab.name)}">${tab.name}</a>`).join("")}</span>
+          <span class="more-menu">${moreTabs.map((tab) => `<a href="index.html#${encodeURIComponent(tab.name)}">${escapeHtml(tab.name)}</a>`).join("")}</span>
         </span>
       ` : "");
     }
@@ -422,21 +430,18 @@
       const source = byPlacement(name).filter((ad) => ad.image).slice(0, count);
       const rows = await Promise.all(source.map(async (ad) => {
         const img = await adImageUrl(ad);
-        return img ? `<a class="square-ad" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"></a>` : "";
+        return img ? `<a class="square-ad" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}"></a>` : "";
       }));
       return rows.join("");
     }
     async function bannerMarkup(ad) {
       const img = await adImageUrl(ad);
-      return img ? `<a class="ad-item has-ad-image" href="${ad.link || "app.html"}"><img src="${img}" alt="${ad.title || "广告"}"></a>` : "";
+      return img ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}"></a>` : "";
     }
     async function renderBannerPlacement(name, target, fallback) {
       const source = byPlacement(name).filter((ad) => ad.image).sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
       const rows = await Promise.all((source.length ? source : fallback).map(bannerMarkup));
       document.querySelector(target).innerHTML = rows.join("");
-    }
-    function escapeHtml(value) {
-      return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[char]));
     }
     function renderTextAds() {
       const source = byPlacement("detail-text")
@@ -444,7 +449,7 @@
         .slice(0, 20);
       document.querySelector("#detailTextAds").innerHTML = source.map((ad) => {
         const text = escapeHtml(ad.title || ad.text || ad.desc || "文字广告");
-        return `<a class="text-ad" href="${escapeHtml(ad.link || "app.html")}">${text}</a>`;
+        return `<a class="text-ad" href="${safeUrl(ad.link || "app.html", "app.html")}">${text}</a>`;
       }).join("");
     }
     async function bannerAds() {
@@ -462,7 +467,7 @@
     }
     function guess() {
       const shuffled = [...posts].sort(() => Math.random() - .5).slice(0, 4);
-      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="detail.html?id=${encodeURIComponent(post.id)}"><img src="${post.image}" alt="${post.title}"><h3>${post.title}</h3></a>`).join("");
+      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="detail.html?id=${encodeURIComponent(post.id)}"><img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}"><h3>${escapeHtml(post.title)}</h3></a>`).join("");
       window.lucide?.createIcons?.();
     }
     async function fetchApprovedComments() {
@@ -506,13 +511,13 @@
           const match = part.match(/\[图片(?::(\d+))?\]/);
           const imgIndex = match && match[1] ? Number(match[1]) : 0;
           const img = (current.bodyImages || [])[imgIndex] || "";
-          if (img) flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><img src="${img}" alt="${current.title}"></div>`);
+          if (img) flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><img src="${safeUrl(img)}" alt="${escapeHtml(current.title)}"></div>`);
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);
           const videoId = match && match[1] ? match[1] : "";
           const mediaVideo = mediaLibrary.find((item) => item.id === videoId);
           const ratio = mediaVideo?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
-          if (mediaVideo && mediaVideo.status === "ready") flow.insertAdjacentHTML("beforeend", `<div class="media video-media ${ratio}"><video data-media-video="${mediaVideo.id}" controls></video></div>`);
+          if (mediaVideo && mediaVideo.status === "ready") flow.insertAdjacentHTML("beforeend", `<div class="media video-media ${ratio}"><video data-media-video="${escapeHtml(mediaVideo.id)}" controls></video></div>`);
         } else {
           if (!part.trim()) return;
           const div = document.createElement("div");
@@ -531,7 +536,7 @@
     }
     renderContentFlow();
     function cleanTag(tag) { return String(tag).replace(/^#+/, ""); }
-    document.querySelector("#tags").innerHTML = current.tags.map((tag) => `<span class="tag">${cleanTag(tag)}</span>`).join("");
+    document.querySelector("#tags").innerHTML = current.tags.map((tag) => `<span class="tag">${escapeHtml(cleanTag(tag))}</span>`).join("");
     document.querySelector("#officialNotice").textContent = notice;
     const prev = posts[(index - 1 + posts.length) % posts.length];
     const next = posts[(index + 1) % posts.length];
@@ -568,7 +573,7 @@
     document.querySelector("#searchInput").addEventListener("input", (event) => {
       const q = event.target.value.trim().replace(/#/g, "").toLowerCase();
       const results = q ? posts.filter((post) => postSearchText(post).includes(q)).slice(0, 8) : [];
-      document.querySelector("#searchResults").innerHTML = results.map((post) => `<a href="detail.html?id=${encodeURIComponent(post.id)}">${post.title}</a>`).join("");
+      document.querySelector("#searchResults").innerHTML = results.map((post) => `<a href="detail.html?id=${encodeURIComponent(post.id)}">${escapeHtml(post.title)}</a>`).join("");
     });
     const authLayer = document.querySelector("#authLayer");
     function updateCommentUserState() {

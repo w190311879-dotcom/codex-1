@@ -457,7 +457,7 @@
     document.querySelector("#noticeText").value = localStorage.getItem("postwave_notice") || document.querySelector("#noticeText").value;
     document.querySelector("#siteNameInput").value = siteConfig.siteName;
     document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
-    document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${currentLogoImage}" alt="Logo 预览">` : "Logo";
+    document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">` : "Logo";
 
     function save(key, value) {
       try {
@@ -548,6 +548,11 @@
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
     }
+    function safeUrl(value, fallback = "") {
+      const url = String(value || "").trim();
+      if (/^(https?:|blob:|data:image\/|\/uploads\/|app\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:)/i.test(url)) return url;
+      return fallback;
+    }
     function categoryTabs() {
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
       return tabs.filter((tab) => tab.name !== "首页");
@@ -555,7 +560,7 @@
     function renderCategoryPicker(selected = []) {
       const categories = categoryTabs();
       document.querySelector("#postCategory").innerHTML = categories.map((tab) => `
-        <label><input type="checkbox" value="${tab.name}" ${selected.includes(tab.name) ? "checked" : ""}>${tab.name}</label>
+        <label><input type="checkbox" value="${escapeHtml(tab.name)}" ${selected.includes(tab.name) ? "checked" : ""}>${escapeHtml(tab.name)}</label>
       `).join("");
     }
     function renderAuthorSelect(selected = "") {
@@ -606,8 +611,8 @@
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
       document.querySelector("#siteTabsEditor").innerHTML = tabs.map((tab, index) => `
         <div class="site-tab-row" data-tab-row="${index}">
-          <input class="field" data-tab-name="${index}" value="${tab.name}" placeholder="栏目名">
-          <input class="field" data-tab-subtitle="${index}" value="${tab.subtitle || ""}" placeholder="栏目副标题">
+          <input class="field" data-tab-name="${index}" value="${escapeHtml(tab.name)}" placeholder="栏目名">
+          <input class="field" data-tab-subtitle="${index}" value="${escapeHtml(tab.subtitle || "")}" placeholder="栏目副标题">
           <button class="btn" type="button" data-remove-tab="${index}" ${tabs.length <= 1 ? "disabled" : ""}>删除</button>
         </div>
       `).join("");
@@ -679,7 +684,7 @@
     function renderTagPreview() {
       const tags = parseTags();
       document.querySelector("#tagPreview").innerHTML = tags.length
-        ? tags.map((tag) => `<span class="tag-chip">${tag}</span>`).join("")
+        ? tags.map((tag) => `<span class="tag-chip">${escapeHtml(tag)}</span>`).join("")
         : '<span class="tag-chip">输入 #标签 后自动生成</span>';
     }
     document.querySelector("#tagInput").addEventListener("input", renderTagPreview);
@@ -689,13 +694,13 @@
       const localPreview = previewObjectUrl(file);
       const coverBox = document.querySelector("#coverBox");
       coverBox.classList.add("has-image");
-      document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${localPreview}" alt="封面预览"><span class="cover-caption">上传中：${file.name}</span>`;
+      document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${safeUrl(localPreview)}" alt="封面预览"><span class="cover-caption">上传中：${escapeHtml(file.name)}</span>`;
       try {
         const media = await uploadMediaFile(file, "cover");
         currentCoverData = media.url;
         const coverBox = document.querySelector("#coverBox");
         coverBox.classList.add("has-image");
-        document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${media.url}" alt="封面预览"><span class="cover-caption">${file.name}</span>`;
+        document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${safeUrl(media.url)}" alt="封面预览"><span class="cover-caption">${escapeHtml(file.name)}</span>`;
         toast("封面已上传");
       } catch (error) {
         console.error(error);
@@ -708,7 +713,7 @@
       const file = event.target.files[0];
       if (!file) return;
       selectedUploadVideo = file;
-      document.querySelector("#videoText").innerHTML = `<strong>${file.name}</strong><small>视频已选择，点击可重新上传</small>`;
+      document.querySelector("#videoText").innerHTML = `<strong>${escapeHtml(file.name)}</strong><small>视频已选择，点击可重新上传</small>`;
       const preview = document.createElement("video");
       preview.preload = "metadata";
       preview.onloadedmetadata = () => {
@@ -857,16 +862,16 @@
     });
     function tableRows(items) {
       const rows = items.length ? items : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
-      return `<div class="table-row header"><span>标题</span><span>状态</span><span>作者</span><span>时间</span></div>` + rows.map((item, index) => `<div class="table-row"><strong>${item.title}</strong><span>${item.status}</span><span>${item.author}</span><span>${item.date}</span></div>`).join("");
+      return `<div class="table-row header"><span>标题</span><span>状态</span><span>作者</span><span>时间</span></div>` + rows.map((item) => `<div class="table-row"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.status)}</span><span>${escapeHtml(item.author)}</span><span>${escapeHtml(item.date)}</span></div>`).join("");
     }
     function postRows() {
       const rows = storedPosts.length ? storedPosts : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
       return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
         <div class="table-row posts-row">
-          <strong>${item.title}</strong>
-          <span>${item.status}</span>
-          <span>${item.author}</span>
-          <span>${item.date}</span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${escapeHtml(item.status)}</span>
+          <span>${escapeHtml(item.author)}</span>
+          <span>${escapeHtml(item.date)}</span>
           <span class="mini-actions">
             <button class="btn" data-edit-post="${index}">编辑</button>
             <button class="btn" data-delete-post="${index}">删除</button>
@@ -884,7 +889,7 @@
         let statusCell = `<span>处理中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
         if (item.status === "ready") statusCell = '<span class="status-ready">已完成</span>';
         if (item.status === "failed") statusCell = '<span class="status-failed">处理失败，请重新上传</span>';
-        return `<div class="table-row"><strong>${item.name}</strong><span>${item.format}</span><span>${statusCell}</span><span>${item.date}</span></div>`;
+        return `<div class="table-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.format)}</span><span>${statusCell}</span><span>${escapeHtml(item.date)}</span></div>`;
       }).join("") : `<div class="table-row"><strong>暂无视频</strong><span>视频</span><span>等待上传</span><span>-</span></div>`);
       document.querySelector("#usersTable").innerHTML = `<div class="table-row header"><span>对象</span><span>类型</span><span>状态</span><span>时间</span></div><div class="table-row"><strong>guest@example.com</strong><span>用户</span><span>正常</span><span>2026/5/13</span></div><div class="table-row"><strong>示例举报</strong><span>举报</span><span>待处理</span><span>2026/5/13</span></div>`;
       renderAuthorsTable();
@@ -995,13 +1000,13 @@
         let preview = "";
         if (item.type === "ad") {
           const src = await adImageUrl(item.ad);
-          preview = src ? `<br><img class="ad-preview" src="${src}" alt="${item.title}">` : "";
+          preview = src ? `<br><img class="ad-preview" src="${safeUrl(src)}" alt="${escapeHtml(item.title)}">` : "";
         }
         return `
           <div class="feed-order-item">
             <span class="feed-order-index">${position + 1}</span>
             <span class="feed-order-title">
-              <strong>${item.title}</strong>
+              <strong>${escapeHtml(item.title)}</strong>
               <small>${item.type === "post" ? "帖子" : `首页内容流广告 · 插入位置 ${position + 1}`}</small>${preview}
             </span>
             <span class="mini-actions">
@@ -1020,7 +1025,7 @@
         const preview = await adImageUrl(ad);
         return `
         <div class="ad-admin-item">
-          <span><strong>${ad.title}</strong>${ad.desc ? `<br>${ad.desc}` : ""}<br><small>位置：${adPlacementLabel(ad.placement)}${ad.slot ? ` · 插入位置 ${ad.slot}` : ""} · ${ad.link || "app.html"}</small>${preview ? `<br><img class="ad-preview" src="${preview}" alt="${ad.title}">` : ""}</span>
+          <span><strong>${escapeHtml(ad.title)}</strong>${ad.desc ? `<br>${escapeHtml(ad.desc)}` : ""}<br><small>位置：${escapeHtml(adPlacementLabel(ad.placement))}${ad.slot ? ` · 插入位置 ${escapeHtml(ad.slot)}` : ""} · ${escapeHtml(ad.link || "app.html")}</small>${preview ? `<br><img class="ad-preview" src="${safeUrl(preview)}" alt="${escapeHtml(ad.title)}">` : ""}</span>
           <span class="mini-actions">
             <button class="btn" data-move-ad="${index}" data-dir="-1" ${["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((Number(ad.slot) || 1) <= 1 ? "disabled" : "") : (position === 0 ? "disabled" : "")}>上移</button>
             <button class="btn" data-move-ad="${index}" data-dir="1" ${["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((currentAdSection === "detail-text" && (Number(ad.slot) || 1) >= 20) ? "disabled" : "") : (position === entries.length - 1 ? "disabled" : "")}>下移</button>
@@ -1089,12 +1094,12 @@
           const index = Number(match[2] || 0);
           const src = currentBodyImages[index] || "";
           return src
-            ? `<div class="preview-card"><img src="${src}" alt="正文图片 ${index + 1}"><span>图片 ${index + 1}</span></div>`
+            ? `<div class="preview-card"><img src="${safeUrl(src)}" alt="正文图片 ${index + 1}"><span>图片 ${index + 1}</span></div>`
             : `<div class="preview-card empty">图片 ${index + 1} 不存在</div>`;
         }
         const video = mediaLibrary.find((item) => item.id === match[2]);
         return video && video.status === "ready"
-          ? `<div class="preview-card"><video data-preview-video="${video.id}" muted controls></video><span>${video.name} · ${video.aspect === "9-16" ? "9:16" : "16:9"}</span></div>`
+          ? `<div class="preview-card"><video data-preview-video="${escapeHtml(video.id)}" muted controls></video><span>${escapeHtml(video.name)} · ${video.aspect === "9-16" ? "9:16" : "16:9"}</span></div>`
           : `<div class="preview-card empty">视频未处理完成</div>`;
       }).join("");
       list.querySelectorAll("[data-preview-video]").forEach((videoEl) => {
@@ -1139,8 +1144,8 @@
       const ready = mediaLibrary.filter((item) => item.type === "video" && item.status === "ready");
       document.querySelector("#videoPickerList").innerHTML = ready.length ? ready.map((item) => `
         <div class="video-choice">
-          <span><strong>${item.name}</strong><br><small>${item.format} · ${item.quality} · ${item.aspect === "9-16" ? "9:16" : "16:9"} · ${item.segments} 段切片</small></span>
-          <button class="btn dark" data-pick-video="${item.id}">插入</button>
+          <span><strong>${escapeHtml(item.name)}</strong><br><small>${escapeHtml(item.format)} · ${escapeHtml(item.quality)} · ${item.aspect === "9-16" ? "9:16" : "16:9"} · ${escapeHtml(item.segments)} 段切片</small></span>
+          <button class="btn dark" data-pick-video="${escapeHtml(item.id)}">插入</button>
         </div>
       `).join("") : `<div class="video-choice"><span>暂无已处理视频，请先到“视频上传”完成上传和转码。</span><button class="btn" type="button">等待</button></div>`;
     }
@@ -1170,11 +1175,11 @@
       const file = event.target.files[0];
       if (!file) return;
       const localPreview = previewObjectUrl(file);
-      document.querySelector("#logoPreview").innerHTML = `<img src="${localPreview}" alt="Logo 预览">`;
+      document.querySelector("#logoPreview").innerHTML = `<img src="${safeUrl(localPreview)}" alt="Logo 预览">`;
       try {
         const media = await uploadMediaFile(file, "logo");
         currentLogoImage = media.url;
-        document.querySelector("#logoPreview").innerHTML = `<img src="${currentLogoImage}" alt="Logo 预览">`;
+        document.querySelector("#logoPreview").innerHTML = `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">`;
         toast("Logo 图片已上传");
       } catch (error) {
         console.error(error);
@@ -1331,7 +1336,7 @@
           input.checked = (post.categories || []).includes(input.value) || post.category === input.value;
         });
         document.querySelector("#coverBox").classList.toggle("has-image", Boolean(currentCoverData));
-        document.querySelector("#coverText").innerHTML = currentCoverData ? `<img class="cover-thumb" src="${currentCoverData}" alt="封面预览"><span class="cover-caption">已载入原封面，可重新上传</span>` : "点击上传封面";
+        document.querySelector("#coverText").innerHTML = currentCoverData ? `<img class="cover-thumb" src="${safeUrl(currentCoverData)}" alt="封面预览"><span class="cover-caption">已载入原封面，可重新上传</span>` : "点击上传封面";
         renderInsertedMediaPreview();
         document.querySelector('[data-view="publish"]').click();
         toast("已载入帖子，可编辑后重新发布");
