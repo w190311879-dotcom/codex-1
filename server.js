@@ -57,6 +57,9 @@ const videoUploadLimitMb = Number(process.env.POSTWAVE_VIDEO_UPLOAD_LIMIT_MB || 
 const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
 const loginRateWindowMs = Math.max(60, Number(process.env.POSTWAVE_LOGIN_RATE_WINDOW_SECONDS || 900) || 900) * 1000;
 const loginRateMaxAttempts = Math.max(3, Number(process.env.POSTWAVE_LOGIN_RATE_MAX || 10) || 10);
+const demoSeedEnabled = process.env.POSTWAVE_ENABLE_DEMO_SEED === undefined
+  ? !isProduction
+  : ["1", "true", "yes", "on"].includes(String(process.env.POSTWAVE_ENABLE_DEMO_SEED).toLowerCase());
 const ffmpegBin = process.env.FFMPEG_PATH || "ffmpeg";
 const ffprobeBin = process.env.FFPROBE_PATH || "ffprobe";
 const allowedImageMimes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]);
@@ -1502,7 +1505,8 @@ app.get("/config.js", (_req, res) => {
     siteOrigin: publicSiteOrigin,
     adminOrigin: publicAdminOrigin,
     apiBaseUrl: publicApiBaseUrl,
-    mediaBaseUrl: publicMediaBaseUrl
+    mediaBaseUrl: publicMediaBaseUrl,
+    demoSeedEnabled
   })};`);
 });
 

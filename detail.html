@@ -262,6 +262,7 @@
     function apiOptions(options = {}) {
       return { credentials: "include", ...options };
     }
+    const demoSeedEnabled = appConfig.demoSeedEnabled !== false;
     const defaultSiteConfig = {
       siteName: "PostWave",
       tabs: [
@@ -344,8 +345,24 @@
     const localAdminPostSource = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
     let adminPosts = mapAdminPosts(adminPostSource);
-    let posts = [...adminPosts, ...seedPosts];
-    let current = posts.find((post) => post.id === new URLSearchParams(location.search).get("id")) || posts[0];
+    function combinedPosts() {
+      return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
+    }
+    let posts = combinedPosts();
+    let current = posts.find((post) => post.id === new URLSearchParams(location.search).get("id")) || posts[0] || {
+      id: "",
+      title: "内容不存在",
+      image: "",
+      bodyImages: [],
+      video: "",
+      author: "",
+      date: "",
+      category: "",
+      categories: [],
+      keywords: [],
+      tags: [],
+      body: "暂无内容。"
+    };
     let index = Math.max(0, posts.findIndex((post) => post.id === current.id));
     let currentUser = null;
     let authMode = "login";
@@ -537,6 +554,7 @@
       window.lucide?.createIcons?.();
     }
     async function fetchApprovedComments() {
+      if (!current.id) return [];
       try {
         const response = await fetch(apiPath(`/api/comments?postId=${encodeURIComponent(current.id)}&status=approved`), apiOptions({ cache: "no-store" }));
         if (!response.ok) return [];
