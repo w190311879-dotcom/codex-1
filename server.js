@@ -199,6 +199,8 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(enforceHostBoundary);
+
 let pool = null;
 
 function normalizeArray(value) {
@@ -652,6 +654,84 @@ function requestHost(req) {
 function hostMatches(req, expectedHost) {
   if (!expectedHost) return false;
   return requestHost(req) === String(expectedHost).toLowerCase();
+}
+
+function hostWithoutPort(host = "") {
+  return String(host).toLowerCase().replace(/^\[([^\]]+)\](?::\d+)?$/, "$1").replace(/:\d+$/, "");
+}
+
+function isLocalRequest(req) {
+  return ["localhost", "127.0.0.1", "::1"].includes(hostWithoutPort(requestHost(req)));
+}
+
+function configuredHostMatches(req, expectedHost) {
+  return Boolean(expectedHost) && hostMatches(req, expectedHost);
+}
+
+function hasConfiguredSplitHosts() {
+  return Boolean(publicSiteOrigin || publicAdminOrigin || publicApiBaseUrl || publicMediaBaseUrl || adminHost || apiHost || mediaHost);
+}
+
+function isAdminPagePath(pathname = "") {
+  return pathname === "/admin" || pathname === "/admin.html" || pathname === "/admin-login.html";
+}
+
+function isPublicPagePath(pathname = "") {
+  return ["/", "/index.html", "/detail.html", "/app.html", "/qq.html"].includes(pathname);
+}
+
+function isStaticHtmlPath(pathname = "") {
+  return /\.html$/i.test(pathname);
+}
+
+function enforceHostBoundary(req, res, next) {
+  if (!hasConfiguredSplitHosts() || isLocalRequest(req)) {
+    next();
+    return;
+  }
+
+  if (configuredHostMatches(req, mediaHost)) {
+    if (!req.path.startsWith("/uploads/") && req.path !== "/config.js") {
+      res.status(404).send("Media host only serves uploaded files.");
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (configuredHostMatches(req, apiHost)) {
+    if (req.path !== "/" && !req.path.startsWith("/api/") && req.path !== "/api" && req.path !== "/config.js") {
+      res.status(404).send("API host only serves API routes.");
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (configuredHostMatches(req, adminHost)) {
+    if (req.path.startsWith("/api/") || req.path === "/api") {
+      res.status(404).send("Admin host does not serve API routes.");
+      return;
+    }
+    if ((req.path !== "/" && isPublicPagePath(req.path)) || (isStaticHtmlPath(req.path) && !isAdminPagePath(req.path))) {
+      res.status(404).send("Admin host only serves the admin panel.");
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (isAdminPagePath(req.path)) {
+    res.status(404).send("Admin panel is only available on the admin host.");
+    return;
+  }
+
+  if (apiHost && (req.path.startsWith("/api/") || req.path === "/api")) {
+    res.status(404).send("API is only available on the API host.");
+    return;
+  }
+
+  next();
 }
 
 async function findAdmin(account, password) {
