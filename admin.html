@@ -352,12 +352,7 @@
         { name: "专题", subtitle: "按主题整理的合集页面。" }
       ]
     };
-    let siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || {
-      siteName: localStorage.getItem("postwave_site_name") || defaultSiteConfig.siteName,
-      logoImage: "",
-      commentLogoText: "51暗网",
-      tabs: defaultSiteConfig.tabs
-    };
+    let siteConfig = JSON.parse(JSON.stringify(defaultSiteConfig));
     currentLogoImage = siteConfig.logoImage || "";
     function normalizeAdPlacement(ad) {
       const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
@@ -397,7 +392,7 @@
         placement: normalizeAdPlacement(ad)
       };
     }
-    let ads = JSON.parse(localStorage.getItem("postwave_ads") || "null") || [
+    let ads = [
       { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
       { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "detail-banner" }
     ];
@@ -459,17 +454,20 @@
       return item;
     });
     if (mediaChanged) save("postwave_media", mediaLibrary);
-    const adConfig = JSON.parse(localStorage.getItem("postwave_ad_config") || '{"station":10,"latest":10,"friend":10}');
+    let adConfig = { station: 10, latest: 10, friend: 10 };
     document.querySelector("#currentAdminName").textContent = localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
     document.querySelector("#stationCount").value = adConfig.station || 10;
     document.querySelector("#latestCount").value = adConfig.latest || 10;
     document.querySelector("#friendCount").value = adConfig.friend || 10;
-    document.querySelector("#noticeText").value = localStorage.getItem("postwave_notice") || document.querySelector("#noticeText").value;
     document.querySelector("#siteNameInput").value = siteConfig.siteName;
     document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
     document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">` : "Logo";
 
     function save(key, value) {
+      if (["postwave_ads", "postwave_site_config", "postwave_ad_config", "postwave_notice"].includes(key)) {
+        syncSiteSettingsToApi();
+        return true;
+      }
       try {
         localStorage.setItem(key, JSON.stringify(value));
         if (key === "postwave_posts") syncPostsToApi(value);
@@ -477,9 +475,61 @@
       } catch (error) {
         console.error(error);
         if (key === "postwave_posts") syncPostsToApi(value);
-        if (key === "postwave_ads") toast("广告配置保存失败：浏览器本地存储已满");
         return false;
       }
+    }
+    function currentSiteSettingsPayload() {
+      return {
+        siteConfig,
+        ads,
+        adConfig,
+        notice: document.querySelector("#noticeText")?.value || ""
+      };
+    }
+    async function fetchSiteSettings() {
+      try {
+        const response = await fetch(apiPath("/api/site-settings"), apiOptions({ cache: "no-store" }));
+        if (!response.ok) return null;
+        return await response.json();
+      } catch (_error) {
+        return null;
+      }
+    }
+    async function syncSiteSettingsToApi() {
+      try {
+        await fetch(apiPath("/api/site-settings"), apiOptions({
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(currentSiteSettingsPayload())
+        }));
+      } catch (_error) {}
+    }
+    function applySiteSettings(settings = {}) {
+      if (settings.siteConfig) {
+        siteConfig = settings.siteConfig;
+        currentLogoImage = siteConfig.logoImage || "";
+      }
+      if (Array.isArray(settings.ads)) {
+        ads = settings.ads.map(normalizeAd);
+      }
+      if (settings.adConfig) {
+        adConfig = settings.adConfig;
+      }
+      document.querySelector("#stationCount").value = adConfig.station || 10;
+      document.querySelector("#latestCount").value = adConfig.latest || 10;
+      document.querySelector("#friendCount").value = adConfig.friend || 10;
+      document.querySelector("#noticeText").value = typeof settings.notice === "string" ? settings.notice : document.querySelector("#noticeText").value;
+      document.querySelector("#siteNameInput").value = siteConfig.siteName || "PostWave";
+      document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
+      document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">` : "Logo";
+      renderSiteTabsEditor();
+      renderCategoryPicker();
+      renderAds();
+    }
+    async function loadSiteSettingsFromApi() {
+      const settings = await fetchSiteSettings();
+      if (!settings) return;
+      applySiteSettings(settings);
     }
     async function fetchApiPosts() {
       try {
@@ -1468,16 +1518,15 @@
       }
     });
     document.querySelector("#saveAdConfig").addEventListener("click", () => {
-      localStorage.setItem("postwave_ad_config", JSON.stringify({
+      adConfig = {
         station: document.querySelector("#stationCount").value || 10,
         latest: document.querySelector("#latestCount").value || 10,
         friend: document.querySelector("#friendCount").value || 10
-      }));
-      toast("广告数量配置已保存");
+      };
+      syncSiteSettingsToApi().then(() => toast("广告数量配置已保存"));
     });
     document.querySelector("#saveNotice").addEventListener("click", () => {
-      localStorage.setItem("postwave_notice", document.querySelector("#noticeText").value);
-      toast("官方公告已保存");
+      syncSiteSettingsToApi().then(() => toast("官方公告已保存"));
     });
     document.querySelector("#saveRecommend").addEventListener("click", () => toast("推荐规则已保存"));
     document.querySelector("#saveFooter").addEventListener("click", () => toast("导航页脚已保存"));
@@ -1493,6 +1542,7 @@
     renderCategoryPicker();
     renderAuthorSelect();
     renderTables();
+    loadSiteSettingsFromApi();
     loadStoredPostsFromApi();
     loadAuthorsFromApi();
     loadCommentsFromApi();

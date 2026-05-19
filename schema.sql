@@ -70,3 +70,10 @@ CREATE TABLE IF NOT EXISTS comments (
 
 CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status);
 CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS site_settings (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT site_settings_singleton CHECK (id = 1)
+);

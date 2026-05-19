@@ -274,7 +274,7 @@
         { name: "专题", subtitle: "按主题整理的合集页面。" }
       ]
     };
-    const siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || defaultSiteConfig;
+    let siteConfig = defaultSiteConfig;
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[char]));
     }
@@ -283,9 +283,17 @@
       if (/^(https?:|data:image\/|\/uploads\/|app\.html|admin-login\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
     }
-    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteConfig.siteName || "Logo")}">`;
-    document.querySelector("#site-map").textContent = `${siteConfig.siteName || "PostWave"} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
-    document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteConfig.siteName || "PostWave"}. All rights reserved.`;
+    function renderSiteChrome() {
+      const siteName = siteConfig.siteName || "PostWave";
+      document.querySelector("#brandMark").innerHTML = siteConfig.logoImage
+        ? `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteName)}">`
+        : `<i data-lucide="play"></i>`;
+      document.querySelector("#site-map").textContent = `${siteName} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
+      document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteName}. All rights reserved.`;
+      document.title = siteName;
+      window.lucide?.createIcons?.();
+    }
+    renderSiteChrome();
     function renderNav() {
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
       const visibleLimit = 14;
@@ -377,11 +385,11 @@
       };
     }
     function loadAds() {
-      const stored = JSON.parse(localStorage.getItem("postwave_ads") || "[]");
-      return Array.isArray(stored) ? stored.map(normalizeAd) : [];
+      return Array.isArray(ads) ? ads.map(normalizeAd) : [];
     }
-    const config = JSON.parse(localStorage.getItem("postwave_ad_config") || '{"station":10,"latest":10,"friend":10}');
-    const notice = localStorage.getItem("postwave_notice") || "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。";
+    let ads = null;
+    let config = { station: 10, latest: 10, friend: 10 };
+    let notice = "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。";
     const fallbackSquare = Array.from({ length: 30 }, (_, i) => ({ title:`广告 ${i + 1}`, image:images[i % images.length], link:"app.html" }));
     async function adImageUrl(ad) {
       if (!ad) return "";
@@ -432,6 +440,31 @@
       localStorage.setItem("postwave_posts", apiText);
       localStorage.setItem("postwave_posts_api_imported", "1");
       location.reload();
+    }
+    async function fetchSiteSettings() {
+      try {
+        const response = await fetch(apiPath("/api/site-settings"), apiOptions({ cache: "no-store" }));
+        if (!response.ok) return null;
+        return await response.json();
+      } catch (_error) {
+        return null;
+      }
+    }
+    function applySiteSettings(settings = {}) {
+      if (settings.siteConfig) siteConfig = settings.siteConfig;
+      if (Array.isArray(settings.ads)) ads = settings.ads.map(normalizeAd);
+      if (settings.adConfig) config = settings.adConfig;
+      if (typeof settings.notice === "string") notice = settings.notice;
+      renderSiteChrome();
+      document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
+      renderNav();
+      document.querySelector("#officialNotice").textContent = notice;
+      renderDetailAds();
+      renderComments();
+    }
+    async function loadSiteSettingsFromApi() {
+      const settings = await fetchSiteSettings();
+      if (settings) applySiteSettings(settings);
     }
 
     function byPlacement(name) { return loadAds().filter((ad) => ad.placement === name); }
@@ -634,12 +667,8 @@
         document.querySelector("#commentAuthNote").textContent = error.message || "评论提交失败，请稍后重试。";
       }
     });
-    window.addEventListener("storage", (event) => {
-      if (event.key === "postwave_ads") {
-        renderDetailAds();
-      }
-    });
     updateCommentUserState();
+    loadSiteSettingsFromApi();
     refreshPostsFromApiForDetail();
     window.lucide?.createIcons?.();
   </script>

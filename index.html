@@ -274,7 +274,7 @@
         { name: "专题", subtitle: "按主题整理的合集页面。" }
       ]
     };
-    const siteConfig = JSON.parse(localStorage.getItem("postwave_site_config") || "null") || defaultSiteConfig;
+    let siteConfig = defaultSiteConfig;
     document.title = siteConfig.siteName || "PostWave";
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
@@ -284,9 +284,17 @@
       if (/^(https?:|data:image\/|\/uploads\/|app\.html|admin-login\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
     }
-    if (siteConfig.logoImage) document.querySelector("#brandMark").innerHTML = `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteConfig.siteName || "Logo")}">`;
-    document.querySelector("#site-map").textContent = `${siteConfig.siteName || "PostWave"} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
-    document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteConfig.siteName || "PostWave"}. All rights reserved.`;
+    function renderSiteChrome() {
+      const siteName = siteConfig.siteName || "PostWave";
+      document.title = siteName;
+      document.querySelector("#brandMark").innerHTML = siteConfig.logoImage
+        ? `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteName)}">`
+        : `<i data-lucide="play"></i>`;
+      document.querySelector("#site-map").textContent = `${siteName} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
+      document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteName}. All rights reserved.`;
+      window.lucide?.createIcons?.();
+    }
+    renderSiteChrome();
     const images = [
       "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=82",
       "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1600&q=82",
@@ -364,6 +372,7 @@
       { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
       { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "home-banner" }
     ];
+    let ads = null;
     function normalizeAdPlacement(ad) {
       const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
       const key = raw.toLowerCase();
@@ -402,8 +411,7 @@
       };
     }
     function loadAds() {
-      const stored = JSON.parse(localStorage.getItem("postwave_ads") || "null");
-      return Array.isArray(stored) && stored.length ? stored.map(normalizeAd) : defaultAds.map(normalizeAd);
+      return Array.isArray(ads) ? ads.map(normalizeAd) : defaultAds.map(normalizeAd);
     }
     async function adImageUrl(ad) {
       if (!ad) return "";
@@ -515,6 +523,32 @@
       currentPage = 1;
       renderPosts();
       renderRecommend();
+    }
+    async function fetchSiteSettings() {
+      try {
+        const response = await fetch(apiPath("/api/site-settings"), apiOptions({ cache: "no-store" }));
+        if (!response.ok) return null;
+        return await response.json();
+      } catch (_error) {
+        return null;
+      }
+    }
+    function applySiteSettings(settings = {}) {
+      if (settings.siteConfig) {
+        siteConfig = settings.siteConfig;
+      }
+      if (Array.isArray(settings.ads)) {
+        ads = settings.ads.map(normalizeAd);
+      }
+      renderSiteChrome();
+      renderNav();
+      renderPosts();
+      renderRecommend();
+      renderAds();
+    }
+    async function loadSiteSettingsFromApi() {
+      const settings = await fetchSiteSettings();
+      if (settings) applySiteSettings(settings);
     }
 
     async function renderPosts() {
@@ -643,17 +677,11 @@
         renderPosts();
       }
     });
-    window.addEventListener("storage", (event) => {
-      if (event.key === "postwave_ads") {
-        renderPosts();
-        renderAds();
-      }
-    });
-
     renderNav();
     renderPosts();
     renderRecommend();
     renderAds();
+    loadSiteSettingsFromApi();
     loadPostsFromApi();
     window.lucide?.createIcons?.();
   </script>

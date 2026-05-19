@@ -19,6 +19,7 @@ const dataDir = path.join(__dirname, "data");
 const postsFile = path.join(dataDir, "posts.json");
 const authorsFile = path.join(dataDir, "authors.json");
 const commentsFile = path.join(dataDir, "comments.json");
+const siteSettingsFile = path.join(dataDir, "site-settings.json");
 const uploadsDir = path.join(dataDir, "uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
 const mediaRecordsFile = path.join(dataDir, "media.json");
@@ -76,6 +77,28 @@ const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
     }]
   : null;
 const seedAdmins = envAdmin || defaultAdmins;
+const defaultSiteSettings = {
+  siteConfig: {
+    siteName: "PostWave",
+    logoImage: "",
+    commentLogoText: "51暗网",
+    tabs: [
+      { name: "首页", subtitle: "精选图文与视频内容，按发布时间聚合展示。" },
+      { name: "视频", subtitle: "视频内容列表，适合接入媒体 CDN 和在线播放。" },
+      { name: "图文", subtitle: "图片、长文和专题内容的展示入口。" },
+      { name: "影评", subtitle: "影评、片单和内容推荐的聚合页面。" },
+      { name: "旅行", subtitle: "旅行路线、风景图集和短视频合集。" },
+      { name: "科技", subtitle: "科技资讯、工具教程和产品观察。" },
+      { name: "专题", subtitle: "按主题整理的合集页面。" }
+    ]
+  },
+  ads: [
+    { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
+    { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "detail-banner" }
+  ],
+  adConfig: { station: 10, latest: 10, friend: 10 },
+  notice: "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
+};
 
 app.use(express.json({ limit: "80mb" }));
 
@@ -129,6 +152,41 @@ function normalizePost(post = {}, index = 0) {
     author: post.author || "",
     date: post.date || post.date_text || "",
     sortOrder: Number.isFinite(Number(post.sortOrder ?? post.sort_order)) ? Number(post.sortOrder ?? post.sort_order) : index
+  };
+}
+
+function normalizeSiteSettings(input = {}) {
+  const incomingConfig = input.siteConfig || input.config || {};
+  const tabs = normalizeArray(incomingConfig.tabs)
+    .map((tab) => ({
+      name: String(tab?.name || "").trim(),
+      subtitle: String(tab?.subtitle || "").trim()
+    }))
+    .filter((tab) => tab.name);
+  const ads = Array.isArray(input.ads) ? input.ads.map((ad) => ({
+    title: String(ad?.title || ""),
+    desc: String(ad?.desc || ""),
+    link: String(ad?.link || "app.html"),
+    image: String(ad?.image || ""),
+    imageKey: String(ad?.imageKey || ""),
+    slot: Number(ad?.slot) || 0,
+    placement: String(ad?.placement || "home-banner")
+  })) : defaultSiteSettings.ads;
+  const adConfig = input.adConfig || {};
+  return {
+    siteConfig: {
+      siteName: String(incomingConfig.siteName || defaultSiteSettings.siteConfig.siteName).trim() || defaultSiteSettings.siteConfig.siteName,
+      logoImage: String(incomingConfig.logoImage || ""),
+      commentLogoText: String(incomingConfig.commentLogoText || defaultSiteSettings.siteConfig.commentLogoText).trim() || defaultSiteSettings.siteConfig.commentLogoText,
+      tabs: tabs.length ? tabs : defaultSiteSettings.siteConfig.tabs
+    },
+    ads,
+    adConfig: {
+      station: Math.max(0, Number(adConfig.station ?? defaultSiteSettings.adConfig.station) || defaultSiteSettings.adConfig.station),
+      latest: Math.max(0, Number(adConfig.latest ?? defaultSiteSettings.adConfig.latest) || defaultSiteSettings.adConfig.latest),
+      friend: Math.max(0, Number(adConfig.friend ?? defaultSiteSettings.adConfig.friend) || defaultSiteSettings.adConfig.friend)
+    },
+    notice: String(input.notice ?? defaultSiteSettings.notice)
   };
 }
 
@@ -541,6 +599,15 @@ async function initPostgres() {
   `);
   await pool.query("CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status)");
   await pool.query("CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC)");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT site_settings_singleton CHECK (id = 1)
+    )
+  `);
+  await ensureSiteSettingsSeeded();
   await ensureAuthorsSeeded();
 }
 
@@ -562,6 +629,11 @@ async function initFileStorage() {
     await fs.access(commentsFile);
   } catch {
     await fs.writeFile(commentsFile, "[]");
+  }
+  try {
+    await fs.access(siteSettingsFile);
+  } catch {
+    await fs.writeFile(siteSettingsFile, JSON.stringify(defaultSiteSettings, null, 2));
   }
   try {
     await fs.access(mediaRecordsFile);
@@ -783,6 +855,49 @@ async function deleteComment(commentId) {
   return nextComments.length !== comments.length;
 }
 
+async function readSiteSettings() {
+  if (pool) {
+    const { rows } = await pool.query("SELECT payload FROM site_settings WHERE id = 1");
+    if (!rows.length) return normalizeSiteSettings(defaultSiteSettings);
+    return normalizeSiteSettings(rows[0].payload);
+  }
+  try {
+    const settings = JSON.parse(await fs.readFile(siteSettingsFile, "utf8"));
+    return normalizeSiteSettings(settings);
+  } catch {
+    return normalizeSiteSettings(defaultSiteSettings);
+  }
+}
+
+async function replaceSiteSettings(settings) {
+  const nextSettings = normalizeSiteSettings(settings);
+  if (pool) {
+    await pool.query(
+      `INSERT INTO site_settings (id, payload, updated_at)
+       VALUES (1, $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+      [JSON.stringify(nextSettings)]
+    );
+    return nextSettings;
+  }
+  await fs.writeFile(siteSettingsFile, JSON.stringify(nextSettings, null, 2));
+  return nextSettings;
+}
+
+async function ensureSiteSettingsSeeded() {
+  if (pool) {
+    const { rows } = await pool.query("SELECT 1 FROM site_settings WHERE id = 1");
+    if (rows.length) return;
+    await replaceSiteSettings(defaultSiteSettings);
+    return;
+  }
+  try {
+    await fs.access(siteSettingsFile);
+  } catch {
+    await replaceSiteSettings(defaultSiteSettings);
+  }
+}
+
 async function ensureAuthorsSeeded() {
   const currentAuthors = await readAuthors(true);
   if (currentAuthors.length) return;
@@ -907,6 +1022,23 @@ app.put("/api/authors", requireAdminApi, async (req, res, next) => {
   try {
     const authors = Array.isArray(req.body) ? req.body : req.body?.authors;
     res.json({ ok: true, authors: await replaceAuthors(authors) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/site-settings", async (_req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await readSiteSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.put("/api/site-settings", requireAdminApi, async (req, res, next) => {
+  try {
+    res.json({ ok: true, settings: await replaceSiteSettings(req.body || {}) });
   } catch (error) {
     next(error);
   }
