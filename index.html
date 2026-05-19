@@ -263,6 +263,7 @@
       return { credentials: "include", ...options };
     }
     const demoSeedEnabled = appConfig.demoSeedEnabled !== false;
+    const localPostFallbackEnabled = appConfig.localPostFallbackEnabled === true;
     const defaultSiteConfig = {
       siteName: "PostWave",
       tabs: [
@@ -365,7 +366,7 @@
         body: post.body || "这篇内容来自后台发布系统。"
       }));
     }
-    const localAdminPostSource = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
+    const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
     let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
     let adminPosts = mapAdminPosts(adminPostSource);
     function combinedPosts() {
@@ -495,35 +496,16 @@
       }
     }
 
-    async function syncLocalPostsToApi(source) {
-      try {
-        await fetch(apiPath("/api/posts"), apiOptions({
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ posts: source })
-        }));
-      } catch (_error) {}
-    }
-
     async function loadPostsFromApi() {
       const apiPosts = await fetchApiPosts();
       if (!apiPosts) return;
-      if (!apiPosts.length && adminPostSource.length) {
-        if (localStorage.getItem("postwave_posts_api_imported") !== "1") {
-          syncLocalPostsToApi(adminPostSource);
-          localStorage.setItem("postwave_posts_api_imported", "1");
-        }
-        return;
-      }
-      if (!apiPosts.length) return;
       const localText = JSON.stringify(adminPostSource);
       const apiText = JSON.stringify(apiPosts);
       if (localText === apiText) return;
       adminPostSource = apiPosts;
       adminPosts = mapAdminPosts(adminPostSource);
       posts = combinedPosts();
-      localStorage.setItem("postwave_posts", apiText);
-      localStorage.setItem("postwave_posts_api_imported", "1");
+      if (localPostFallbackEnabled) localStorage.setItem("postwave_posts", apiText);
       currentPage = 1;
       renderPosts();
       renderRecommend();

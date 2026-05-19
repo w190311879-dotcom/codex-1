@@ -263,6 +263,7 @@
       return { credentials: "include", ...options };
     }
     const demoSeedEnabled = appConfig.demoSeedEnabled !== false;
+    const localPostFallbackEnabled = appConfig.localPostFallbackEnabled === true;
     const defaultSiteConfig = {
       siteName: "PostWave",
       tabs: [
@@ -342,7 +343,7 @@
     function mapAdminPosts(source) {
       return (Array.isArray(source) ? source : []).map((post, index) => ({ id:`admin-${index}`, title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
     }
-    const localAdminPostSource = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
+    const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
     let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
     let adminPosts = mapAdminPosts(adminPostSource);
     function combinedPosts() {
@@ -454,31 +455,12 @@
       }
     }
 
-    async function syncLocalPostsToApi(source) {
-      try {
-        await fetch(apiPath("/api/posts"), apiOptions({
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ posts: source })
-        }));
-      } catch (_error) {}
-    }
-
     async function refreshPostsFromApiForDetail() {
       const apiPosts = await fetchApiPosts();
       if (!apiPosts) return;
-      if (!apiPosts.length && adminPostSource.length) {
-        if (localStorage.getItem("postwave_posts_api_imported") !== "1") {
-          syncLocalPostsToApi(adminPostSource);
-          localStorage.setItem("postwave_posts_api_imported", "1");
-        }
-        return;
-      }
-      if (!apiPosts.length) return;
       const apiText = JSON.stringify(apiPosts);
       if (apiText === JSON.stringify(adminPostSource)) return;
-      localStorage.setItem("postwave_posts", apiText);
-      localStorage.setItem("postwave_posts_api_imported", "1");
+      if (localPostFallbackEnabled) localStorage.setItem("postwave_posts", apiText);
       location.reload();
     }
     async function fetchSiteSettings() {

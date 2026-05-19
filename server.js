@@ -1467,7 +1467,8 @@ app.get("/config.js", (_req, res) => {
     adminOrigin: publicAdminOrigin,
     apiBaseUrl: publicApiBaseUrl,
     mediaBaseUrl: publicMediaBaseUrl,
-    demoSeedEnabled
+    demoSeedEnabled,
+    localPostFallbackEnabled: !isProduction
   })};`);
 });
 
