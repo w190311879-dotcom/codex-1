@@ -1,10 +1,3 @@
-CREATE TABLE IF NOT EXISTS schema_migrations (
-  id BIGSERIAL PRIMARY KEY,
-  filename TEXT NOT NULL UNIQUE,
-  checksum TEXT NOT NULL DEFAULT '',
-  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS posts (
   id BIGSERIAL PRIMARY KEY,
   client_id TEXT UNIQUE,
@@ -75,6 +68,11 @@ CREATE TABLE IF NOT EXISTS media_files (
 
 CREATE INDEX IF NOT EXISTS media_files_kind_idx ON media_files (kind);
 CREATE INDEX IF NOT EXISTS media_files_created_at_idx ON media_files (created_at DESC);
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ready';
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS width INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS height INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS duration DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE media_files ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS comments (
   id BIGSERIAL PRIMARY KEY,
@@ -91,6 +89,7 @@ CREATE TABLE IF NOT EXISTS comments (
 
 CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status);
 CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC);
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS site_settings (
   id INTEGER PRIMARY KEY DEFAULT 1,

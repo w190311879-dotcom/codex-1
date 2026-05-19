@@ -8,6 +8,7 @@ import fsSync from "node:fs";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 import multer from "multer";
+import { runMigrations } from "./scripts/db-migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -824,107 +825,7 @@ async function findAdmin(account, password) {
 
 async function initPostgres() {
   pool = new pg.Pool({ connectionString: databaseUrl });
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS posts (
-      id BIGSERIAL PRIMARY KEY,
-      client_id TEXT UNIQUE,
-      title TEXT NOT NULL DEFAULT '未命名帖子',
-      body TEXT NOT NULL DEFAULT '',
-      cover_url TEXT NOT NULL DEFAULT '',
-      video_url TEXT NOT NULL DEFAULT '',
-      body_images JSONB NOT NULL DEFAULT '[]'::jsonb,
-      category TEXT NOT NULL DEFAULT '',
-      categories JSONB NOT NULL DEFAULT '[]'::jsonb,
-      keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
-      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
-      status TEXT NOT NULL DEFAULT '已发布',
-      author TEXT NOT NULL DEFAULT '',
-      date_text TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query("CREATE INDEX IF NOT EXISTS posts_sort_order_idx ON posts (sort_order ASC, id ASC)");
-  await pool.query("CREATE INDEX IF NOT EXISTS posts_status_idx ON posts (status)");
-  await pool.query("CREATE INDEX IF NOT EXISTS posts_payload_gin_idx ON posts USING GIN (payload)");
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS authors (
-      id BIGSERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      account TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT '正常',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query("CREATE INDEX IF NOT EXISTS authors_account_idx ON authors (account)");
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL UNIQUE,
-      account TEXT NOT NULL UNIQUE,
-      display_name TEXT NOT NULL DEFAULT '',
-      password_hash TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT '正常',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query("CREATE INDEX IF NOT EXISTS users_account_idx ON users (account)");
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS media_files (
-      id BIGSERIAL PRIMARY KEY,
-      media_id TEXT NOT NULL UNIQUE,
-      kind TEXT NOT NULL DEFAULT '',
-      original_name TEXT NOT NULL DEFAULT '',
-      mime_type TEXT NOT NULL DEFAULT '',
-      size_bytes BIGINT NOT NULL DEFAULT 0,
-      storage_provider TEXT NOT NULL DEFAULT '',
-      storage_path TEXT NOT NULL DEFAULT '',
-      url TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'ready',
-      width INTEGER NOT NULL DEFAULT 0,
-      height INTEGER NOT NULL DEFAULT 0,
-      duration DOUBLE PRECISION NOT NULL DEFAULT 0,
-      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query("ALTER TABLE media_files ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ready'");
-  await pool.query("ALTER TABLE media_files ADD COLUMN IF NOT EXISTS width INTEGER NOT NULL DEFAULT 0");
-  await pool.query("ALTER TABLE media_files ADD COLUMN IF NOT EXISTS height INTEGER NOT NULL DEFAULT 0");
-  await pool.query("ALTER TABLE media_files ADD COLUMN IF NOT EXISTS duration DOUBLE PRECISION NOT NULL DEFAULT 0");
-  await pool.query("ALTER TABLE media_files ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb");
-  await pool.query("CREATE INDEX IF NOT EXISTS media_files_kind_idx ON media_files (kind)");
-  await pool.query("CREATE INDEX IF NOT EXISTS media_files_created_at_idx ON media_files (created_at DESC)");
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS comments (
-      id BIGSERIAL PRIMARY KEY,
-      comment_id TEXT NOT NULL UNIQUE,
-      post_id TEXT NOT NULL,
-      post_title TEXT NOT NULL DEFAULT '',
-      name TEXT NOT NULL DEFAULT '',
-      body TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'pending',
-      user_id TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query("CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status)");
-  await pool.query("CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC)");
-  await pool.query("ALTER TABLE comments ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''");
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS site_settings (
-      id INTEGER PRIMARY KEY DEFAULT 1,
-      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      CONSTRAINT site_settings_singleton CHECK (id = 1)
-    )
-  `);
+  await runMigrations(pool);
   await ensureSiteSettingsSeeded();
   await ensureAuthorsSeeded();
 }

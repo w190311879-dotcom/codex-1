@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "db:backup": "node scripts/db-backup.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
