@@ -45,6 +45,7 @@ const siteSettingsFile = path.join(dataDir, "site-settings.json");
 const uploadsDir = path.join(dataDir, "uploads");
 const tempUploadDir = path.join(dataDir, "tmp-uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
+const tempVideoChunkDir = path.join(dataDir, "tmp-video-chunks");
 const mediaRecordsFile = path.join(dataDir, "media.json");
 const isProduction = process.env.NODE_ENV === "production";
 const defaultSessionSecret = "postwave-local-dev-secret";
@@ -55,6 +56,8 @@ const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
 const legacyUploadLimitMb = Number(process.env.POSTWAVE_UPLOAD_LIMIT_MB || 0);
 const imageUploadLimitMb = Number(process.env.POSTWAVE_IMAGE_UPLOAD_LIMIT_MB || legacyUploadLimitMb || 100);
 const videoUploadLimitMb = Number(process.env.POSTWAVE_VIDEO_UPLOAD_LIMIT_MB || legacyUploadLimitMb || 5120);
+const videoChunkLimitMb = Math.max(5, Number(process.env.POSTWAVE_VIDEO_CHUNK_MB || 50) || 50);
+const videoChunkBytes = Math.floor(videoChunkLimitMb * 1024 * 1024 * 0.9);
 const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
 const loginRateWindowMs = Math.max(60, Number(process.env.POSTWAVE_LOGIN_RATE_WINDOW_SECONDS || 900) || 900) * 1000;
 const loginRateMaxAttempts = Math.max(3, Number(process.env.POSTWAVE_LOGIN_RATE_MAX || 10) || 10);
@@ -92,10 +95,21 @@ const videoUpload = multer({
   }),
   limits: { fileSize: videoUploadLimitMb * 1024 * 1024 },
   fileFilter(_req, file, callback) {
-    const ext = path.extname(file.originalname || "").toLowerCase();
-    const allowed = allowedVideoMimes.has(file.mimetype) || [".mp4", ".mov", ".webm", ".mkv"].includes(ext);
+    const allowed = isAllowedVideoFile(file.originalname, file.mimetype);
     callback(allowed ? null : new Error("只允许上传 MP4、MOV、WEBM、MKV 视频"), allowed);
   }
+});
+const videoChunkUpload = multer({
+  storage: multer.diskStorage({
+    destination(_req, _file, callback) {
+      fsSync.mkdirSync(tempUploadDir, { recursive: true });
+      callback(null, tempUploadDir);
+    },
+    filename(_req, _file, callback) {
+      callback(null, `${Date.now()}-${crypto.randomUUID()}.part`);
+    }
+  }),
+  limits: { fileSize: videoChunkLimitMb * 1024 * 1024 }
 });
 const bunnyStorageZone = process.env.BUNNY_STORAGE_ZONE || "";
 const bunnyStorageAccessKey = process.env.BUNNY_STORAGE_ACCESS_KEY || "";
@@ -381,6 +395,11 @@ function safeFilename(name = "", mime = "") {
   const base = (parsed.name || "media").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "media";
   const ext = (parsed.ext || extensionFromMime(mime) || "").toLowerCase().replace(/[^.a-z0-9]/g, "");
   return `${base}${ext}`;
+}
+
+function isAllowedVideoFile(name = "", mime = "") {
+  const ext = path.extname(name || "").toLowerCase();
+  return allowedVideoMimes.has(mime) || [".mp4", ".mov", ".webm", ".mkv"].includes(ext);
 }
 
 function createMediaStoragePath(file, kind) {
@@ -835,6 +854,7 @@ async function initFileStorage() {
   await fs.mkdir(uploadsDir, { recursive: true });
   await fs.mkdir(tempUploadDir, { recursive: true });
   await fs.mkdir(tempVideoDir, { recursive: true });
+  await fs.mkdir(tempVideoChunkDir, { recursive: true });
   try {
     await fs.access(postsFile);
   } catch {
@@ -1297,6 +1317,46 @@ async function readMediaRecords({ id = "", kind = "", publicOnly = false, includ
 const transcodeQueue = [];
 let activeTranscodes = 0;
 
+function videoChunkUploadDir(uploadId) {
+  const safeId = String(uploadId || "").trim();
+  if (!/^[a-f0-9-]{36}$/i.test(safeId)) throw new Error("上传任务不存在");
+  return path.join(tempVideoChunkDir, safeId);
+}
+
+function videoChunkMetaPath(uploadId) {
+  return path.join(videoChunkUploadDir(uploadId), "metadata.json");
+}
+
+async function readVideoChunkMeta(uploadId) {
+  return JSON.parse(await fs.readFile(videoChunkMetaPath(uploadId), "utf8"));
+}
+
+async function writeVideoChunkMeta(meta) {
+  await fs.writeFile(videoChunkMetaPath(meta.uploadId), JSON.stringify(meta, null, 2));
+}
+
+function videoChunkPartPath(uploadId, index) {
+  return path.join(videoChunkUploadDir(uploadId), `${String(index).padStart(8, "0")}.part`);
+}
+
+async function assembleVideoChunks(meta, outputPath) {
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const output = fsSync.createWriteStream(outputPath);
+  try {
+    for (let index = 0; index < meta.totalChunks; index += 1) {
+      const input = fsSync.createReadStream(videoChunkPartPath(meta.uploadId, index));
+      for await (const chunk of input) {
+        if (!output.write(chunk)) await new Promise((resolve) => output.once("drain", resolve));
+      }
+    }
+  } finally {
+    await new Promise((resolve, reject) => {
+      output.once("error", reject);
+      output.end(resolve);
+    });
+  }
+}
+
 function createQueuedVideoRecord(file) {
   const outputName = `${path.parse(file.originalname || "video").name || "video"}.mp4`;
   return {
@@ -1637,6 +1697,82 @@ app.post("/api/media/upload", requireAdminApi, imageUpload.single("file"), async
     next(error);
   } finally {
     if (req.file?.path) await fs.rm(req.file.path, { force: true }).catch(() => {});
+  }
+});
+
+app.post("/api/media/video/chunk/init", requireAdminApi, async (req, res, next) => {
+  try {
+    const originalName = String(req.body?.name || req.body?.originalName || "video").trim();
+    const mimeType = String(req.body?.mimeType || "application/octet-stream").trim();
+    const size = Number(req.body?.size || 0);
+    const maxVideoBytes = videoUploadLimitMb * 1024 * 1024;
+    const chunkSize = videoChunkBytes;
+    if (!isAllowedVideoFile(originalName, mimeType)) throw new Error("只允许上传 MP4、MOV、WEBM、MKV 视频");
+    if (!Number.isFinite(size) || size <= 0) throw new Error("视频文件大小无效");
+    if (size > maxVideoBytes) throw new Error(`视频文件超过 ${videoUploadLimitMb}MB 限制`);
+    const uploadId = crypto.randomUUID();
+    const totalChunks = Math.ceil(size / chunkSize);
+    const uploadDir = videoChunkUploadDir(uploadId);
+    await fs.mkdir(uploadDir, { recursive: true });
+    const meta = {
+      uploadId,
+      originalName,
+      mimeType,
+      size,
+      chunkSize,
+      totalChunks,
+      received: [],
+      createdAt: new Date().toISOString()
+    };
+    await writeVideoChunkMeta(meta);
+    res.json({ ok: true, uploadId, chunkSize, totalChunks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/media/video/chunk/:uploadId", requireAdminApi, videoChunkUpload.single("chunk"), async (req, res, next) => {
+  try {
+    if (!req.file) throw new Error("没有收到视频分片");
+    const meta = await readVideoChunkMeta(req.params.uploadId);
+    const index = Number(req.body?.index);
+    if (!Number.isInteger(index) || index < 0 || index >= meta.totalChunks) throw new Error("视频分片序号无效");
+    const targetPath = videoChunkPartPath(meta.uploadId, index);
+    await fs.rename(req.file.path, targetPath);
+    meta.received = Array.from(new Set([...(meta.received || []), index])).sort((a, b) => a - b);
+    meta.updatedAt = new Date().toISOString();
+    await writeVideoChunkMeta(meta);
+    res.json({ ok: true, uploadId: meta.uploadId, index, received: meta.received.length, totalChunks: meta.totalChunks });
+  } catch (error) {
+    if (req.file?.path) await fs.rm(req.file.path, { force: true }).catch(() => {});
+    next(error);
+  }
+});
+
+app.post("/api/media/video/chunk/:uploadId/complete", requireAdminApi, async (req, res, next) => {
+  let assembledPath = "";
+  try {
+    const meta = await readVideoChunkMeta(req.params.uploadId);
+    for (let index = 0; index < meta.totalChunks; index += 1) {
+      await fs.access(videoChunkPartPath(meta.uploadId, index));
+    }
+    assembledPath = path.join(tempVideoDir, `${meta.uploadId}-${safeFilename(meta.originalName, meta.mimeType)}`);
+    await assembleVideoChunks(meta, assembledPath);
+    const stats = await fs.stat(assembledPath);
+    if (stats.size !== Number(meta.size)) throw new Error("视频分片合并后大小不一致，请重新上传");
+    const media = createQueuedVideoRecord({
+      originalname: meta.originalName,
+      mimetype: meta.mimeType,
+      size: stats.size,
+      path: assembledPath
+    });
+    await saveMediaRecord(media);
+    enqueueTranscode(media);
+    await fs.rm(videoChunkUploadDir(meta.uploadId), { recursive: true, force: true }).catch(() => {});
+    res.status(202).json({ ok: true, media: publicQueuedVideoRecord(media) });
+  } catch (error) {
+    if (assembledPath) await fs.rm(assembledPath, { force: true }).catch(() => {});
+    next(error);
   }
 });
 

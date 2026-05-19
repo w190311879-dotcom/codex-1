@@ -438,29 +438,51 @@
       if (!response.ok) throw new Error(data.error || "媒体文件上传失败");
       return data.media || { url: data.url };
     }
-    function uploadVideoForTranscode(file, onProgress) {
-      return refreshCsrfToken().then(() => new Promise((resolve, reject) => {
+    function uploadVideoChunk(uploadId, index, totalChunks, chunk, filename, onProgress) {
+      return new Promise((resolve, reject) => {
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("index", String(index));
+        formData.append("chunk", chunk, filename);
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", apiPath("/api/media/video/transcode"));
+        xhr.open("POST", apiPath(`/api/media/video/chunk/${encodeURIComponent(uploadId)}`));
         xhr.withCredentials = true;
         const token = currentCsrfToken();
         if (token) xhr.setRequestHeader("X-CSRF-Token", token);
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
-          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
-          onProgress(percent, `上传中 ${percent}%`);
+          const percent = Math.min(99, Math.round(((index + (event.loaded / event.total)) / totalChunks) * 100));
+          onProgress(percent, `分片上传中 ${percent}%（${index + 1}/${totalChunks}）`);
         };
         xhr.onload = () => {
           const data = JSON.parse(xhr.responseText || "{}");
-          if (xhr.status >= 200 && xhr.status < 300) resolve(data.media || { url: data.url });
-          else reject(new Error(data.error || "视频转码失败"));
+          if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+          else reject(new Error(data.error || "视频分片上传失败"));
         };
-        xhr.onerror = () => reject(new Error("视频上传失败，请检查网络或服务状态"));
-        onProgress(1, "上传中 1%");
+        xhr.onerror = () => reject(new Error("视频分片上传失败，请检查网络或服务状态"));
         xhr.send(formData);
+      });
+    }
+    async function uploadVideoForTranscode(file, onProgress) {
+      await refreshCsrfToken();
+      const initResponse = await fetch(apiPath("/api/media/video/chunk/init"), apiOptions({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: file.name, size: file.size, mimeType: file.type || "application/octet-stream" })
       }));
+      const initData = await initResponse.json().catch(() => ({}));
+      if (!initResponse.ok) throw new Error(initData.error || "视频上传初始化失败");
+      const { uploadId, chunkSize, totalChunks } = initData;
+      onProgress(1, `准备分片上传，共 ${totalChunks} 片`);
+      for (let index = 0; index < totalChunks; index += 1) {
+        const start = index * chunkSize;
+        const chunk = file.slice(start, Math.min(file.size, start + chunkSize));
+        await uploadVideoChunk(uploadId, index, totalChunks, chunk, file.name, onProgress);
+      }
+      onProgress(100, "分片上传完成，正在提交服务端合并");
+      const completeResponse = await fetch(apiPath(`/api/media/video/chunk/${encodeURIComponent(uploadId)}/complete`), apiOptions({ method: "POST" }));
+      const completeData = await completeResponse.json().catch(() => ({}));
+      if (!completeResponse.ok) throw new Error(completeData.error || "视频合并失败");
+      return completeData.media || { url: completeData.url };
     }
     async function mediaUrl(item) {
       if (!item) return "";
