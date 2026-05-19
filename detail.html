@@ -336,7 +336,8 @@
     const titles = ["城市夜景延时：从街口到天际线的灯光变化","周末山谷路线：十张图看完轻徒步风景","内容展示站的后台字段：标题、媒体、标签和审核状态","小型现场演出记录：镜头、灯光和声音的组合","工作室布景参考：适合内容站封面图的构图方式","如何规划帖子流：分类筛选、热榜、推荐位和举报入口","建筑外立面灵感：几何、光影和城市肌理","从 MVP 到社区投稿：审核队列和用户权限怎么加","午后城市散步：街区、咖啡和橱窗","移动端内容流设计：一屏只处理一个重点","视频封面怎么选：主体、留白和标题可读性","专题页规划：把分散内容整理成合集","旅行短片剪辑：节奏、转场和音乐","后台广告位控制：新增、排序和下架","CDN 分发思路：主站和媒体文件分开走","图文内容排版：让封面承担第一眼信息","社区投稿前应该先准备哪些审核规则","科技工具清单：内容团队的日常效率组合","高清图集上传：尺寸、压缩和存储建议","网站导航页应该放哪些入口","首页分页体验：少即是多的内容节奏","影评栏目结构：标题、封面和摘要","长条广告位：后台可控的商业入口","作者主页设计：头像、作品和标签","站点页脚：协议、版权和合规声明","内容站第一版上线检查清单","备用入口和状态页的设计方式","移动端底部入口如何保持清爽","发布后台字段设计：标题、封面、正文和热度","媒体列表如何管理图片和视频"];
     const categoryNames = (siteConfig.tabs || defaultSiteConfig.tabs).filter((tab) => tab.name !== "首页").map((tab) => tab.name);
     const seedPosts = titles.map((title, index) => ({ id:`seed-${index}`, title, image:images[index % images.length], author:"瓜哥", date:"2026 年 05 月 13 日", category:categoryNames[index % Math.max(1, categoryNames.length)] || "视频分类", keywords:["内容","展示","推荐"], tags:["今日推荐","内容展示","精选"], body:"这里会按照后台编辑器上传和排版的顺序展示文案、图片、视频。正文区域只显示实际文字内容，媒体文件按插入顺序展示。" }));
-    const mediaLibrary = JSON.parse(localStorage.getItem("postwave_media") || "[]");
+    const mediaById = new Map();
+    let mediaLibrary = [];
     function mapAdminPosts(source) {
       return (Array.isArray(source) ? source : []).map((post, index) => ({ id:`admin-${index}`, title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
     }
@@ -401,6 +402,26 @@
       if (item.url) return item.url;
       if (item.data) return item.data;
       return "";
+    }
+    async function fetchMediaById(id) {
+      const mediaId = String(id || "");
+      if (!mediaId) return null;
+      if (mediaById.has(mediaId)) return mediaById.get(mediaId);
+      const localItem = mediaLibrary.find((item) => item.id === mediaId);
+      if (localItem) {
+        mediaById.set(mediaId, localItem);
+        return localItem;
+      }
+      try {
+        const response = await fetch(apiPath(`/api/media/${encodeURIComponent(mediaId)}`), apiOptions({ cache: "no-store" }));
+        if (!response.ok) return null;
+        const data = await response.json();
+        const media = data.media || null;
+        if (media) mediaById.set(mediaId, media);
+        return media;
+      } catch (_error) {
+        return null;
+      }
     }
 
     async function fetchApiPosts() {
@@ -557,9 +578,7 @@
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);
           const videoId = match && match[1] ? match[1] : "";
-          const mediaVideo = mediaLibrary.find((item) => item.id === videoId);
-          const ratio = mediaVideo?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
-          if (mediaVideo && mediaVideo.status === "ready") flow.insertAdjacentHTML("beforeend", `<div class="media video-media ${ratio}"><video data-media-video="${escapeHtml(mediaVideo.id)}" controls></video></div>`);
+          if (videoId) flow.insertAdjacentHTML("beforeend", `<div class="media video-media ratio-16-9"><video data-media-video="${escapeHtml(videoId)}" controls></video></div>`);
         } else {
           if (!part.trim()) return;
           const div = document.createElement("div");
@@ -569,8 +588,12 @@
         }
       });
       flow.querySelectorAll("[data-media-video]").forEach((videoEl) => {
-        const item = mediaLibrary.find((media) => media.id === videoEl.dataset.mediaVideo);
-        mediaUrl(item).then((url) => {
+        fetchMediaById(videoEl.dataset.mediaVideo).then(async (item) => {
+          if (item?.aspect === "9-16") {
+            videoEl.closest(".media")?.classList.remove("ratio-16-9");
+            videoEl.closest(".media")?.classList.add("ratio-9-16");
+          }
+          const url = await mediaUrl(item);
           if (url) videoEl.src = url;
           else videoEl.closest(".media")?.remove();
         }).catch(() => videoEl.closest(".media")?.remove());

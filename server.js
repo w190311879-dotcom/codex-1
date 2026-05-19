@@ -950,6 +950,75 @@ async function saveMediaRecord(record) {
   await fs.writeFile(mediaRecordsFile, JSON.stringify(records.slice(0, 1000), null, 2));
 }
 
+function normalizeMediaRecord(record = {}) {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const kind = String(record.kind || metadata.kind || "");
+  const status = String(record.status || metadata.status || "ready");
+  return {
+    ...metadata,
+    ...record,
+    id: String(record.id || record.mediaId || record.media_id || metadata.id || ""),
+    kind,
+    type: String(record.type || metadata.type || (kind === "video" ? "video" : kind)),
+    name: String(record.name || metadata.name || record.originalName || record.original_name || metadata.originalName || ""),
+    originalName: String(record.originalName || record.original_name || metadata.originalName || ""),
+    mimeType: String(record.mimeType || record.mime_type || metadata.mimeType || ""),
+    size: Number(record.size ?? record.size_bytes ?? metadata.size ?? 0) || 0,
+    storageProvider: String(record.storageProvider || record.storage_provider || metadata.storageProvider || ""),
+    storagePath: String(record.storagePath || record.storage_path || metadata.storagePath || ""),
+    url: String(record.url || metadata.url || ""),
+    status,
+    progress: Number(record.progress ?? metadata.progress ?? (status === "ready" ? 100 : 0)) || 0,
+    format: String(record.format || metadata.format || (kind === "video" ? "H.264 MP4" : "")),
+    quality: String(record.quality || metadata.quality || (kind === "video" ? "medium" : "")),
+    aspect: String(record.aspect || metadata.aspect || (Number(record.height || metadata.height) > Number(record.width || metadata.width) ? "9-16" : "16-9")),
+    width: Number(record.width ?? metadata.width ?? 0) || 0,
+    height: Number(record.height ?? metadata.height ?? 0) || 0,
+    duration: Number(record.duration ?? metadata.duration ?? 0) || 0,
+    segments: Number(record.segments ?? metadata.segments ?? (kind === "video" ? 1 : 0)) || 0,
+    createdAt: record.createdAt || record.created_at || metadata.createdAt || "",
+    date: record.date || metadata.date || (record.created_at ? new Date(record.created_at).toLocaleString() : "")
+  };
+}
+
+async function readMediaRecords({ id = "", kind = "", publicOnly = false } = {}) {
+  if (pool) {
+    const clauses = [];
+    const values = [];
+    if (id) {
+      values.push(id);
+      clauses.push(`media_id = $${values.length}`);
+    }
+    if (kind) {
+      values.push(kind);
+      clauses.push(`kind = $${values.length}`);
+    }
+    if (publicOnly) {
+      values.push("ready");
+      clauses.push(`status = $${values.length}`);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT media_id AS id, kind, original_name AS "originalName", mime_type AS "mimeType",
+              size_bytes AS size, storage_provider AS "storageProvider", storage_path AS "storagePath",
+              url, status, width, height, duration, metadata, created_at AS "createdAt"
+       FROM media_files
+       ${where}
+       ORDER BY created_at DESC, id DESC`,
+      values
+    );
+    return rows.map(normalizeMediaRecord);
+  }
+  try {
+    const records = JSON.parse(await fs.readFile(mediaRecordsFile, "utf8"));
+    return (Array.isArray(records) ? records : [])
+      .map(normalizeMediaRecord)
+      .filter((record) => (!id || record.id === id) && (!kind || record.kind === kind) && (!publicOnly || record.status === "ready"));
+  } catch {
+    return [];
+  }
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, storage: storageMode, postgres: Boolean(pool), mediaStorage: useBunnyStorage ? "bunny" : "local" });
 });
@@ -1039,6 +1108,29 @@ app.get("/api/site-settings", async (_req, res, next) => {
 app.put("/api/site-settings", requireAdminApi, async (req, res, next) => {
   try {
     res.json({ ok: true, settings: await replaceSiteSettings(req.body || {}) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/media", requireAdminApi, async (req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ media: await readMediaRecords({ kind: String(req.query.kind || "") }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/media/:id", async (req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const [media] = await readMediaRecords({ id: String(req.params.id || ""), publicOnly: true });
+    if (!media) {
+      res.status(404).json({ error: "媒体不存在或尚未处理完成" });
+      return;
+    }
+    res.json({ media });
   } catch (error) {
     next(error);
   }

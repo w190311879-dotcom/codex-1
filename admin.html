@@ -318,7 +318,7 @@
     }
     let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
-    let mediaLibrary = JSON.parse(localStorage.getItem("postwave_media") || "[]");
+    let mediaLibrary = [];
     let serverComments = [];
     let currentCoverData = "";
     let currentVideoData = "";
@@ -440,20 +440,30 @@
       if (item.data) return item.data;
       return "";
     }
+    async function fetchMediaLibrary() {
+      try {
+        const response = await fetch(apiPath("/api/media"), apiOptions({ cache: "no-store" }));
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Array.isArray(data.media) ? data.media : [];
+      } catch (_error) {
+        return null;
+      }
+    }
+    async function loadMediaLibraryFromApi({ render = true } = {}) {
+      const serverMedia = await fetchMediaLibrary();
+      if (!serverMedia) return;
+      mediaLibrary = serverMedia;
+      if (render) {
+        renderTables();
+        renderInsertedMediaPreview();
+      }
+    }
     async function adImageUrl(ad) {
       if (!ad) return "";
       if (ad.image) return ad.image;
       return "";
     }
-    let mediaChanged = false;
-    mediaLibrary = mediaLibrary.map((item) => {
-      if (item.status === "processing" && Number(item.progress) >= 100) {
-        mediaChanged = true;
-        return item.url || item.data ? { ...item, status: "ready", progress: 100 } : { ...item, status: "failed", progress: 100 };
-      }
-      return item;
-    });
-    if (mediaChanged) save("postwave_media", mediaLibrary);
     let adConfig = { station: 10, latest: 10, friend: 10 };
     document.querySelector("#currentAdminName").textContent = localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
     document.querySelector("#stationCount").value = adConfig.station || 10;
@@ -808,7 +818,6 @@
         date: new Date().toLocaleString()
       };
       mediaLibrary.unshift(processingItem);
-      save("postwave_media", mediaLibrary);
       renderTables();
       status.textContent = "上传中 0%";
       progress.style.width = "0%";
@@ -816,7 +825,6 @@
       try {
         const media = await uploadVideoForTranscode(uploadFile, (value, message) => {
           processingItem.progress = value;
-          save("postwave_media", mediaLibrary);
           renderTables();
           progress.style.width = `${value}%`;
           status.textContent = message;
@@ -827,13 +835,15 @@
               processingItem.progress = next;
               progress.style.width = `${next}%`;
               status.textContent = `服务端转码 H.264 中 ${next}%`;
-              save("postwave_media", mediaLibrary);
               renderTables();
             }, 900);
           }
         });
         if (transcodeTimer) clearInterval(transcodeTimer);
+        processingItem.id = media.id || processingItem.id;
         processingItem.status = "ready";
+        processingItem.type = media.type || "video";
+        processingItem.kind = media.kind || "video";
         processingItem.progress = 100;
         processingItem.segments = media.segments || 1;
         processingItem.size = media.size || uploadFile.size;
@@ -845,18 +855,17 @@
         processingItem.height = media.height || 0;
         processingItem.duration = media.duration || 0;
         processingItem.storageProvider = media.storageProvider || "";
-        save("postwave_media", mediaLibrary);
         progress.style.width = "100%";
         status.textContent = `已完成：H.264 MP4，中等品质${media.storageProvider === "bunny" ? "，已上传 Storage/CDN" : "，本地存储"}`;
         selectedUploadVideo = null;
         document.querySelector("#videoInput").value = "";
         renderTables();
+        loadMediaLibraryFromApi();
         toast("视频处理完成，可在发布页插入");
       } catch (error) {
         if (transcodeTimer) clearInterval(transcodeTimer);
         processingItem.status = "failed";
         processingItem.progress = 100;
-        save("postwave_media", mediaLibrary);
         status.textContent = `处理失败：${error.message || "请重新上传视频"}`;
         renderTables();
         toast(error.message || "视频上传失败，请重试");
@@ -1171,8 +1180,9 @@
       pendingBodyInsertionRange = currentBodySelectionRange();
       document.querySelector("#inlineImageInput").click();
     });
-    document.querySelector("#insertVideoBtn").addEventListener("click", () => {
+    document.querySelector("#insertVideoBtn").addEventListener("click", async () => {
       pendingBodyInsertionRange = currentBodySelectionRange();
+      await loadMediaLibraryFromApi({ render: false });
       renderVideoPicker();
       document.querySelector("#videoPicker").classList.add("active");
     });
@@ -1544,6 +1554,7 @@
     renderTables();
     loadSiteSettingsFromApi();
     loadStoredPostsFromApi();
+    loadMediaLibraryFromApi();
     loadAuthorsFromApi();
     loadCommentsFromApi();
     renderAds();
