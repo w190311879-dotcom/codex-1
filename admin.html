@@ -332,6 +332,7 @@
     let currentLogoImage = "";
     let pendingBodyInsertionRange = null;
     let editingAuthorIndex = null;
+    let mediaPollTimer = null;
     const defaultAuthors = [
       { id: "author-alun", name: "alun", account: "alun", status: "正常" },
       { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常" }
@@ -421,7 +422,7 @@
         xhr.withCredentials = true;
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
-          const percent = Math.min(95, Math.round((event.loaded / event.total) * 60));
+          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
           onProgress(percent, `上传中 ${percent}%`);
         };
         xhr.onload = () => {
@@ -457,7 +458,32 @@
       if (render) {
         renderTables();
         renderInsertedMediaPreview();
+        updateVideoUploadStatusFromLibrary();
       }
+      startMediaPolling();
+    }
+    function hasActiveMediaJobs() {
+      return mediaLibrary.some((item) => item.type === "video" && ["queued", "processing", "uploading"].includes(item.status));
+    }
+    function startMediaPolling() {
+      if (mediaPollTimer || !hasActiveMediaJobs()) return;
+      mediaPollTimer = setInterval(async () => {
+        await loadMediaLibraryFromApi();
+        if (!hasActiveMediaJobs()) {
+          clearInterval(mediaPollTimer);
+          mediaPollTimer = null;
+        }
+      }, 3000);
+    }
+    function updateVideoUploadStatusFromLibrary() {
+      const status = document.querySelector("#videoStatus");
+      const progress = document.querySelector("#videoProgress");
+      if (!status || !progress) return;
+      const active = mediaLibrary.find((item) => item.type === "video" && ["queued", "processing"].includes(item.status));
+      if (!active) return;
+      const value = active.status === "queued" ? 100 : Math.max(10, Math.min(95, Number(active.progress) || 10));
+      progress.style.width = `${value}%`;
+      status.textContent = active.status === "queued" ? "上传完成，等待转码队列处理" : `服务端转码 H.264 中 ${value}%`;
     }
     async function adImageUrl(ad) {
       if (!ad) return "";
@@ -809,7 +835,7 @@
         originalName: uploadFile.name,
         url: "",
         type: "video",
-        status: "processing",
+        status: "uploading",
         progress: 0,
         format: "H.264 MP4",
         quality: "medium",
@@ -821,33 +847,21 @@
       renderTables();
       status.textContent = "上传中 0%";
       progress.style.width = "0%";
-      let transcodeTimer = null;
       try {
         const media = await uploadVideoForTranscode(uploadFile, (value, message) => {
           processingItem.progress = value;
           renderTables();
           progress.style.width = `${value}%`;
           status.textContent = message;
-          if (value >= 60 && !transcodeTimer) {
-            status.textContent = "服务端转码 H.264 中，请勿关闭页面";
-            transcodeTimer = setInterval(() => {
-              const next = Math.min(95, (Number(processingItem.progress) || 60) + 1);
-              processingItem.progress = next;
-              progress.style.width = `${next}%`;
-              status.textContent = `服务端转码 H.264 中 ${next}%`;
-              renderTables();
-            }, 900);
-          }
         });
-        if (transcodeTimer) clearInterval(transcodeTimer);
         processingItem.id = media.id || processingItem.id;
-        processingItem.status = "ready";
+        processingItem.status = media.status || "queued";
         processingItem.type = media.type || "video";
         processingItem.kind = media.kind || "video";
-        processingItem.progress = 100;
-        processingItem.segments = media.segments || 1;
+        processingItem.progress = media.progress || 0;
+        processingItem.segments = media.segments || 0;
         processingItem.size = media.size || uploadFile.size;
-        processingItem.url = media.url;
+        processingItem.url = media.url || "";
         processingItem.storagePath = media.storagePath || "";
         processingItem.name = media.name || processingItem.name;
         processingItem.aspect = media.aspect || processingItem.aspect;
@@ -856,14 +870,14 @@
         processingItem.duration = media.duration || 0;
         processingItem.storageProvider = media.storageProvider || "";
         progress.style.width = "100%";
-        status.textContent = `已完成：H.264 MP4，中等品质${media.storageProvider === "bunny" ? "，已上传 Storage/CDN" : "，本地存储"}`;
+        status.textContent = "上传完成，已进入服务端转码队列，可离开页面等待处理完成";
         selectedUploadVideo = null;
         document.querySelector("#videoInput").value = "";
         renderTables();
         loadMediaLibraryFromApi();
-        toast("视频处理完成，可在发布页插入");
+        startMediaPolling();
+        toast("视频已上传，转码完成后可在发布页插入");
       } catch (error) {
-        if (transcodeTimer) clearInterval(transcodeTimer);
         processingItem.status = "failed";
         processingItem.progress = 100;
         status.textContent = `处理失败：${error.message || "请重新上传视频"}`;
@@ -955,7 +969,9 @@
       document.querySelector("#draftsTable").innerHTML = tableRows(storedDrafts);
       document.querySelector("#mediaTable").innerHTML = `<div class="table-row header"><span>媒体</span><span>格式</span><span>状态</span><span>时间</span></div>` + (mediaLibrary.length ? mediaLibrary.map((item) => {
         const progress = Math.min(100, Math.max(0, Number(item.progress) || 0));
-        let statusCell = `<span>处理中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+        let statusCell = `<span>上传中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+        if (item.status === "queued") statusCell = '<span>排队转码中</span><div class="progress"><span style="width:100%"></span></div>';
+        if (item.status === "processing") statusCell = `<span>转码中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
         if (item.status === "ready") statusCell = '<span class="status-ready">已完成</span>';
         if (item.status === "failed") statusCell = '<span class="status-failed">处理失败，请重新上传</span>';
         return `<div class="table-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.format)}</span><span>${statusCell}</span><span>${escapeHtml(item.date)}</span></div>`;

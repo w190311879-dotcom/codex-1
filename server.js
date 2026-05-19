@@ -42,6 +42,7 @@ const usersFile = path.join(dataDir, "users.json");
 const commentsFile = path.join(dataDir, "comments.json");
 const siteSettingsFile = path.join(dataDir, "site-settings.json");
 const uploadsDir = path.join(dataDir, "uploads");
+const tempUploadDir = path.join(dataDir, "tmp-uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
 const mediaRecordsFile = path.join(dataDir, "media.json");
 const isProduction = process.env.NODE_ENV === "production";
@@ -50,10 +51,29 @@ const sessionSecret = process.env.SESSION_SECRET || (isProduction ? "" : default
 const sessionCookieName = "postwave_session";
 const userSessionCookieName = "postwave_user_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
-const uploadLimitMb = Number(process.env.POSTWAVE_UPLOAD_LIMIT_MB || 1024);
+const legacyUploadLimitMb = Number(process.env.POSTWAVE_UPLOAD_LIMIT_MB || 0);
+const imageUploadLimitMb = Number(process.env.POSTWAVE_IMAGE_UPLOAD_LIMIT_MB || legacyUploadLimitMb || 100);
+const videoUploadLimitMb = Number(process.env.POSTWAVE_VIDEO_UPLOAD_LIMIT_MB || legacyUploadLimitMb || 5120);
+const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
 const ffmpegBin = process.env.FFMPEG_PATH || "ffmpeg";
 const ffprobeBin = process.env.FFPROBE_PATH || "ffprobe";
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: uploadLimitMb * 1024 * 1024 } });
+const allowedImageMimes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]);
+const allowedVideoMimes = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "application/octet-stream"]);
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination(_req, _file, callback) {
+      fsSync.mkdirSync(tempUploadDir, { recursive: true });
+      callback(null, tempUploadDir);
+    },
+    filename(_req, file, callback) {
+      callback(null, `${Date.now()}-${crypto.randomUUID()}-${safeFilename(file.originalname, file.mimetype)}`);
+    }
+  }),
+  limits: { fileSize: imageUploadLimitMb * 1024 * 1024 },
+  fileFilter(_req, file, callback) {
+    callback(allowedImageMimes.has(file.mimetype) ? null : new Error("只允许上传 JPG、PNG、WEBP、GIF、SVG 图片"), allowedImageMimes.has(file.mimetype));
+  }
+});
 const videoUpload = multer({
   storage: multer.diskStorage({
     destination(_req, _file, callback) {
@@ -64,7 +84,12 @@ const videoUpload = multer({
       callback(null, `${Date.now()}-${crypto.randomUUID()}-${safeFilename(file.originalname, file.mimetype)}`);
     }
   }),
-  limits: { fileSize: uploadLimitMb * 1024 * 1024 }
+  limits: { fileSize: videoUploadLimitMb * 1024 * 1024 },
+  fileFilter(_req, file, callback) {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const allowed = allowedVideoMimes.has(file.mimetype) || [".mp4", ".mov", ".webm", ".mkv"].includes(ext);
+    callback(allowed ? null : new Error("只允许上传 MP4、MOV、WEBM、MKV 视频"), allowed);
+  }
 });
 const bunnyStorageZone = process.env.BUNNY_STORAGE_ZONE || "";
 const bunnyStorageAccessKey = process.env.BUNNY_STORAGE_ACCESS_KEY || "";
@@ -335,7 +360,8 @@ function extensionFromMime(mime = "") {
     "image/svg+xml": ".svg",
     "video/mp4": ".mp4",
     "video/webm": ".webm",
-    "video/quicktime": ".mov"
+    "video/quicktime": ".mov",
+    "video/x-matroska": ".mkv"
   }[mime] || "";
 }
 
@@ -369,16 +395,36 @@ async function uploadFileToBunny(file, storagePath) {
   return `${bunnyCdnBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
 }
 
+async function uploadPathToBunny(localPath, mimeType, storagePath) {
+  const url = `https://${bunnyStorageHost.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${encodeURIComponent(bunnyStorageZone)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const stats = await fs.stat(localPath);
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      AccessKey: bunnyStorageAccessKey,
+      "Content-Type": mimeType || "application/octet-stream",
+      "Content-Length": String(stats.size)
+    },
+    body: fsSync.createReadStream(localPath),
+    duplex: "half"
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`bunny Storage 上传失败：${response.status} ${text}`.trim());
+  }
+  return `${bunnyCdnBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
 async function uploadFileLocally(file, storagePath) {
   const filePath = path.join(uploadsDir, storagePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, file.buffer);
+  if (file.path) await fs.copyFile(file.path, filePath);
+  else await fs.writeFile(filePath, file.buffer);
   return publicUploadUrl(storagePath);
 }
 
 async function uploadLocalPathToBunny(localPath, mimeType, storagePath) {
-  const buffer = await fs.readFile(localPath);
-  return uploadFileToBunny({ buffer, mimetype: mimeType }, storagePath);
+  return uploadPathToBunny(localPath, mimeType, storagePath);
 }
 
 async function uploadLocalPathLocally(localPath, storagePath) {
@@ -393,7 +439,7 @@ function publicUploadUrl(storagePath) {
   return publicMediaBaseUrl ? `${publicMediaBaseUrl}${relativePath}` : relativePath;
 }
 
-async function uploadProcessedVideo(localPath, originalFile, metadata = {}) {
+async function uploadProcessedVideo(localPath, originalFile, metadata = {}, mediaId = crypto.randomUUID()) {
   const outputName = `${path.parse(originalFile.originalname || "video").name || "video"}.mp4`;
   const storagePath = createMediaStoragePath({ originalname: outputName, mimetype: "video/mp4" }, "video");
   const stats = await fs.stat(localPath);
@@ -401,7 +447,7 @@ async function uploadProcessedVideo(localPath, originalFile, metadata = {}) {
     ? await uploadLocalPathToBunny(localPath, "video/mp4", storagePath)
     : await uploadLocalPathLocally(localPath, storagePath);
   const record = {
-    id: crypto.randomUUID(),
+    id: mediaId,
     kind: "video",
     type: "video",
     originalName: originalFile.originalname || "",
@@ -429,14 +475,17 @@ async function uploadProcessedVideo(localPath, originalFile, metadata = {}) {
 
 async function uploadMediaFile(file, kind) {
   if (!file) throw new Error("没有收到上传文件");
+  if (!allowedImageMimes.has(file.mimetype)) throw new Error("只允许上传图片/GIF 文件");
   const storagePath = createMediaStoragePath(file, kind);
   const url = useBunnyStorage
-    ? await uploadFileToBunny(file, storagePath)
+    ? (file.path ? await uploadPathToBunny(file.path, file.mimetype, storagePath) : await uploadFileToBunny(file, storagePath))
     : await uploadFileLocally(file, storagePath);
   const record = {
     id: crypto.randomUUID(),
     kind: kind || mediaFolder("", file.mimetype || ""),
+    type: "image",
     originalName: file.originalname || "",
+    name: file.originalname || "",
     mimeType: file.mimetype || "application/octet-stream",
     size: file.size || file.buffer?.length || 0,
     storagePath,
@@ -723,6 +772,7 @@ async function initPostgres() {
 async function initFileStorage() {
   await fs.mkdir(dataDir, { recursive: true });
   await fs.mkdir(uploadsDir, { recursive: true });
+  await fs.mkdir(tempUploadDir, { recursive: true });
   await fs.mkdir(tempVideoDir, { recursive: true });
   try {
     await fs.access(postsFile);
@@ -1105,17 +1155,17 @@ async function saveMediaRecord(record) {
     const data = JSON.parse(await fs.readFile(mediaRecordsFile, "utf8"));
     records = Array.isArray(data) ? data : [];
   } catch {}
-  records.unshift(record);
+  const index = records.findIndex((item) => item.id === record.id || item.media_id === record.id);
+  if (index >= 0) records[index] = { ...records[index], ...record };
+  else records.unshift(record);
   await fs.writeFile(mediaRecordsFile, JSON.stringify(records.slice(0, 1000), null, 2));
 }
 
-function normalizeMediaRecord(record = {}) {
+function normalizeMediaRecord(record = {}, { includeInternal = false } = {}) {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   const kind = String(record.kind || metadata.kind || "");
   const status = String(record.status || metadata.status || "ready");
-  return {
-    ...metadata,
-    ...record,
+  const normalized = {
     id: String(record.id || record.mediaId || record.media_id || metadata.id || ""),
     kind,
     type: String(record.type || metadata.type || (kind === "video" ? "video" : kind)),
@@ -1138,9 +1188,14 @@ function normalizeMediaRecord(record = {}) {
     createdAt: record.createdAt || record.created_at || metadata.createdAt || "",
     date: record.date || metadata.date || (record.created_at ? new Date(record.created_at).toLocaleString() : "")
   };
+  if (includeInternal) {
+    normalized.tempInputPath = record.tempInputPath || metadata.tempInputPath || "";
+    normalized.originalMimeType = record.originalMimeType || metadata.originalMimeType || record.mimeType || record.mime_type || "";
+  }
+  return normalized;
 }
 
-async function readMediaRecords({ id = "", kind = "", publicOnly = false } = {}) {
+async function readMediaRecords({ id = "", kind = "", publicOnly = false, includeInternal = false } = {}) {
   if (pool) {
     const clauses = [];
     const values = [];
@@ -1166,20 +1221,121 @@ async function readMediaRecords({ id = "", kind = "", publicOnly = false } = {})
        ORDER BY created_at DESC, id DESC`,
       values
     );
-    return rows.map(normalizeMediaRecord);
+    return rows.map((row) => normalizeMediaRecord(row, { includeInternal }));
   }
   try {
     const records = JSON.parse(await fs.readFile(mediaRecordsFile, "utf8"));
     return (Array.isArray(records) ? records : [])
-      .map(normalizeMediaRecord)
+      .map((record) => normalizeMediaRecord(record, { includeInternal }))
       .filter((record) => (!id || record.id === id) && (!kind || record.kind === kind) && (!publicOnly || record.status === "ready"));
   } catch {
     return [];
   }
 }
 
+const transcodeQueue = [];
+let activeTranscodes = 0;
+
+function createQueuedVideoRecord(file) {
+  const outputName = `${path.parse(file.originalname || "video").name || "video"}.mp4`;
+  return {
+    id: crypto.randomUUID(),
+    kind: "video",
+    type: "video",
+    originalName: file.originalname || "",
+    name: outputName,
+    mimeType: "video/mp4",
+    originalMimeType: file.mimetype || "",
+    size: file.size || 0,
+    storagePath: "",
+    storageProvider: useBunnyStorage ? "bunny" : "local",
+    url: "",
+    status: "queued",
+    progress: 0,
+    format: "H.264 MP4",
+    quality: "medium",
+    aspect: "16-9",
+    width: 0,
+    height: 0,
+    duration: 0,
+    segments: 0,
+    tempInputPath: file.path,
+    createdAt: new Date().toISOString(),
+    date: new Date().toLocaleString()
+  };
+}
+
+function publicQueuedVideoRecord(record) {
+  const { tempInputPath: _tempInputPath, originalMimeType: _originalMimeType, ...safeRecord } = record;
+  return safeRecord;
+}
+
+function enqueueTranscode(record) {
+  if (!record?.id || !record.tempInputPath) return;
+  if (!transcodeQueue.some((item) => item.id === record.id)) transcodeQueue.push(record);
+  processTranscodeQueue();
+}
+
+function processTranscodeQueue() {
+  while (activeTranscodes < transcodeConcurrency && transcodeQueue.length) {
+    const job = transcodeQueue.shift();
+    activeTranscodes += 1;
+    runTranscodeJob(job)
+      .catch((error) => console.error(error))
+      .finally(() => {
+        activeTranscodes -= 1;
+        processTranscodeQueue();
+      });
+  }
+}
+
+async function runTranscodeJob(job) {
+  let outputPath = "";
+  try {
+    outputPath = path.join(tempVideoDir, `${job.id}-h264.mp4`);
+    await saveMediaRecord({ ...job, status: "processing", progress: 10 });
+    await transcodeVideoToH264(job.tempInputPath, outputPath);
+    await saveMediaRecord({ ...job, status: "processing", progress: 90 });
+    const metadata = await probeVideo(outputPath);
+    const media = await uploadProcessedVideo(outputPath, {
+      originalname: job.originalName,
+      mimetype: "video/mp4"
+    }, metadata, job.id);
+    await saveMediaRecord({ ...media, progress: 100, status: "ready" });
+  } catch (error) {
+    await saveMediaRecord({
+      ...job,
+      status: "failed",
+      progress: 100,
+      error: error.message || "视频转码失败"
+    }).catch(() => {});
+  } finally {
+    await Promise.all([job.tempInputPath, outputPath].filter(Boolean).map((filePath) => fs.rm(filePath, { force: true }).catch(() => {})));
+  }
+}
+
+async function resumePendingTranscodes() {
+  const records = await readMediaRecords({ kind: "video", includeInternal: true });
+  for (const record of records) {
+    if (!["queued", "processing"].includes(record.status)) continue;
+    if (record.tempInputPath && fsSync.existsSync(record.tempInputPath)) {
+      const queuedRecord = { ...record, status: "queued", progress: 0 };
+      await saveMediaRecord(queuedRecord);
+      enqueueTranscode(queuedRecord);
+    } else {
+      await saveMediaRecord({ ...record, status: "failed", progress: 100, error: "临时视频文件不存在，请重新上传" });
+    }
+  }
+}
+
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, storage: storageMode, postgres: Boolean(pool), mediaStorage: useBunnyStorage ? "bunny" : "local" });
+  res.json({
+    ok: true,
+    storage: storageMode,
+    postgres: Boolean(pool),
+    mediaStorage: useBunnyStorage ? "bunny" : "local",
+    transcode: { queued: transcodeQueue.length, active: activeTranscodes, concurrency: transcodeConcurrency }
+  });
 });
 
 app.get("/config.js", (_req, res) => {
@@ -1398,30 +1554,27 @@ app.delete("/api/admin/comments/:id", requireAdminApi, async (req, res, next) =>
   }
 });
 
-app.post("/api/media/upload", requireAdminApi, upload.single("file"), async (req, res, next) => {
+app.post("/api/media/upload", requireAdminApi, imageUpload.single("file"), async (req, res, next) => {
   try {
     const media = await uploadMediaFile(req.file, String(req.body?.kind || "asset"));
     res.json({ ok: true, url: media.url, media });
   } catch (error) {
     next(error);
+  } finally {
+    if (req.file?.path) await fs.rm(req.file.path, { force: true }).catch(() => {});
   }
 });
 
 app.post("/api/media/video/transcode", requireAdminApi, videoUpload.single("file"), async (req, res, next) => {
-  let inputPath = req.file?.path || "";
-  let outputPath = "";
   try {
     if (!req.file) throw new Error("没有收到视频文件");
-    if (!String(req.file.mimetype || "").startsWith("video/")) throw new Error("请上传视频文件");
-    outputPath = path.join(tempVideoDir, `${crypto.randomUUID()}-h264.mp4`);
-    await transcodeVideoToH264(inputPath, outputPath);
-    const metadata = await probeVideo(outputPath);
-    const media = await uploadProcessedVideo(outputPath, req.file, metadata);
-    res.json({ ok: true, url: media.url, media });
+    const media = createQueuedVideoRecord(req.file);
+    await saveMediaRecord(media);
+    enqueueTranscode(media);
+    res.status(202).json({ ok: true, media: publicQueuedVideoRecord(media) });
   } catch (error) {
+    if (req.file?.path) await fs.rm(req.file.path, { force: true }).catch(() => {});
     next(error);
-  } finally {
-    await Promise.all([inputPath, outputPath].filter(Boolean).map((filePath) => fs.rm(filePath, { force: true }).catch(() => {})));
   }
 });
 
@@ -1454,6 +1607,15 @@ app.use(express.static(__dirname, { extensions: ["html"] }));
 
 app.use((error, _req, res, _next) => {
   console.error(error);
+  if (error instanceof multer.MulterError) {
+    const message = error.code === "LIMIT_FILE_SIZE" ? "上传文件超过大小限制" : error.message;
+    res.status(413).json({ error: message });
+    return;
+  }
+  if (/只允许上传/.test(error.message || "")) {
+    res.status(400).json({ error: error.message });
+    return;
+  }
   res.status(500).json({ error: error.message || "Server error" });
 });
 
@@ -1466,6 +1628,7 @@ if (storageMode === "postgres") {
 } else {
   await initFileStorage();
 }
+await resumePendingTranscodes();
 
 app.listen(port, () => {
   console.log(`PostWave server running at http://localhost:${port}`);
