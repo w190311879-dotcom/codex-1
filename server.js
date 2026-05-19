@@ -1782,7 +1782,7 @@ app.use(express.static(__dirname, { extensions: ["html"] }));
 app.use((error, _req, res, _next) => {
   console.error(error);
   if (error instanceof multer.MulterError) {
-    const message = error.code === "LIMIT_FILE_SIZE" ? "上传文件超过大小限制" : error.message;
+    const message = error.code === "LIMIT_FILE_SIZE" ? "上传文件超过大小限制" : (isProduction ? "上传失败，请稍后重试" : error.message);
     res.status(413).json({ error: message });
     return;
   }
@@ -1790,7 +1790,7 @@ app.use((error, _req, res, _next) => {
     res.status(400).json({ error: error.message });
     return;
   }
-  res.status(500).json({ error: error.message || "Server error" });
+  res.status(500).json({ error: isProduction ? "服务器暂时无法处理请求，请稍后再试" : (error.message || "Server error") });
 });
 
 if (storageMode === "postgres") {
