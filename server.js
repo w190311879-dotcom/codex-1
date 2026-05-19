@@ -11,6 +11,26 @@ import multer from "multer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+function loadDotEnvFile() {
+  const envPath = path.join(__dirname, ".env");
+  if (!fsSync.existsSync(envPath)) return;
+  const content = fsSync.readFileSync(envPath, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+    const index = trimmed.indexOf("=");
+    const key = trimmed.slice(0, index).trim();
+    let value = trimmed.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+loadDotEnvFile();
+
 const app = express();
 const port = Number(process.env.PORT || 8787);
 const databaseUrl = process.env.DATABASE_URL || "";
@@ -23,7 +43,9 @@ const siteSettingsFile = path.join(dataDir, "site-settings.json");
 const uploadsDir = path.join(dataDir, "uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
 const mediaRecordsFile = path.join(dataDir, "media.json");
-const sessionSecret = process.env.SESSION_SECRET || "postwave-local-dev-secret";
+const isProduction = process.env.NODE_ENV === "production";
+const defaultSessionSecret = "postwave-local-dev-secret";
+const sessionSecret = process.env.SESSION_SECRET || (isProduction ? "" : defaultSessionSecret);
 const sessionCookieName = "postwave_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
 const uploadLimitMb = Number(process.env.POSTWAVE_UPLOAD_LIMIT_MB || 1024);
@@ -67,6 +89,7 @@ const defaultAdmins = [
   { id: "author-alun", name: "alun", account: "alun", status: "正常", passwordHash: "$2b$12$U92wyNFjRMMT8su0BmPkE.B6CxgnrR4NyjV0seeXmhTg..2Wwih6m" },
   { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常", passwordHash: "$2b$12$4hR.YJCe/cXyJF0jc1aqeOrV1OOaqjjLzljxDgUNoZmMBVwS2NP.2" }
 ];
+const defaultAdminHashes = new Set(defaultAdmins.map((admin) => admin.passwordHash));
 const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
   ? [{
       id: "author-env-admin",
@@ -77,6 +100,28 @@ const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
     }]
   : null;
 const seedAdmins = envAdmin || defaultAdmins;
+
+function validateProductionSecurityConfig() {
+  if (!isProduction) return;
+  const errors = [];
+  const adminHash = process.env.ADMIN_PASSWORD_HASH || "";
+  if (!sessionSecret || sessionSecret === defaultSessionSecret || sessionSecret.includes("change-this") || sessionSecret.length < 32) {
+    errors.push("SESSION_SECRET 必须设置为至少 32 位的随机密钥，不能使用默认开发密钥。");
+  }
+  if (!process.env.ADMIN_USERNAME || !adminHash) {
+    errors.push("生产环境必须设置 ADMIN_USERNAME 和 ADMIN_PASSWORD_HASH，不能使用内置默认后台账号。");
+  }
+  if (adminHash && (adminHash.includes("replace-with") || defaultAdminHashes.has(adminHash) || !/^\$2[aby]\$\d{2}\$/.test(adminHash))) {
+    errors.push("ADMIN_PASSWORD_HASH 必须是你自己生成的 bcrypt 哈希，不能使用占位值或内置默认哈希。");
+  }
+  if (errors.length) {
+    console.error("生产环境安全配置不完整：");
+    for (const error of errors) console.error(`- ${error}`);
+    process.exit(1);
+  }
+}
+
+validateProductionSecurityConfig();
 const defaultSiteSettings = {
   siteConfig: {
     siteName: "PostWave",
