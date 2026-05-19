@@ -55,6 +55,8 @@ const legacyUploadLimitMb = Number(process.env.POSTWAVE_UPLOAD_LIMIT_MB || 0);
 const imageUploadLimitMb = Number(process.env.POSTWAVE_IMAGE_UPLOAD_LIMIT_MB || legacyUploadLimitMb || 100);
 const videoUploadLimitMb = Number(process.env.POSTWAVE_VIDEO_UPLOAD_LIMIT_MB || legacyUploadLimitMb || 5120);
 const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
+const loginRateWindowMs = Math.max(60, Number(process.env.POSTWAVE_LOGIN_RATE_WINDOW_SECONDS || 900) || 900) * 1000;
+const loginRateMaxAttempts = Math.max(3, Number(process.env.POSTWAVE_LOGIN_RATE_MAX || 10) || 10);
 const ffmpegBin = process.env.FFMPEG_PATH || "ffmpeg";
 const ffprobeBin = process.env.FFPROBE_PATH || "ffprobe";
 const allowedImageMimes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]);
@@ -141,6 +143,9 @@ function validateProductionSecurityConfig() {
   if (adminHash && (adminHash.includes("replace-with") || defaultAdminHashes.has(adminHash) || !/^\$2[aby]\$\d{2}\$/.test(adminHash))) {
     errors.push("ADMIN_PASSWORD_HASH 必须是你自己生成的 bcrypt 哈希，不能使用占位值或内置默认哈希。");
   }
+  if (process.env.CORS_ALLOW_ALL === "1") {
+    errors.push("生产环境不能开启 CORS_ALLOW_ALL=1，请显式配置允许的站点域名。");
+  }
   if (errors.length) {
     console.error("生产环境安全配置不完整：");
     for (const error of errors) console.error(`- ${error}`);
@@ -191,7 +196,7 @@ app.use((req, res, next) => {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
     return;
@@ -575,6 +580,10 @@ function parseCookies(header = "") {
   }, {});
 }
 
+function sessionTokenFromRequest(req, cookieName = sessionCookieName) {
+  return parseCookies(req.headers.cookie || "")[cookieName] || "";
+}
+
 function base64Url(input) {
   return Buffer.from(input).toString("base64url");
 }
@@ -594,12 +603,22 @@ function createSession(entity, role = "admin") {
   return `${payload}.${signPayload(payload)}`;
 }
 
+function createCsrfToken(sessionToken) {
+  return crypto.createHmac("sha256", sessionSecret).update(`csrf:${sessionToken}`).digest("base64url");
+}
+
+function timingSafeStringEqual(left = "", right = "") {
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 function readSession(req, cookieName = sessionCookieName, expectedRole = "") {
-  const token = parseCookies(req.headers.cookie || "")[cookieName];
+  const token = sessionTokenFromRequest(req, cookieName);
   if (!token || !token.includes(".")) return null;
   const [payload, signature] = token.split(".");
   const expected = signPayload(payload);
-  const valid = signature.length === expected.length && crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  const valid = timingSafeStringEqual(signature, expected);
   if (!valid) return null;
   try {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
@@ -618,10 +637,19 @@ function sessionCookie(value, maxAge = sessionMaxAgeSeconds, cookieName = sessio
 }
 
 function requireAdminApi(req, res, next) {
+  const sessionToken = sessionTokenFromRequest(req, sessionCookieName);
   const session = readSession(req, sessionCookieName, "admin");
   if (!session) {
     res.status(401).json({ error: "Unauthorized" });
     return;
+  }
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    const token = String(req.headers["x-csrf-token"] || "");
+    const expected = createCsrfToken(sessionToken);
+    if (!token || !timingSafeStringEqual(token, expected)) {
+      res.status(403).json({ error: "CSRF token invalid" });
+      return;
+    }
   }
   req.admin = session;
   next();
@@ -645,6 +673,55 @@ function requireUserApi(req, res, next) {
   }
   req.user = session;
   next();
+}
+
+const loginAttempts = new Map();
+
+function clientIp(req) {
+  return String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase() || "unknown";
+}
+
+function loginRateKeys(req, scope) {
+  const account = String(req.body?.account || "").trim().toLowerCase();
+  const keys = [`${scope}:ip:${clientIp(req)}`];
+  if (account) keys.push(`${scope}:account:${account}`);
+  return keys;
+}
+
+function currentLoginAttempts(key) {
+  const now = Date.now();
+  const attempts = (loginAttempts.get(key) || []).filter((time) => now - time < loginRateWindowMs);
+  if (attempts.length) loginAttempts.set(key, attempts);
+  else loginAttempts.delete(key);
+  return attempts;
+}
+
+function loginRateLimit(scope) {
+  return (req, res, next) => {
+    const keys = loginRateKeys(req, scope);
+    if (keys.some((key) => currentLoginAttempts(key).length >= loginRateMaxAttempts)) {
+      res.status(429).json({ error: "登录尝试过多，请稍后再试" });
+      return;
+    }
+    req.loginRateKeys = keys;
+    next();
+  };
+}
+
+function recordLoginFailure(req) {
+  const now = Date.now();
+  for (const key of req.loginRateKeys || []) {
+    const attempts = currentLoginAttempts(key);
+    attempts.push(now);
+    loginAttempts.set(key, attempts);
+  }
+}
+
+function clearLoginFailures(req) {
+  for (const key of req.loginRateKeys || []) loginAttempts.delete(key);
 }
 
 function requestHost(req) {
@@ -1434,17 +1511,26 @@ app.get("/api/session", (req, res) => {
   res.json({ authenticated: Boolean(session), user: session ? { account: session.account, name: session.name } : null });
 });
 
-app.post("/api/login", async (req, res, next) => {
+app.get("/api/csrf", requireAdminApi, (req, res) => {
+  const sessionToken = sessionTokenFromRequest(req, sessionCookieName);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, csrfToken: createCsrfToken(sessionToken) });
+});
+
+app.post("/api/login", loginRateLimit("admin-login"), async (req, res, next) => {
   try {
     const account = String(req.body?.account || "").trim();
     const password = String(req.body?.password || "").trim();
     const admin = await findAdmin(account, password);
     if (!admin) {
+      recordLoginFailure(req);
       res.status(401).json({ error: "账号或密码错误" });
       return;
     }
-    res.setHeader("Set-Cookie", sessionCookie(createSession(admin, "admin")));
-    res.json({ ok: true, user: { account: admin.account, name: admin.name } });
+    clearLoginFailures(req);
+    const sessionToken = createSession(admin, "admin");
+    res.setHeader("Set-Cookie", sessionCookie(sessionToken));
+    res.json({ ok: true, user: { account: admin.account, name: admin.name }, csrfToken: createCsrfToken(sessionToken) });
   } catch (error) {
     next(error);
   }
@@ -1460,27 +1546,31 @@ app.get("/api/user/session", (req, res) => {
   res.json({ authenticated: Boolean(session), user: session ? { account: session.account, name: session.name } : null });
 });
 
-app.post("/api/user/register", async (req, res, next) => {
+app.post("/api/user/register", loginRateLimit("user-register"), async (req, res, next) => {
   try {
     const user = await registerUser({
       account: req.body?.account,
       password: req.body?.password,
       name: req.body?.name
     });
+    clearLoginFailures(req);
     res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName));
     res.json({ ok: true, user });
   } catch (error) {
+    recordLoginFailure(req);
     res.status(400).json({ error: error.message || "注册失败" });
   }
 });
 
-app.post("/api/user/login", async (req, res, next) => {
+app.post("/api/user/login", loginRateLimit("user-login"), async (req, res, next) => {
   try {
     const user = await findUser(req.body?.account, req.body?.password);
     if (!user) {
+      recordLoginFailure(req);
       res.status(401).json({ error: "账号或密码错误" });
       return;
     }
+    clearLoginFailures(req);
     res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName));
     res.json({ ok: true, user });
   } catch (error) {

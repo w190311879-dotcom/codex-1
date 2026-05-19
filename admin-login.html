@@ -73,6 +73,7 @@
         if (!response.ok) throw new Error(data.error || "账号或密码错误");
         localStorage.setItem("postwave_admin", "1");
         localStorage.setItem("postwave_current_author", data.user?.name || account);
+        if (data.csrfToken) localStorage.setItem("postwave_csrf", data.csrfToken);
         const next = new URLSearchParams(location.search).get("next") || "admin.html";
         location.href = next;
       } catch (error) {

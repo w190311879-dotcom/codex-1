@@ -313,8 +313,32 @@
       const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
       return base ? `${base}${path}` : path;
     }
+    let csrfToken = localStorage.getItem("postwave_csrf") || "";
+    function currentCsrfToken() {
+      csrfToken = csrfToken || localStorage.getItem("postwave_csrf") || "";
+      return csrfToken;
+    }
+    async function refreshCsrfToken() {
+      try {
+        const response = await fetch(apiPath("/api/csrf"), { credentials: "include", cache: "no-store" });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data.csrfToken) {
+          csrfToken = data.csrfToken;
+          localStorage.setItem("postwave_csrf", csrfToken);
+        }
+      } catch {}
+      return csrfToken;
+    }
     function apiOptions(options = {}) {
-      return { credentials: "include", ...options };
+      const nextOptions = { credentials: "include", ...options };
+      const method = String(nextOptions.method || "GET").toUpperCase();
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        const headers = new Headers(nextOptions.headers || {});
+        const token = currentCsrfToken();
+        if (token) headers.set("X-CSRF-Token", token);
+        nextOptions.headers = headers;
+      }
+      return nextOptions;
     }
     let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
@@ -405,6 +429,7 @@
       return url;
     }
     async function uploadMediaFile(file, kind) {
+      await refreshCsrfToken();
       const formData = new FormData();
       formData.append("file", file);
       formData.append("kind", kind);
@@ -414,12 +439,14 @@
       return data.media || { url: data.url };
     }
     function uploadVideoForTranscode(file, onProgress) {
-      return new Promise((resolve, reject) => {
+      return refreshCsrfToken().then(() => new Promise((resolve, reject) => {
         const formData = new FormData();
         formData.append("file", file);
         const xhr = new XMLHttpRequest();
         xhr.open("POST", apiPath("/api/media/video/transcode"));
         xhr.withCredentials = true;
+        const token = currentCsrfToken();
+        if (token) xhr.setRequestHeader("X-CSRF-Token", token);
         xhr.upload.onprogress = (event) => {
           if (!event.lengthComputable) return;
           const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
@@ -433,7 +460,7 @@
         xhr.onerror = () => reject(new Error("视频上传失败，请检查网络或服务状态"));
         onProgress(1, "上传中 1%");
         xhr.send(formData);
-      });
+      }));
     }
     async function mediaUrl(item) {
       if (!item) return "";
@@ -1568,6 +1595,7 @@
     renderCategoryPicker();
     renderAuthorSelect();
     renderTables();
+    refreshCsrfToken();
     loadSiteSettingsFromApi();
     loadStoredPostsFromApi();
     loadMediaLibraryFromApi();
