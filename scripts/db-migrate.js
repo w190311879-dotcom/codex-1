@@ -51,13 +51,22 @@ export async function runMigrations(pool, { logger = console } = {}) {
   const client = await pool.connect();
   try {
     await ensureMigrationTable(client);
-    const { rows } = await client.query("SELECT filename FROM schema_migrations");
-    const applied = new Set(rows.map((row) => row.filename));
+    const { rows } = await client.query("SELECT filename, checksum FROM schema_migrations");
+    const applied = new Map(rows.map((row) => [row.filename, row.checksum || ""]));
 
     for (const file of files) {
-      if (applied.has(file)) continue;
       const sql = await fs.readFile(path.join(migrationsDir, file), "utf8");
       const hash = await checksum(sql);
+      if (applied.has(file)) {
+        const appliedHash = applied.get(file);
+        if (appliedHash && appliedHash !== hash) {
+          throw new Error(`Migration ${file} checksum mismatch. Do not edit applied migrations; create a new migration instead.`);
+        }
+        if (!appliedHash) {
+          await client.query("UPDATE schema_migrations SET checksum = $1 WHERE filename = $2", [hash, file]);
+        }
+        continue;
+      }
       logger.log(`Applying migration ${file}`);
       await client.query("BEGIN");
       try {
