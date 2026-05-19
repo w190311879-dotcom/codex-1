@@ -33,6 +33,7 @@ function loadDotEnvFile() {
 loadDotEnvFile();
 
 const app = express();
+app.disable("x-powered-by");
 const port = Number(process.env.PORT || 8787);
 const databaseUrl = process.env.DATABASE_URL || "";
 const storageMode = databaseUrl ? "postgres" : (process.env.POSTWAVE_STORAGE || "file");
@@ -132,6 +133,11 @@ const adminHost = process.env.ADMIN_HOST || originHost(publicAdminOrigin);
 const apiHost = process.env.API_HOST || originHost(publicApiBaseUrl);
 const mediaHost = process.env.MEDIA_HOST || originHost(publicMediaBaseUrl);
 const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || "";
+const cspConnectSources = ["'self'", publicApiBaseUrl, publicMediaBaseUrl, publicSiteOrigin, publicAdminOrigin].filter(Boolean);
+const cspMediaSources = ["'self'", "blob:", "data:", publicMediaBaseUrl].filter(Boolean);
+const cspImageSources = ["'self'", "data:", "blob:", publicMediaBaseUrl, "https://images.unsplash.com"].filter(Boolean);
+const cspScriptSources = ["'self'", "'unsafe-inline'"];
+const cspStyleSources = ["'self'", "'unsafe-inline'"];
 const defaultAdmins = [
   { id: "author-alun", name: "alun", account: "alun", status: "正常", passwordHash: "$2b$12$U92wyNFjRMMT8su0BmPkE.B6CxgnrR4NyjV0seeXmhTg..2Wwih6m" },
   { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常", passwordHash: "$2b$12$4hR.YJCe/cXyJF0jc1aqeOrV1OOaqjjLzljxDgUNoZmMBVwS2NP.2" }
@@ -196,6 +202,31 @@ const defaultSiteSettings = {
 };
 
 app.use(express.json({ limit: "80mb" }));
+
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'self'",
+    `script-src ${cspScriptSources.join(" ")}`,
+    `style-src ${cspStyleSources.join(" ")}`,
+    `img-src ${cspImageSources.join(" ")}`,
+    `media-src ${cspMediaSources.join(" ")}`,
+    `connect-src ${cspConnectSources.join(" ")}`,
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'"
+  ].join("; "));
+  if (isProduction) {
+    res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
+  next();
+});
 
 const allowedOrigins = new Set([
   publicSiteOrigin,
