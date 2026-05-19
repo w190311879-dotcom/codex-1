@@ -636,6 +636,7 @@
       localStorage.setItem("postwave_theme", isLight ? "light" : "dark");
     });
     const authLayer = document.querySelector("#authLayer");
+    let authMode = "login";
     document.querySelector("#authOpen").addEventListener("click", () => authLayer.classList.add("active"));
     document.querySelector("#authClose").addEventListener("click", () => authLayer.classList.remove("active"));
     authLayer.addEventListener("click", (event) => {
@@ -645,14 +646,28 @@
       button.addEventListener("click", () => {
         document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
-        document.querySelector("#authTitle").textContent = button.dataset.authMode === "login" ? "登录" : "注册";
+        authMode = button.dataset.authMode || "login";
+        document.querySelector("#authTitle").textContent = authMode === "login" ? "登录" : "注册";
       });
     });
-    document.querySelector("#authForm").addEventListener("submit", (event) => {
+    document.querySelector("#authForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      localStorage.setItem("postwave_user", document.querySelector("#authAccount").value || "guest");
-      authLayer.classList.remove("active");
-      document.querySelector("#authOpen").title = "已登录";
+      const account = document.querySelector("#authAccount").value.trim();
+      const password = document.querySelector("#authPassword").value.trim();
+      if (!account || !password) return;
+      try {
+        const response = await fetch(apiPath(authMode === "register" ? "/api/user/register" : "/api/user/login"), apiOptions({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account, password })
+        }));
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "登录失败");
+        authLayer.classList.remove("active");
+        document.querySelector("#authOpen").title = "已登录";
+      } catch (error) {
+        document.querySelector(".auth-note").textContent = error.message || "登录失败，请稍后重试。";
+      }
     });
     document.querySelector("#mainNav").addEventListener("click", (event) => {
       const moreButton = event.target.closest("#moreNav");

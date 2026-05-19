@@ -35,6 +35,19 @@ CREATE TABLE IF NOT EXISTS authors (
 
 CREATE INDEX IF NOT EXISTS authors_account_idx ON authors (account);
 
+CREATE TABLE IF NOT EXISTS users (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL UNIQUE,
+  account TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT '正常',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS users_account_idx ON users (account);
+
 CREATE TABLE IF NOT EXISTS media_files (
   id BIGSERIAL PRIMARY KEY,
   media_id TEXT NOT NULL UNIQUE,
@@ -64,6 +77,7 @@ CREATE TABLE IF NOT EXISTS comments (
   name TEXT NOT NULL DEFAULT '',
   body TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
+  user_id TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

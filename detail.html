@@ -347,6 +347,8 @@
     let posts = [...adminPosts, ...seedPosts];
     let current = posts.find((post) => post.id === new URLSearchParams(location.search).get("id")) || posts[0];
     let index = Math.max(0, posts.findIndex((post) => post.id === current.id));
+    let currentUser = null;
+    let authMode = "login";
     function normalizeAdPlacement(ad) {
       const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
       const key = raw.toLowerCase();
@@ -482,6 +484,7 @@
       document.querySelector("#officialNotice").textContent = notice;
       renderDetailAds();
       renderComments();
+      updateCommentUserState();
     }
     async function loadSiteSettingsFromApi() {
       const settings = await fetchSiteSettings();
@@ -641,12 +644,29 @@
       document.querySelector("#searchResults").innerHTML = results.map((post) => `<a href="detail.html?id=${encodeURIComponent(post.id)}">${escapeHtml(post.title)}</a>`).join("");
     });
     const authLayer = document.querySelector("#authLayer");
+    function frontCommentName() {
+      return siteConfig.commentLogoText || "注册用户";
+    }
+    async function fetchUserSession() {
+      try {
+        const response = await fetch(apiPath("/api/user/session"), apiOptions({ cache: "no-store" }));
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.authenticated ? data.user : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+    async function loadUserSession() {
+      currentUser = await fetchUserSession();
+      updateCommentUserState();
+    }
     function updateCommentUserState() {
-      const user = localStorage.getItem("postwave_user") || "";
-      document.querySelector("#commentName").value = user ? user : "";
-      document.querySelector("#commentName").placeholder = user ? "已登录用户" : "请先登录/注册后评论";
-      document.querySelector("#commentName").readOnly = Boolean(user);
-      document.querySelector("#commentAuthNote").textContent = user ? `当前登录：${user}。评论提交后进入后台审核，通过后展示。` : "评论需要登录/注册，提交后由后台审核，通过后展示。";
+      const displayName = frontCommentName();
+      document.querySelector("#commentName").value = currentUser ? displayName : "";
+      document.querySelector("#commentName").placeholder = currentUser ? displayName : "请先登录/注册后评论";
+      document.querySelector("#commentName").readOnly = true;
+      document.querySelector("#commentAuthNote").textContent = currentUser ? `已登录，可用统一前端名字“${displayName}”评论。提交后进入后台审核，通过后展示。` : "评论需要登录/注册，提交后由后台审核，通过后展示。";
     }
     document.querySelector("#authOpen").addEventListener("click", () => authLayer.classList.add("active"));
     document.querySelector("#authClose").addEventListener("click", () => authLayer.classList.remove("active"));
@@ -657,19 +677,33 @@
       button.addEventListener("click", () => {
         document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
-        document.querySelector("#authTitle").textContent = button.dataset.authMode === "login" ? "登录" : "注册";
+        authMode = button.dataset.authMode || "login";
+        document.querySelector("#authTitle").textContent = authMode === "login" ? "登录" : "注册";
       });
     });
-    document.querySelector("#authForm").addEventListener("submit", (event) => {
+    document.querySelector("#authForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      localStorage.setItem("postwave_user", document.querySelector("#authAccount").value || "guest");
-      authLayer.classList.remove("active");
-      document.querySelector("#authOpen").title = "已登录";
-      updateCommentUserState();
+      const account = document.querySelector("#authAccount").value.trim();
+      const password = document.querySelector("#authPassword").value.trim();
+      if (!account || !password) return;
+      try {
+        const response = await fetch(apiPath(authMode === "register" ? "/api/user/register" : "/api/user/login"), apiOptions({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account, password })
+        }));
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "登录失败");
+        currentUser = data.user || null;
+        authLayer.classList.remove("active");
+        document.querySelector("#authOpen").title = "已登录";
+        updateCommentUserState();
+      } catch (error) {
+        document.querySelector(".auth-note").textContent = error.message || "登录失败，请稍后重试。";
+      }
     });
     document.querySelector("#submitComment").addEventListener("click", async () => {
-      const user = localStorage.getItem("postwave_user") || "";
-      if (!user) {
+      if (!currentUser) {
         authLayer.classList.add("active");
         document.querySelector("#commentAuthNote").textContent = "请先登录/注册，再提交评论。";
         return;
@@ -680,7 +714,7 @@
         const response = await fetch(apiPath("/api/comments"), apiOptions({
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ postId: current.id, postTitle: current.title, name: user, text })
+          body: JSON.stringify({ postId: current.id, postTitle: current.title, text })
         }));
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "评论提交失败");
@@ -691,6 +725,7 @@
       }
     });
     updateCommentUserState();
+    loadUserSession();
     loadSiteSettingsFromApi();
     refreshPostsFromApiForDetail();
     window.lucide?.createIcons?.();

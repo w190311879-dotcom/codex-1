@@ -38,6 +38,7 @@ const storageMode = databaseUrl ? "postgres" : (process.env.POSTWAVE_STORAGE || 
 const dataDir = path.join(__dirname, "data");
 const postsFile = path.join(dataDir, "posts.json");
 const authorsFile = path.join(dataDir, "authors.json");
+const usersFile = path.join(dataDir, "users.json");
 const commentsFile = path.join(dataDir, "comments.json");
 const siteSettingsFile = path.join(dataDir, "site-settings.json");
 const uploadsDir = path.join(dataDir, "uploads");
@@ -47,6 +48,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const defaultSessionSecret = "postwave-local-dev-secret";
 const sessionSecret = process.env.SESSION_SECRET || (isProduction ? "" : defaultSessionSecret);
 const sessionCookieName = "postwave_session";
+const userSessionCookieName = "postwave_user_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
 const uploadLimitMb = Number(process.env.POSTWAVE_UPLOAD_LIMIT_MB || 1024);
 const ffmpegBin = process.env.FFMPEG_PATH || "ffmpeg";
@@ -243,6 +245,7 @@ function normalizeComment(comment = {}, index = 0) {
     name: String(comment.name || comment.author || ""),
     text: String(comment.text || comment.body || ""),
     status: String(comment.status || "pending"),
+    userId: String(comment.userId || comment.user_id || ""),
     time: String(comment.time || comment.created_at || new Date().toISOString()),
     createdAt: String(comment.createdAt || comment.created_at || new Date().toISOString())
   };
@@ -254,6 +257,15 @@ function publicAuthor(author = {}) {
     name: author.name || "",
     account: author.account || "",
     status: author.status || "正常"
+  };
+}
+
+function publicUser(user = {}) {
+  return {
+    id: String(user.id || user.userId || user.account || ""),
+    account: String(user.account || ""),
+    name: String(user.name || user.displayName || user.account || ""),
+    status: user.status || "正常"
   };
 }
 
@@ -274,6 +286,30 @@ async function authorForStorage(author = {}, existing = null, index = 0) {
     account,
     status,
     passwordHash
+  };
+}
+
+async function userForStorage(user = {}, existing = null) {
+  const account = String(user.account || existing?.account || "").trim().toLowerCase();
+  const name = String(user.name || user.displayName || existing?.name || account).trim().slice(0, 40) || account;
+  const status = String(user.status || existing?.status || "正常").trim() || "正常";
+  if (!account || account.length < 3 || account.length > 64) throw new Error("账号长度需为 3-64 个字符");
+
+  let passwordHash = user.passwordHash || user.password_hash || existing?.passwordHash || "";
+  const password = String(user.password || "").trim();
+  if (password) {
+    if (password.length < 6) throw new Error("密码至少需要 6 位");
+    passwordHash = await bcrypt.hash(password, 12);
+  }
+  if (!passwordHash) throw new Error("用户密码不能为空");
+
+  return {
+    id: String(user.id || existing?.id || crypto.randomUUID()),
+    account,
+    name,
+    status,
+    passwordHash,
+    createdAt: existing?.createdAt || user.createdAt || new Date().toISOString()
   };
 }
 
@@ -496,17 +532,19 @@ function signPayload(payload) {
   return crypto.createHmac("sha256", sessionSecret).update(payload).digest("base64url");
 }
 
-function createSession(author) {
+function createSession(entity, role = "admin") {
   const payload = base64Url(JSON.stringify({
-    account: author.account,
-    name: author.name,
+    id: entity.id || "",
+    account: entity.account,
+    name: entity.name,
+    role,
     exp: Date.now() + sessionMaxAgeSeconds * 1000
   }));
   return `${payload}.${signPayload(payload)}`;
 }
 
-function readSession(req) {
-  const token = parseCookies(req.headers.cookie || "")[sessionCookieName];
+function readSession(req, cookieName = sessionCookieName, expectedRole = "") {
+  const token = parseCookies(req.headers.cookie || "")[cookieName];
   if (!token || !token.includes(".")) return null;
   const [payload, signature] = token.split(".");
   const expected = signPayload(payload);
@@ -515,20 +553,21 @@ function readSession(req) {
   try {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!session.exp || Date.now() > session.exp) return null;
+    if (expectedRole && session.role !== expectedRole) return null;
     return session;
   } catch {
     return null;
   }
 }
 
-function sessionCookie(value, maxAge = sessionMaxAgeSeconds) {
+function sessionCookie(value, maxAge = sessionMaxAgeSeconds, cookieName = sessionCookieName) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   const domain = cookieDomain ? `; Domain=${cookieDomain}` : "";
-  return `${sessionCookieName}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${domain}${secure}`;
+  return `${cookieName}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${domain}${secure}`;
 }
 
 function requireAdminApi(req, res, next) {
-  const session = readSession(req);
+  const session = readSession(req, sessionCookieName, "admin");
   if (!session) {
     res.status(401).json({ error: "Unauthorized" });
     return;
@@ -538,12 +577,22 @@ function requireAdminApi(req, res, next) {
 }
 
 function requireAdminPage(req, res, next) {
-  const session = readSession(req);
+  const session = readSession(req, sessionCookieName, "admin");
   if (!session) {
     res.redirect(`/admin-login.html?next=${encodeURIComponent(req.originalUrl || "/admin.html")}`);
     return;
   }
   req.admin = session;
+  next();
+}
+
+function requireUserApi(req, res, next) {
+  const session = readSession(req, userSessionCookieName, "user");
+  if (!session) {
+    res.status(401).json({ error: "请先登录/注册后评论" });
+    return;
+  }
+  req.user = session;
   next();
 }
 
@@ -604,6 +653,19 @@ async function initPostgres() {
   `);
   await pool.query("CREATE INDEX IF NOT EXISTS authors_account_idx ON authors (account)");
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      account TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL DEFAULT '',
+      password_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT '正常',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query("CREATE INDEX IF NOT EXISTS users_account_idx ON users (account)");
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS media_files (
       id BIGSERIAL PRIMARY KEY,
       media_id TEXT NOT NULL UNIQUE,
@@ -638,12 +700,14 @@ async function initPostgres() {
       name TEXT NOT NULL DEFAULT '',
       body TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'pending',
+      user_id TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await pool.query("CREATE INDEX IF NOT EXISTS comments_post_status_idx ON comments (post_id, status)");
   await pool.query("CREATE INDEX IF NOT EXISTS comments_status_created_at_idx ON comments (status, created_at DESC)");
+  await pool.query("ALTER TABLE comments ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''");
   await pool.query(`
     CREATE TABLE IF NOT EXISTS site_settings (
       id INTEGER PRIMARY KEY DEFAULT 1,
@@ -669,6 +733,11 @@ async function initFileStorage() {
     await fs.access(authorsFile);
   } catch {
     await fs.writeFile(authorsFile, "[]");
+  }
+  try {
+    await fs.access(usersFile);
+  } catch {
+    await fs.writeFile(usersFile, "[]");
   }
   try {
     await fs.access(commentsFile);
@@ -802,6 +871,51 @@ async function replaceAuthors(authors) {
   return nextAuthors.map(publicAuthor);
 }
 
+async function readUsers(includeSecrets = false) {
+  if (pool) {
+    const { rows } = await pool.query(
+      `SELECT user_id AS id, account, display_name AS name, password_hash AS "passwordHash", status, created_at AS "createdAt"
+       FROM users
+       ORDER BY created_at DESC, id DESC`
+    );
+    return rows.map((user) => includeSecrets ? user : publicUser(user));
+  }
+  try {
+    const users = JSON.parse(await fs.readFile(usersFile, "utf8"));
+    if (!Array.isArray(users)) return [];
+    return users.map((user) => includeSecrets ? user : publicUser(user));
+  } catch {
+    return [];
+  }
+}
+
+async function findUser(account, password) {
+  const normalizedAccount = String(account || "").trim().toLowerCase();
+  const users = await readUsers(true);
+  const user = users.find((item) => item.account === normalizedAccount && item.status !== "禁用");
+  if (!user?.passwordHash) return null;
+  const valid = await bcrypt.compare(String(password || ""), user.passwordHash);
+  return valid ? publicUser(user) : null;
+}
+
+async function registerUser(input = {}) {
+  const account = String(input.account || "").trim().toLowerCase();
+  const users = await readUsers(true);
+  if (users.some((user) => user.account === account)) throw new Error("账号已注册，请直接登录");
+  const user = await userForStorage({ account, name: input.name || account, password: input.password });
+  if (pool) {
+    await pool.query(
+      `INSERT INTO users (user_id, account, display_name, password_hash, status)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [user.id, user.account, user.name, user.passwordHash, user.status]
+    );
+    return publicUser(user);
+  }
+  users.unshift(user);
+  await fs.writeFile(usersFile, JSON.stringify(users.slice(0, 100000), null, 2));
+  return publicUser(user);
+}
+
 async function readComments({ postId = "", status = "" } = {}) {
   if (pool) {
     const clauses = [];
@@ -816,7 +930,7 @@ async function readComments({ postId = "", status = "" } = {}) {
     }
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
     const { rows } = await pool.query(
-      `SELECT comment_id AS id, post_id AS "postId", post_title AS "postTitle", name, body AS text, status, created_at AS "createdAt"
+      `SELECT comment_id AS id, post_id AS "postId", post_title AS "postTitle", name, body AS text, status, user_id AS "userId", created_at AS "createdAt"
        FROM comments
        ${where}
        ORDER BY created_at DESC, id DESC`,
@@ -864,9 +978,9 @@ async function createComment(input = {}) {
   if (comment.text.length > 2000) throw new Error("评论内容过长");
   if (pool) {
     await pool.query(
-      `INSERT INTO comments (comment_id, post_id, post_title, name, body, status)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [comment.id, comment.postId, comment.postTitle, comment.name, comment.text, comment.status]
+      `INSERT INTO comments (comment_id, post_id, post_title, name, body, status, user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [comment.id, comment.postId, comment.postTitle, comment.name, comment.text, comment.status, input.userId || ""]
     );
     return comment;
   }
@@ -1080,7 +1194,7 @@ app.get("/config.js", (_req, res) => {
 });
 
 app.get("/api/session", (req, res) => {
-  const session = readSession(req);
+  const session = readSession(req, sessionCookieName, "admin");
   res.json({ authenticated: Boolean(session), user: session ? { account: session.account, name: session.name } : null });
 });
 
@@ -1093,7 +1207,7 @@ app.post("/api/login", async (req, res, next) => {
       res.status(401).json({ error: "账号或密码错误" });
       return;
     }
-    res.setHeader("Set-Cookie", sessionCookie(createSession(admin)));
+    res.setHeader("Set-Cookie", sessionCookie(createSession(admin, "admin")));
     res.json({ ok: true, user: { account: admin.account, name: admin.name } });
   } catch (error) {
     next(error);
@@ -1102,6 +1216,44 @@ app.post("/api/login", async (req, res, next) => {
 
 app.post("/api/logout", (_req, res) => {
   res.setHeader("Set-Cookie", sessionCookie("", 0));
+  res.json({ ok: true });
+});
+
+app.get("/api/user/session", (req, res) => {
+  const session = readSession(req, userSessionCookieName, "user");
+  res.json({ authenticated: Boolean(session), user: session ? { account: session.account, name: session.name } : null });
+});
+
+app.post("/api/user/register", async (req, res, next) => {
+  try {
+    const user = await registerUser({
+      account: req.body?.account,
+      password: req.body?.password,
+      name: req.body?.name
+    });
+    res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName));
+    res.json({ ok: true, user });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "注册失败" });
+  }
+});
+
+app.post("/api/user/login", async (req, res, next) => {
+  try {
+    const user = await findUser(req.body?.account, req.body?.password);
+    if (!user) {
+      res.status(401).json({ error: "账号或密码错误" });
+      return;
+    }
+    res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName));
+    res.json({ ok: true, user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/user/logout", (_req, res) => {
+  res.setHeader("Set-Cookie", sessionCookie("", 0, userSessionCookieName));
   res.json({ ok: true });
 });
 
@@ -1192,17 +1344,20 @@ app.get("/api/comments", async (req, res, next) => {
   }
 });
 
-app.post("/api/comments", async (req, res, next) => {
+app.post("/api/comments", requireUserApi, async (req, res, next) => {
   try {
+    const settings = await readSiteSettings();
+    const commentName = settings.siteConfig?.commentLogoText || "注册用户";
     const comment = await createComment({
       postId: String(req.body?.postId || ""),
       postTitle: String(req.body?.postTitle || ""),
-      name: String(req.body?.name || "").trim(),
-      text: String(req.body?.text || "").trim()
+      name: commentName,
+      text: String(req.body?.text || "").trim(),
+      userId: String(req.user?.id || req.user?.account || "")
     });
     res.json({ ok: true, comment });
   } catch (error) {
-    next(error);
+    res.status(400).json({ error: error.message || "评论提交失败" });
   }
 });
 
