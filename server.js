@@ -1665,6 +1665,12 @@ app.get("/", (req, res, next) => {
   next();
 });
 
+function sendHtmlPage(filename) {
+  return (_req, res) => {
+    res.sendFile(path.join(__dirname, filename));
+  };
+}
+
 app.use((req, res, next) => {
   if (hostMatches(req, mediaHost) && !req.path.startsWith("/uploads/") && req.path !== "/config.js") {
     res.status(404).send("Media host only serves uploaded files.");
@@ -1677,8 +1683,16 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
+app.get(["/", "/index.html"], sendHtmlPage("index.html"));
+app.get("/detail.html", sendHtmlPage("detail.html"));
+app.get("/app.html", sendHtmlPage("app.html"));
+app.get("/qq.html", sendHtmlPage("qq.html"));
+app.get("/admin-login.html", sendHtmlPage("admin-login.html"));
+app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "vendor/lucide/lucide.min.js"));
+});
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
-app.use(express.static(__dirname, { extensions: ["html"] }));
 
 app.use((error, _req, res, _next) => {
   console.error(error);
