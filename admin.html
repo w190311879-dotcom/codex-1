@@ -698,6 +698,11 @@
       if (/^(https?:|blob:|data:image\/|\/uploads\/|app\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:)/i.test(url)) return url;
       return fallback;
     }
+    function withCacheVersion(url) {
+      const cleanUrl = String(url || "").trim();
+      if (!cleanUrl || cleanUrl.startsWith("blob:") || cleanUrl.startsWith("data:")) return cleanUrl;
+      return `${cleanUrl}${cleanUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+    }
     function categoryTabs() {
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
       return tabs.filter((tab) => tab.name !== "首页");
@@ -1313,9 +1318,17 @@
       document.querySelector("#logoPreview").innerHTML = `<img src="${safeUrl(localPreview)}" alt="Logo 预览">`;
       try {
         const media = await uploadMediaFile(file, "logo");
-        currentLogoImage = media.url;
+        currentLogoImage = withCacheVersion(media.url);
+        const tabs = collectSiteTabs();
+        siteConfig = {
+          siteName: document.querySelector("#siteNameInput").value.trim() || "PostWave",
+          logoImage: currentLogoImage,
+          commentLogoText: document.querySelector("#commentLogoInput").value.trim() || "51暗网",
+          tabs: tabs.length ? tabs : defaultSiteConfig.tabs
+        };
+        await syncSiteSettingsToApi();
         document.querySelector("#logoPreview").innerHTML = `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">`;
-        toast("Logo 图片已上传");
+        toast("Logo 图片已上传并保存");
       } catch (error) {
         console.error(error);
         toast(error.message || "Logo 上传失败");
