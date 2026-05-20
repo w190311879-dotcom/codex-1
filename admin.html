@@ -895,8 +895,29 @@
         </div>
       `).join("") : "";
     }
+    function isVideoFile(file) {
+      return file && /^video\//.test(file.type || "");
+    }
+    function isPosterFile(file) {
+      return file && /^image\/(png|jpeg)$/.test(file.type || "");
+    }
+    function enqueueVideoGroup(video, poster) {
+      if (!isVideoFile(video) || !isPosterFile(poster)) {
+        toast("请拖入一组视频和 JPG/PNG 封面");
+        return false;
+      }
+      const aspect = selectedUploadVideo === video ? selectedVideoAspect : "16-9";
+      videoUploadQueue.push({ video, poster, aspect, status: "等待上传" });
+      renderVideoQueue();
+      processVideoUploadQueue();
+      return true;
+    }
     function setSelectedVideo(file) {
       if (!file) return;
+      if (!isVideoFile(file)) {
+        toast("请选择视频文件");
+        return;
+      }
       selectedUploadVideo = file;
       document.querySelector("#videoText").innerHTML = `<strong>${escapeHtml(file.name)}</strong><small>视频已选择，点击可重新上传</small>`;
       const preview = document.createElement("video");
@@ -911,7 +932,7 @@
     }
     function setSelectedPoster(file) {
       if (!file) return;
-      if (!/^image\/(png|jpeg)$/.test(file.type || "")) {
+      if (!isPosterFile(file)) {
         toast("视频封面只支持 PNG 或 JPG");
         return;
       }
@@ -1018,7 +1039,17 @@
     function handleDropFile(event, handler) {
       event.preventDefault();
       event.currentTarget.classList.remove("dragging");
-      const file = event.dataTransfer?.files?.[0];
+      const files = [...(event.dataTransfer?.files || [])];
+      if (files.length > 1) {
+        const video = files.find(isVideoFile);
+        const poster = files.find(isPosterFile);
+        if (video && poster && enqueueVideoGroup(video, poster)) {
+          clearSelectedVideoGroup();
+          toast("已加入视频上传队列");
+          return;
+        }
+      }
+      const file = files[0];
       if (file) handler(file);
     }
     document.querySelector("#videoInput").addEventListener("change", (event) => {
@@ -1036,10 +1067,8 @@
         toast("请同时选择一个视频和一张 JPG/PNG 封面");
         return;
       }
-      videoUploadQueue.push({ video: selectedUploadVideo, poster: selectedUploadPoster, aspect: selectedVideoAspect, status: "等待上传" });
+      enqueueVideoGroup(selectedUploadVideo, selectedUploadPoster);
       clearSelectedVideoGroup();
-      renderVideoQueue();
-      processVideoUploadQueue();
     });
     function resetPublishForm(showToast = true) {
       document.querySelector("#postTitle").value = "";
