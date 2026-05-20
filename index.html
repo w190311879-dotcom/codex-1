@@ -354,7 +354,7 @@
     }));
     function mapAdminPosts(source) {
       return (Array.isArray(source) ? source : []).map((post, index) => ({
-        id: `admin-${index}`,
+        id: String(post.id || post.clientId || post.client_id || `admin-${index}`),
         title: post.title || "未命名帖子",
         image: post.cover || images[index % images.length],
         author: post.author || "alun",

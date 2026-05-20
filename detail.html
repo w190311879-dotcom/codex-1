@@ -341,7 +341,7 @@
     const mediaById = new Map();
     let mediaLibrary = [];
     function mapAdminPosts(source) {
-      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:`admin-${index}`, title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
+      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
     }
     const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
     let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
@@ -350,21 +350,33 @@
       return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
     }
     let posts = combinedPosts();
-    let current = posts.find((post) => post.id === new URLSearchParams(location.search).get("id")) || posts[0] || {
-      id: "",
-      title: "内容不存在",
-      image: "",
-      bodyImages: [],
-      video: "",
-      author: "",
-      date: "",
-      category: "",
-      categories: [],
-      keywords: [],
-      tags: [],
-      body: "暂无内容。"
-    };
-    let index = Math.max(0, posts.findIndex((post) => post.id === current.id));
+    const requestedPostId = new URLSearchParams(location.search).get("id") || "";
+    function missingPost() {
+      return {
+        id: "",
+        title: "内容不存在",
+        image: "",
+        bodyImages: [],
+        video: "",
+        author: "",
+        date: "",
+        category: "",
+        categories: [],
+        keywords: [],
+        tags: [],
+        body: "暂无内容。"
+      };
+    }
+    let current = missingPost();
+    let index = -1;
+    function selectCurrentPost() {
+      const found = requestedPostId
+        ? posts.find((post, postIndex) => String(post.id) === requestedPostId || `admin-${postIndex}` === requestedPostId)
+        : posts[0];
+      current = found || missingPost();
+      index = found ? posts.findIndex((post) => String(post.id) === String(found.id)) : -1;
+    }
+    selectCurrentPost();
     let currentUser = null;
     let authMode = "login";
     function normalizeAdPlacement(ad) {
@@ -459,9 +471,13 @@
       const apiPosts = await fetchApiPosts();
       if (!apiPosts) return;
       const apiText = JSON.stringify(apiPosts);
-      if (apiText === JSON.stringify(adminPostSource)) return;
+      const hasChanged = apiText !== JSON.stringify(adminPostSource);
+      adminPostSource = apiPosts;
+      adminPosts = mapAdminPosts(adminPostSource);
+      posts = combinedPosts();
       if (localPostFallbackEnabled) localStorage.setItem("postwave_posts", apiText);
-      location.reload();
+      selectCurrentPost();
+      if (hasChanged || !current.id) await renderDetailPage();
     }
     async function fetchSiteSettings() {
       try {
@@ -477,13 +493,7 @@
       if (Array.isArray(settings.ads)) ads = settings.ads.map(normalizeAd);
       if (settings.adConfig) config = settings.adConfig;
       if (typeof settings.notice === "string") notice = settings.notice;
-      renderSiteChrome();
-      document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
-      renderNav();
-      document.querySelector("#officialNotice").textContent = notice;
-      renderDetailAds();
-      renderComments();
-      updateCommentUserState();
+      renderDetailPage();
     }
     async function loadSiteSettingsFromApi() {
       const settings = await fetchSiteSettings();
@@ -555,12 +565,6 @@
       document.querySelector("#commentList").innerHTML = rows.map((item) => `<div class="comment"><div class="comment-logo">${escapeHtml(commentLogo)}</div><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.time || "刚刚")}</small><p>${escapeHtml(item.text)}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("");
     }
 
-    document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
-    document.querySelector("#crumbTitle").textContent = current.title;
-    document.querySelector("#title").textContent = current.title;
-    document.querySelector("#author").textContent = current.author;
-    document.querySelector("#date").textContent = current.date;
-    document.querySelector("#category").textContent = current.category;
     function renderContentFlow() {
       const flow = document.querySelector("#contentFlow");
       const body = current.body || "";
@@ -603,19 +607,43 @@
         }).catch(() => videoEl.closest(".media")?.remove());
       });
     }
-    renderContentFlow();
     function cleanTag(tag) { return String(tag).replace(/^#+/, ""); }
-    document.querySelector("#tags").innerHTML = current.tags.map((tag) => `<span class="tag">${escapeHtml(cleanTag(tag))}</span>`).join("");
-    document.querySelector("#officialNotice").textContent = notice;
-    const prev = posts[(index - 1 + posts.length) % posts.length];
-    const next = posts[(index + 1) % posts.length];
-    document.querySelector("#prevPost").href = `detail.html?id=${encodeURIComponent(prev.id)}`;
-    document.querySelector("#prevPost span").textContent = prev.title;
-    document.querySelector("#nextPost").href = `detail.html?id=${encodeURIComponent(next.id)}`;
-    document.querySelector("#nextPost span").textContent = next.title;
-    renderDetailAds();
-    guess();
-    renderComments();
+    async function renderDetailPage() {
+      renderSiteChrome();
+      renderNav();
+      document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
+      document.querySelector("#crumbTitle").textContent = current.title;
+      document.querySelector("#title").textContent = current.title;
+      document.querySelector("#author").textContent = current.author;
+      document.querySelector("#date").textContent = current.date;
+      document.querySelector("#category").textContent = current.category;
+      renderContentFlow();
+      document.querySelector("#tags").innerHTML = (current.tags || []).map((tag) => `<span class="tag">${escapeHtml(cleanTag(tag))}</span>`).join("");
+      document.querySelector("#officialNotice").textContent = notice;
+      const prev = index >= 0 && posts.length > 1 ? posts[(index - 1 + posts.length) % posts.length] : null;
+      const next = index >= 0 && posts.length > 1 ? posts[(index + 1) % posts.length] : null;
+      const prevEl = document.querySelector("#prevPost");
+      const nextEl = document.querySelector("#nextPost");
+      if (prev) {
+        prevEl.href = `detail.html?id=${encodeURIComponent(prev.id)}`;
+        prevEl.querySelector("span").textContent = prev.title;
+      } else {
+        prevEl.removeAttribute("href");
+        prevEl.querySelector("span").textContent = "暂无";
+      }
+      if (next) {
+        nextEl.href = `detail.html?id=${encodeURIComponent(next.id)}`;
+        nextEl.querySelector("span").textContent = next.title;
+      } else {
+        nextEl.removeAttribute("href");
+        nextEl.querySelector("span").textContent = "暂无";
+      }
+      await renderDetailAds();
+      guess();
+      renderComments();
+      updateCommentUserState();
+    }
+    renderDetailPage();
     document.querySelector("#refreshGuess").addEventListener("click", guess);
     document.querySelector("#themeToggle").addEventListener("click", () => {
       const isLight = document.documentElement.classList.toggle("light");

@@ -1062,11 +1062,17 @@
       if (showToast) toast("表单已重置");
     }
     document.querySelector("#resetBtn").addEventListener("click", () => resetPublishForm());
+    function createPostId() {
+      if (window.crypto?.randomUUID) return `post-${window.crypto.randomUUID()}`;
+      return `post-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
     function collectPost(status) {
       const categories = [...document.querySelectorAll("#postCategory input:checked")].map((input) => input.value);
       const fallbackCategory = categoryTabs()[0]?.name || "视频分类";
       const selectedAuthor = document.querySelector("#postAuthor").value || localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
+      const existingPost = editingPostIndex !== null ? storedPosts[editingPostIndex] : null;
       return {
+        id: existingPost?.id || createPostId(),
         title: document.querySelector("#postTitle").value || "未命名帖子",
         body: document.querySelector("#bodyText").value || "这是一篇从后台发布的帖子正文。",
         cover: currentCoverData,

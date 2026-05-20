@@ -264,22 +264,24 @@ function normalizeArray(value) {
 }
 
 function normalizePost(post = {}, index = 0) {
-  const categories = normalizeArray(post.categories || post.category);
+  const source = post && typeof post === "object" ? post : {};
+  const categories = normalizeArray(source.categories || source.category);
   return {
-    ...post,
-    title: post.title || "未命名帖子",
-    body: post.body || "",
-    cover: post.cover || post.cover_url || "",
-    video: post.video || post.video_url || "",
-    bodyImages: normalizeArray(post.bodyImages || post.body_images || (post.bodyImage ? [post.bodyImage] : [])),
-    category: post.category || categories.join("、") || "",
+    ...source,
+    id: String(source.id || source.clientId || source.client_id || `post-${index}`),
+    title: source.title || "未命名帖子",
+    body: source.body || "",
+    cover: source.cover || source.cover_url || "",
+    video: source.video || source.video_url || "",
+    bodyImages: normalizeArray(source.bodyImages || source.body_images || (source.bodyImage ? [source.bodyImage] : [])),
+    category: source.category || categories.join("、") || "",
     categories,
-    keywords: normalizeArray(post.keywords),
-    tags: normalizeArray(post.tags),
-    status: post.status || "已发布",
-    author: post.author || "",
-    date: post.date || post.date_text || "",
-    sortOrder: Number.isFinite(Number(post.sortOrder ?? post.sort_order)) ? Number(post.sortOrder ?? post.sort_order) : index
+    keywords: normalizeArray(source.keywords),
+    tags: normalizeArray(source.tags),
+    status: source.status || "已发布",
+    author: source.author || "",
+    date: source.date || source.date_text || "",
+    sortOrder: Number.isFinite(Number(source.sortOrder ?? source.sort_order)) ? Number(source.sortOrder ?? source.sort_order) : index
   };
 }
 
@@ -1001,8 +1003,11 @@ async function initFileStorage() {
 
 async function readPosts() {
   if (pool) {
-    const { rows } = await pool.query("SELECT payload FROM posts ORDER BY sort_order ASC, id ASC");
-    return rows.map((row, index) => normalizePost(row.payload, index));
+    const { rows } = await pool.query("SELECT client_id, payload FROM posts ORDER BY sort_order ASC, id ASC");
+    return rows.map((row, index) => {
+      const payload = row.payload && typeof row.payload === "object" ? row.payload : {};
+      return normalizePost({ ...payload, id: payload.id || row.client_id }, index);
+    });
   }
   try {
     const posts = JSON.parse(await fs.readFile(postsFile, "utf8"));
