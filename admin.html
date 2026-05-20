@@ -891,7 +891,7 @@
       list.innerHTML = videoUploadQueue.length ? videoUploadQueue.map((item, index) => `
         <div class="video-queue-item">
           <span>${escapeHtml(item.video.name)}<small>封面：${escapeHtml(item.poster.name)} · ${escapeHtml(item.status || "等待上传")}</small></span>
-          <span>${index === 0 && videoUploadRunning ? "处理中" : "排队中"}</span>
+          <span>${index === 0 && videoUploadRunning ? "上传中" : "等待上传"}</span>
         </div>
       `).join("") : "";
     }
@@ -965,67 +965,31 @@
           task.status = "上传封面中";
           renderVideoQueue();
           const uploadFile = task.video;
-          const mediaId = `video-${Date.now()}`;
-          const processingItem = {
-            id: mediaId,
-            name: uploadFile.name.replace(/\.[^.]+$/, "") + ".mp4",
-            originalName: uploadFile.name,
-            url: "",
-            type: "video",
-            status: "uploading",
-            progress: 0,
-            format: "H.264 MP4",
-            quality: "medium",
-            aspect: task.aspect,
-            segments: 0,
-            date: new Date().toLocaleString()
-          };
-          mediaLibrary.unshift(processingItem);
-          renderTables();
           status.textContent = `上传封面：${task.poster.name}`;
           progress.style.width = "0%";
           try {
             const posterMedia = await uploadMediaFile(task.poster, "video-poster");
-            processingItem.posterUrl = posterMedia.url || "";
-            processingItem.posterStoragePath = posterMedia.storagePath || "";
-            processingItem.posterMediaId = posterMedia.id || "";
             task.status = "上传视频中";
             renderVideoQueue();
             const media = await uploadVideoForTranscode(uploadFile, (value, message) => {
-              processingItem.progress = value;
-              renderTables();
               progress.style.width = `${value}%`;
               status.textContent = message;
             }, posterMedia);
-            processingItem.id = media.id || processingItem.id;
-            processingItem.status = media.status || "queued";
-            processingItem.type = media.type || "video";
-            processingItem.kind = media.kind || "video";
-            processingItem.progress = media.progress || 0;
-            processingItem.segments = media.segments || 0;
-            processingItem.size = media.size || uploadFile.size;
-            processingItem.url = media.url || "";
-            processingItem.storagePath = media.storagePath || "";
-            processingItem.posterUrl = media.posterUrl || processingItem.posterUrl || "";
-            processingItem.posterStoragePath = media.posterStoragePath || processingItem.posterStoragePath || "";
-            processingItem.posterMediaId = media.posterMediaId || processingItem.posterMediaId || "";
-            processingItem.name = media.name || processingItem.name;
-            processingItem.aspect = media.aspect || processingItem.aspect;
-            processingItem.width = media.width || 0;
-            processingItem.height = media.height || 0;
-            processingItem.duration = media.duration || 0;
-            processingItem.storageProvider = media.storageProvider || "";
+            task.status = "上传完成，等待服务端处理";
             progress.style.width = "100%";
-            status.textContent = "上传完成，已进入服务端转码队列，可继续添加下一组";
-            renderTables();
+            status.textContent = "上传完成，已交给服务端转码队列";
+            if (media?.id) {
+              mediaLibrary = mediaLibrary.filter((item) => item.id !== media.id);
+              mediaLibrary.unshift(media);
+              renderTables();
+            }
             loadMediaLibraryFromApi();
             startMediaPolling();
             toast("视频已上传，转码完成后可在发布页插入");
           } catch (error) {
-            processingItem.status = "failed";
-            processingItem.progress = 100;
+            task.status = "上传失败";
             status.textContent = `处理失败：${error.message || "请重新上传视频"}`;
-            renderTables();
+            renderVideoQueue();
             toast(error.message || "视频上传失败，请重试");
           }
           videoUploadQueue.shift();
