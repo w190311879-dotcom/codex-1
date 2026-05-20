@@ -554,6 +554,7 @@
       const status = document.querySelector("#videoStatus");
       const progress = document.querySelector("#videoProgress");
       if (!status || !progress) return;
+      if (videoUploadRunning || videoUploadQueue.length) return;
       const active = mediaLibrary.find((item) => item.type === "video" && ["queued", "processing"].includes(item.status));
       if (!active) return;
       const value = active.status === "queued" ? 100 : Math.max(10, Math.min(95, Number(active.progress) || 10));
@@ -891,7 +892,7 @@
       list.innerHTML = videoUploadQueue.length ? videoUploadQueue.map((item, index) => `
         <div class="video-queue-item">
           <span>${escapeHtml(item.video.name)}<small>封面：${escapeHtml(item.poster.name)} · ${escapeHtml(item.status || "等待上传")}</small></span>
-          <span>${index === 0 && videoUploadRunning ? "上传中" : "等待上传"}</span>
+          <span>${index === 0 && videoUploadRunning ? "上传中" : "队列中"}</span>
         </div>
       `).join("") : "";
     }
@@ -987,10 +988,10 @@
             startMediaPolling();
             toast("视频已上传，转码完成后可在发布页插入");
           } catch (error) {
-            task.status = "上传失败";
-            status.textContent = `处理失败：${error.message || "请重新上传视频"}`;
+            task.status = "上传失败，已跳过";
+            status.textContent = `上传失败：${error.message || "请重新上传视频"}。已跳过该组，继续处理队列。`;
             renderVideoQueue();
-            toast(error.message || "视频上传失败，请重试");
+            toast(error.message || "视频上传失败，已跳过该组");
           }
           videoUploadQueue.shift();
           renderVideoQueue();
