@@ -597,6 +597,7 @@
             videoEl.closest(".media")?.classList.add("ratio-9-16");
           }
           const url = await mediaUrl(item);
+          if (item?.posterUrl) videoEl.setAttribute("poster", safeUrl(item.posterUrl));
           if (url) videoEl.src = url;
           else videoEl.closest(".media")?.remove();
         }).catch(() => videoEl.closest(".media")?.remove());

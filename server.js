@@ -476,6 +476,19 @@ async function uploadPathToBunny(localPath, mimeType, storagePath) {
   return `${bunnyCdnBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
 }
 
+async function deletePathFromBunny(storagePath) {
+  if (!storagePath || !useBunnyStorage) return;
+  const url = `https://${bunnyStorageHost.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${encodeURIComponent(bunnyStorageZone)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: { AccessKey: bunnyStorageAccessKey }
+  });
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`bunny Storage 删除失败：${response.status} ${text}`.trim());
+  }
+}
+
 async function uploadFileLocally(file, storagePath) {
   const filePath = path.join(uploadsDir, storagePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -498,6 +511,32 @@ async function uploadLocalPathLocally(localPath, storagePath) {
 function publicUploadUrl(storagePath) {
   const relativePath = `/uploads/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
   return publicMediaBaseUrl ? `${publicMediaBaseUrl}${relativePath}` : relativePath;
+}
+
+async function deletePathLocally(storagePath) {
+  if (!storagePath) return;
+  const filePath = path.resolve(uploadsDir, storagePath);
+  const uploadsRoot = path.resolve(uploadsDir);
+  if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) throw new Error("媒体路径无效");
+  await fs.rm(filePath, { force: true }).catch(() => {});
+}
+
+async function deleteStoredObject(storageProvider, storagePath) {
+  if (!storagePath) return;
+  if (storageProvider === "bunny") await deletePathFromBunny(storagePath);
+  else await deletePathLocally(storagePath);
+}
+
+async function deleteStoredMediaObjects(record) {
+  const provider = record.storageProvider || record.storage_provider || "local";
+  const paths = [
+    record.storagePath || record.storage_path,
+    record.posterStoragePath,
+    record.metadata?.posterStoragePath
+  ].filter(Boolean);
+  for (const storagePath of Array.from(new Set(paths))) {
+    await deleteStoredObject(provider, storagePath);
+  }
 }
 
 async function uploadProcessedVideo(localPath, originalFile, metadata = {}, mediaId = crypto.randomUUID()) {
@@ -526,6 +565,9 @@ async function uploadProcessedVideo(localPath, originalFile, metadata = {}, medi
     width: metadata.width || 0,
     height: metadata.height || 0,
     duration: metadata.duration || 0,
+    posterUrl: metadata.posterUrl || "",
+    posterStoragePath: metadata.posterStoragePath || "",
+    posterMediaId: metadata.posterMediaId || "",
     segments: 1,
     createdAt: new Date().toISOString(),
     date: new Date().toLocaleString()
@@ -580,7 +622,7 @@ async function probeVideo(localPath) {
       const child = spawn(ffprobeBin, [
         "-v", "error",
         "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,duration",
+        "-show_entries", "stream=width,height,duration:format=duration",
         "-of", "json",
         localPath
       ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -596,31 +638,69 @@ async function probeVideo(localPath) {
     });
     const data = JSON.parse(output || "{}");
     const stream = data.streams?.[0] || {};
+    const format = data.format || {};
     return {
       width: Number(stream.width) || 0,
       height: Number(stream.height) || 0,
-      duration: Number(stream.duration) || 0
+      duration: Number(stream.duration) || Number(format.duration) || 0
     };
   } catch {
     return { width: 0, height: 0, duration: 0 };
   }
 }
 
-async function transcodeVideoToH264(inputPath, outputPath) {
-  await runProcess(ffmpegBin, [
-    "-y",
-    "-i", inputPath,
-    "-map", "0:v:0",
-    "-map", "0:a?",
-    "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", "23",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-movflags", "+faststart",
-    outputPath
-  ]);
+function parseFfmpegProgressTime(line = "") {
+  const [key, value] = String(line).trim().split("=");
+  if (key === "out_time_ms" || key === "out_time_us") return Number(value) / 1000000;
+  if (key !== "out_time") return null;
+  const match = String(value || "").match(/^(\d+):(\d+):(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  return (Number(match[1]) * 3600) + (Number(match[2]) * 60) + Number(match[3]);
+}
+
+async function transcodeVideoToH264(inputPath, outputPath, onProgress, durationSeconds = 0, jobId = "") {
+  await new Promise((resolve, reject) => {
+    const child = spawn(ffmpegBin, [
+      "-y",
+      "-i", inputPath,
+      "-map", "0:v:0",
+      "-map", "0:a?",
+      "-c:v", "libx264",
+      "-preset", "medium",
+      "-crf", "23",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-movflags", "+faststart",
+      "-progress", "pipe:2",
+      "-nostats",
+      outputPath
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+    if (jobId) activeTranscodeChildren.set(jobId, child);
+    let stderr = "";
+    let lastProgress = 10;
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (stderr.length > 8000) stderr = stderr.slice(-8000);
+      if (!durationSeconds) return;
+      for (const line of text.split(/\r?\n/)) {
+        const seconds = parseFfmpegProgressTime(line);
+        if (seconds === null) continue;
+        const progress = Math.max(10, Math.min(89, Math.round((seconds / durationSeconds) * 80) + 10));
+        if (progress >= lastProgress + 2) {
+          lastProgress = progress;
+          onProgress?.(progress);
+        }
+      }
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (jobId) activeTranscodeChildren.delete(jobId);
+      if (code === 0) resolve(stderr);
+      else reject(new Error(`${ffmpegBin} 执行失败：${stderr || `退出码 ${code}`}`));
+    });
+  });
 }
 
 function parseCookies(header = "") {
@@ -1296,6 +1376,9 @@ function normalizeMediaRecord(record = {}, { includeInternal = false } = {}) {
     width: Number(record.width ?? metadata.width ?? 0) || 0,
     height: Number(record.height ?? metadata.height ?? 0) || 0,
     duration: Number(record.duration ?? metadata.duration ?? 0) || 0,
+    posterUrl: String(record.posterUrl || metadata.posterUrl || ""),
+    posterStoragePath: String(record.posterStoragePath || metadata.posterStoragePath || ""),
+    posterMediaId: String(record.posterMediaId || metadata.posterMediaId || ""),
     segments: Number(record.segments ?? metadata.segments ?? (kind === "video" ? 1 : 0)) || 0,
     createdAt: record.createdAt || record.created_at || metadata.createdAt || "",
     date: record.date || metadata.date || (record.created_at ? new Date(record.created_at).toLocaleString() : "")
@@ -1345,7 +1428,27 @@ async function readMediaRecords({ id = "", kind = "", publicOnly = false, includ
   }
 }
 
+async function deleteMediaRecord(id) {
+  const mediaId = String(id || "");
+  if (!mediaId) return null;
+  const [record] = await readMediaRecords({ id: mediaId, includeInternal: true });
+  if (!record) return null;
+  if (pool) {
+    await pool.query("DELETE FROM media_files WHERE media_id = $1", [mediaId]);
+  } else {
+    let records = [];
+    try {
+      const data = JSON.parse(await fs.readFile(mediaRecordsFile, "utf8"));
+      records = Array.isArray(data) ? data : [];
+    } catch {}
+    await fs.writeFile(mediaRecordsFile, JSON.stringify(records.filter((item) => item.id !== mediaId && item.media_id !== mediaId), null, 2));
+  }
+  return record;
+}
+
 const transcodeQueue = [];
+const cancelledTranscodes = new Set();
+const activeTranscodeChildren = new Map();
 let activeTranscodes = 0;
 
 function videoChunkUploadDir(uploadId) {
@@ -1388,7 +1491,7 @@ async function assembleVideoChunks(meta, outputPath) {
   }
 }
 
-function createQueuedVideoRecord(file) {
+function createQueuedVideoRecord(file, poster = {}) {
   const outputName = `${path.parse(file.originalname || "video").name || "video"}.mp4`;
   return {
     id: crypto.randomUUID(),
@@ -1410,6 +1513,9 @@ function createQueuedVideoRecord(file) {
     width: 0,
     height: 0,
     duration: 0,
+    posterUrl: poster.posterUrl || "",
+    posterStoragePath: poster.posterStoragePath || "",
+    posterMediaId: poster.posterMediaId || "",
     segments: 0,
     tempInputPath: file.path,
     createdAt: new Date().toISOString(),
@@ -1444,17 +1550,37 @@ function processTranscodeQueue() {
 async function runTranscodeJob(job) {
   let outputPath = "";
   try {
+    if (cancelledTranscodes.has(job.id)) return;
     outputPath = path.join(tempVideoDir, `${job.id}-h264.mp4`);
-    await saveMediaRecord({ ...job, status: "processing", progress: 10 });
-    await transcodeVideoToH264(job.tempInputPath, outputPath);
+    const inputMetadata = await probeVideo(job.tempInputPath);
+    const processingJob = { ...job, ...inputMetadata, status: "processing", progress: 10 };
+    let lastSavedProgress = 10;
+    await saveMediaRecord(processingJob);
+    await transcodeVideoToH264(job.tempInputPath, outputPath, (progress) => {
+      if (cancelledTranscodes.has(job.id)) return;
+      if (progress <= lastSavedProgress) return;
+      lastSavedProgress = progress;
+      saveMediaRecord({ ...processingJob, progress }).catch((error) => console.error(error));
+    }, inputMetadata.duration, job.id);
+    if (cancelledTranscodes.has(job.id)) return;
     await saveMediaRecord({ ...job, status: "processing", progress: 90 });
     const metadata = await probeVideo(outputPath);
     const media = await uploadProcessedVideo(outputPath, {
       originalname: job.originalName,
       mimetype: "video/mp4"
-    }, metadata, job.id);
+    }, {
+      ...metadata,
+      posterUrl: job.posterUrl || "",
+      posterStoragePath: job.posterStoragePath || "",
+      posterMediaId: job.posterMediaId || ""
+    }, job.id);
+    if (cancelledTranscodes.has(job.id)) {
+      await deleteStoredMediaObjects(media).catch((error) => console.error(error));
+      return;
+    }
     await saveMediaRecord({ ...media, progress: 100, status: "ready" });
   } catch (error) {
+    if (cancelledTranscodes.has(job.id)) return;
     await saveMediaRecord({
       ...job,
       status: "failed",
@@ -1462,6 +1588,7 @@ async function runTranscodeJob(job) {
       error: error.message || "视频转码失败"
     }).catch(() => {});
   } finally {
+    cancelledTranscodes.delete(job.id);
     await Promise.all([job.tempInputPath, outputPath].filter(Boolean).map((filePath) => fs.rm(filePath, { force: true }).catch(() => {})));
   }
 }
@@ -1656,6 +1783,34 @@ app.get("/api/media/:id", async (req, res, next) => {
   }
 });
 
+app.delete("/api/media/:id", requireAdminApi, async (req, res, next) => {
+  const mediaId = String(req.params.id || "");
+  try {
+    const [record] = await readMediaRecords({ id: mediaId, includeInternal: true });
+    if (!record) {
+      res.status(404).json({ error: "媒体不存在" });
+      return;
+    }
+    cancelledTranscodes.add(mediaId);
+    const queuedIndex = transcodeQueue.findIndex((item) => item.id === mediaId);
+    if (queuedIndex >= 0) transcodeQueue.splice(queuedIndex, 1);
+    const activeChild = activeTranscodeChildren.get(mediaId);
+    if (activeChild && !activeChild.killed) activeChild.kill("SIGTERM");
+    await deleteStoredMediaObjects(record);
+    if (record.posterMediaId && record.posterMediaId !== mediaId) {
+      const [posterRecord] = await readMediaRecords({ id: record.posterMediaId, includeInternal: true });
+      if (posterRecord) await deleteStoredMediaObjects(posterRecord);
+      await deleteMediaRecord(record.posterMediaId);
+    }
+    if (record.tempInputPath) await fs.rm(record.tempInputPath, { force: true }).catch(() => {});
+    await deleteMediaRecord(mediaId);
+    res.json({ ok: true });
+  } catch (error) {
+    cancelledTranscodes.delete(mediaId);
+    next(error);
+  }
+});
+
 app.get("/api/comments", async (req, res, next) => {
   try {
     const postId = String(req.query.postId || "");
@@ -1753,6 +1908,9 @@ app.post("/api/media/video/chunk/init", requireAdminApi, async (req, res, next) 
       size,
       chunkSize,
       totalChunks,
+      posterUrl: String(req.body?.posterUrl || ""),
+      posterStoragePath: String(req.body?.posterStoragePath || ""),
+      posterMediaId: String(req.body?.posterMediaId || ""),
       received: [],
       createdAt: new Date().toISOString()
     };
@@ -1797,6 +1955,10 @@ app.post("/api/media/video/chunk/:uploadId/complete", requireAdminApi, async (re
       mimetype: meta.mimeType,
       size: stats.size,
       path: assembledPath
+    }, {
+      posterUrl: meta.posterUrl,
+      posterStoragePath: meta.posterStoragePath,
+      posterMediaId: meta.posterMediaId
     });
     await saveMediaRecord(media);
     enqueueTranscode(media);
@@ -1811,7 +1973,11 @@ app.post("/api/media/video/chunk/:uploadId/complete", requireAdminApi, async (re
 app.post("/api/media/video/transcode", requireAdminApi, videoUpload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) throw new Error("没有收到视频文件");
-    const media = createQueuedVideoRecord(req.file);
+    const media = createQueuedVideoRecord(req.file, {
+      posterUrl: String(req.body?.posterUrl || ""),
+      posterStoragePath: String(req.body?.posterStoragePath || ""),
+      posterMediaId: String(req.body?.posterMediaId || "")
+    });
     await saveMediaRecord(media);
     enqueueTranscode(media);
     res.status(202).json({ ok: true, media: publicQueuedVideoRecord(media) });
