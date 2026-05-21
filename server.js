@@ -118,9 +118,38 @@ const bunnyStorageHost = process.env.BUNNY_STORAGE_HOST || "storage.bunnycdn.com
 const bunnyCdnBaseUrl = (process.env.BUNNY_CDN_BASE_URL || "").replace(/\/+$/, "");
 const useBunnyStorage = Boolean(bunnyStorageZone && bunnyStorageAccessKey && bunnyCdnBaseUrl);
 const publicSiteOrigin = (process.env.PUBLIC_SITE_ORIGIN || process.env.FRONTEND_ORIGIN || "").replace(/\/+$/, "");
+function splitList(value = "") {
+  return String(value || "")
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+function uniqueList(items = []) {
+  return Array.from(new Set(items.filter(Boolean)));
+}
+function normalizeOrigin(value = "") {
+  return String(value || "").replace(/\/+$/, "");
+}
+function normalizeHost(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/^\[([^\]]+)\](?::\d+)?$/, "$1")
+    .replace(/:\d+$/, "");
+}
+const publicSiteOrigins = uniqueList([
+  publicSiteOrigin,
+  ...splitList(process.env.PUBLIC_SITE_ORIGINS).map(normalizeOrigin)
+]);
 const publicAdminOrigin = (process.env.PUBLIC_ADMIN_ORIGIN || "").replace(/\/+$/, "");
 const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").replace(/\/+$/, "");
 const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl || "").replace(/\/+$/, "");
+const routeSelectorOrigin = normalizeOrigin(process.env.ROUTE_SELECTOR_ORIGIN || "");
+const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51视频";
+const routeSelectorSubtitle = process.env.ROUTE_SELECTOR_SUBTITLE || "看片娱乐两不误";
+const routeLineOrigins = uniqueList(splitList(process.env.ROUTE_LINE_ORIGINS).map(normalizeOrigin));
 function originHost(value = "") {
   if (!value) return "";
   try {
@@ -132,8 +161,21 @@ function originHost(value = "") {
 const adminHost = process.env.ADMIN_HOST || originHost(publicAdminOrigin);
 const apiHost = process.env.API_HOST || originHost(publicApiBaseUrl);
 const mediaHost = process.env.MEDIA_HOST || originHost(publicMediaBaseUrl);
+const routeSelectorHost = process.env.ROUTE_SELECTOR_HOST || originHost(routeSelectorOrigin);
+const fixedRouteEntryHosts = uniqueList(splitList(process.env.ROUTE_ENTRY_HOSTS || process.env.ENTRY_HOSTS).map(normalizeHost));
+const siteHosts = uniqueList([
+  ...publicSiteOrigins.map(originHost),
+  ...routeLineOrigins.map(originHost),
+  ...splitList(process.env.SITE_HOSTS).map(normalizeHost)
+]);
+const routeLines = (routeLineOrigins.length ? routeLineOrigins : publicSiteOrigins).map((origin, index) => ({
+  label: `线路${["一", "二", "三", "四", "五"][index] || index + 1}`,
+  origin,
+  host: originHost(origin)
+}));
+let cachedRoutingSettings = { entryHosts: [] };
 const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || "";
-const cspConnectSources = ["'self'", publicApiBaseUrl, publicMediaBaseUrl, publicSiteOrigin, publicAdminOrigin].filter(Boolean);
+const cspConnectSources = ["'self'", publicApiBaseUrl, publicMediaBaseUrl, publicAdminOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
 const cspMediaSources = ["'self'", "blob:", "data:", publicMediaBaseUrl].filter(Boolean);
 const cspImageSources = ["'self'", "data:", "blob:", publicMediaBaseUrl, "https://images.unsplash.com"].filter(Boolean);
 const cspScriptSources = ["'self'", "'unsafe-inline'"];
@@ -198,6 +240,9 @@ const defaultSiteSettings = {
     { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "detail-banner" }
   ],
   adConfig: { station: 10, latest: 10, friend: 10 },
+  routing: {
+    entryHosts: []
+  },
   notice: "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
 };
 
@@ -229,7 +274,9 @@ app.use((req, res, next) => {
 });
 
 const allowedOrigins = new Set([
-  publicSiteOrigin,
+  ...publicSiteOrigins,
+  ...routeLineOrigins,
+  routeSelectorOrigin,
   publicAdminOrigin,
   publicApiBaseUrl,
   publicMediaBaseUrl,
@@ -303,6 +350,10 @@ function normalizeSiteSettings(input = {}) {
     placement: String(ad?.placement || "home-banner")
   })) : defaultSiteSettings.ads;
   const adConfig = input.adConfig || {};
+  const routing = input.routing || {};
+  const entryHosts = normalizeArray(routing.entryHosts || input.routeEntryHosts || input.entryHosts)
+    .map(normalizeHost)
+    .filter(Boolean);
   return {
     siteConfig: {
       siteName: String(incomingConfig.siteName || defaultSiteSettings.siteConfig.siteName).trim() || defaultSiteSettings.siteConfig.siteName,
@@ -315,6 +366,9 @@ function normalizeSiteSettings(input = {}) {
       station: Math.max(0, Number(adConfig.station ?? defaultSiteSettings.adConfig.station) || defaultSiteSettings.adConfig.station),
       latest: Math.max(0, Number(adConfig.latest ?? defaultSiteSettings.adConfig.latest) || defaultSiteSettings.adConfig.latest),
       friend: Math.max(0, Number(adConfig.friend ?? defaultSiteSettings.adConfig.friend) || defaultSiteSettings.adConfig.friend)
+    },
+    routing: {
+      entryHosts: uniqueList(entryHosts)
     },
     notice: String(input.notice ?? defaultSiteSettings.notice)
   };
@@ -864,9 +918,18 @@ function requestHost(req) {
   return String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
 }
 
+function requestProtocol(req) {
+  return String(req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0].trim().toLowerCase();
+}
+
 function hostMatches(req, expectedHost) {
   if (!expectedHost) return false;
   return requestHost(req) === String(expectedHost).toLowerCase();
+}
+
+function hostInList(req, hosts = []) {
+  const host = hostWithoutPort(requestHost(req));
+  return hosts.some((item) => hostWithoutPort(item) === host);
 }
 
 function hostWithoutPort(host = "") {
@@ -882,7 +945,18 @@ function configuredHostMatches(req, expectedHost) {
 }
 
 function hasConfiguredSplitHosts() {
-  return Boolean(publicSiteOrigin || publicAdminOrigin || publicApiBaseUrl || publicMediaBaseUrl || adminHost || apiHost || mediaHost);
+  return Boolean(
+    publicSiteOrigins.length ||
+    routeLineOrigins.length ||
+    routeEntryHosts().length ||
+    routeSelectorHost ||
+    publicAdminOrigin ||
+    publicApiBaseUrl ||
+    publicMediaBaseUrl ||
+    adminHost ||
+    apiHost ||
+    mediaHost
+  );
 }
 
 function isAdminPagePath(pathname = "") {
@@ -897,8 +971,35 @@ function isStaticHtmlPath(pathname = "") {
   return /\.html$/i.test(pathname);
 }
 
+function routeEntryHosts() {
+  return uniqueList([...fixedRouteEntryHosts, ...(cachedRoutingSettings.entryHosts || [])]);
+}
+
+function routeSelectorUrl() {
+  if (routeSelectorOrigin) return `${routeSelectorOrigin}/`;
+  return "/route-select.html";
+}
+
+function isRouteSelectorPath(pathname = "") {
+  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/vendor/lucide/lucide.min.js";
+}
+
 function enforceHostBoundary(req, res, next) {
   if (!hasConfiguredSplitHosts() || isLocalRequest(req)) {
+    next();
+    return;
+  }
+
+  if (hostInList(req, routeEntryHosts())) {
+    res.redirect(302, routeSelectorUrl());
+    return;
+  }
+
+  if (configuredHostMatches(req, routeSelectorHost)) {
+    if (!isRouteSelectorPath(req.path)) {
+      res.redirect(302, "/");
+      return;
+    }
     next();
     return;
   }
@@ -934,12 +1035,19 @@ function enforceHostBoundary(req, res, next) {
     return;
   }
 
+  if (siteHosts.length && !hostInList(req, siteHosts)) {
+    if (isPublicPagePath(req.path) || req.path.startsWith("/api/") || req.path === "/api") {
+      res.status(404).send("Site is only available on configured line hosts.");
+      return;
+    }
+  }
+
   if (isAdminPagePath(req.path)) {
     res.status(404).send("Admin panel is only available on the admin host.");
     return;
   }
 
-  if (apiHost && (req.path.startsWith("/api/") || req.path === "/api")) {
+  if (apiHost && !hostInList(req, siteHosts) && (req.path.startsWith("/api/") || req.path === "/api")) {
     res.status(404).send("API is only available on the API host.");
     return;
   }
@@ -1262,21 +1370,25 @@ async function deleteComment(commentId) {
 }
 
 async function readSiteSettings() {
+  let settings;
   if (pool) {
     const { rows } = await pool.query("SELECT payload FROM site_settings WHERE id = 1");
-    if (!rows.length) return normalizeSiteSettings(defaultSiteSettings);
-    return normalizeSiteSettings(rows[0].payload);
+    settings = rows.length ? normalizeSiteSettings(rows[0].payload) : normalizeSiteSettings(defaultSiteSettings);
+    cachedRoutingSettings = settings.routing || { entryHosts: [] };
+    return settings;
   }
   try {
-    const settings = JSON.parse(await fs.readFile(siteSettingsFile, "utf8"));
-    return normalizeSiteSettings(settings);
+    settings = normalizeSiteSettings(JSON.parse(await fs.readFile(siteSettingsFile, "utf8")));
   } catch {
-    return normalizeSiteSettings(defaultSiteSettings);
+    settings = normalizeSiteSettings(defaultSiteSettings);
   }
+  cachedRoutingSettings = settings.routing || { entryHosts: [] };
+  return settings;
 }
 
 async function replaceSiteSettings(settings) {
   const nextSettings = normalizeSiteSettings(settings);
+  cachedRoutingSettings = nextSettings.routing || { entryHosts: [] };
   if (pool) {
     await pool.query(
       `INSERT INTO site_settings (id, payload, updated_at)
@@ -1293,12 +1405,16 @@ async function replaceSiteSettings(settings) {
 async function ensureSiteSettingsSeeded() {
   if (pool) {
     const { rows } = await pool.query("SELECT 1 FROM site_settings WHERE id = 1");
-    if (rows.length) return;
+    if (rows.length) {
+      await readSiteSettings();
+      return;
+    }
     await replaceSiteSettings(defaultSiteSettings);
     return;
   }
   try {
     await fs.access(siteSettingsFile);
+    await readSiteSettings();
   } catch {
     await replaceSiteSettings(defaultSiteSettings);
   }
@@ -1622,14 +1738,22 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-app.get("/config.js", (_req, res) => {
+app.get("/config.js", (req, res) => {
+  const currentHost = hostWithoutPort(requestHost(req));
+  const onLineHost = siteHosts.some((host) => hostWithoutPort(host) === currentHost);
   res.type("application/javascript");
   res.setHeader("Cache-Control", "no-store");
   res.send(`window.POSTWAVE_CONFIG=${JSON.stringify({
-    siteOrigin: publicSiteOrigin,
+    siteOrigin: onLineHost ? `${requestProtocol(req)}://${requestHost(req)}` : publicSiteOrigins[0] || "",
+    siteOrigins: publicSiteOrigins,
     adminOrigin: publicAdminOrigin,
-    apiBaseUrl: publicApiBaseUrl,
+    apiBaseUrl: onLineHost ? "" : publicApiBaseUrl,
     mediaBaseUrl: publicMediaBaseUrl,
+    routeSelectorOrigin,
+    routeSelectorTitle,
+    routeSelectorSubtitle,
+    routeLines,
+    routeEntryHosts: routeEntryHosts(),
     demoSeedEnabled,
     localPostFallbackEnabled: !isProduction
   })};`);
@@ -1993,6 +2117,10 @@ app.post("/api/media/video/transcode", requireAdminApi, videoUpload.single("file
 });
 
 app.get("/", (req, res, next) => {
+  if (hostMatches(req, routeSelectorHost)) {
+    res.sendFile(path.join(__dirname, "route-select.html"));
+    return;
+  }
   if (hostMatches(req, adminHost)) {
     res.redirect("/admin.html");
     return;
@@ -2022,6 +2150,7 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
+app.get("/route-select.html", sendHtmlPage("route-select.html"));
 app.get(["/", "/index.html"], sendHtmlPage("index.html"));
 app.get("/detail.html", sendHtmlPage("detail.html"));
 app.get("/app.html", sendHtmlPage("app.html"));

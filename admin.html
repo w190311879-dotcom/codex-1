@@ -244,6 +244,7 @@
           </div>
           <input class="field" id="commentLogoInput" value="51暗网" placeholder="评论列表左侧标识文字">
           <select class="field" id="themeSelect"><option>深色荧光绿主题</option><option>浅色主题</option></select>
+          <textarea class="field" id="routeEntryHostsInput" style="min-height:92px;padding:14px" placeholder="备用入口域名，每行一个，例如：&#10;51cmtv1.com&#10;51cmtv2.com"></textarea>
           <div class="site-tabs-editor" id="siteTabsEditor"></div>
           <button class="btn" id="addSiteTab" type="button">增加栏目</button>
           <button class="btn dark" id="saveAppearance" type="button">保存外观与栏目</button>
@@ -429,6 +430,12 @@
         placement: normalizeAdPlacement(ad)
       };
     }
+    function normalizeHosts(value) {
+      return String(value || "")
+        .split(/[\s,，、]+/)
+        .map((item) => item.trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/:\d+$/, "").toLowerCase())
+        .filter(Boolean);
+    }
     let ads = [
       { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
       { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "detail-banner" }
@@ -595,6 +602,9 @@
         siteConfig,
         ads,
         adConfig,
+        routing: {
+          entryHosts: normalizeHosts(document.querySelector("#routeEntryHostsInput")?.value || "")
+        },
         notice: document.querySelector("#noticeText")?.value || ""
       };
     }
@@ -627,6 +637,7 @@
       if (settings.adConfig) {
         adConfig = settings.adConfig;
       }
+      document.querySelector("#routeEntryHostsInput").value = Array.isArray(settings.routing?.entryHosts) ? settings.routing.entryHosts.join("\n") : "";
       document.querySelector("#stationCount").value = adConfig.station || 10;
       document.querySelector("#latestCount").value = adConfig.latest || 10;
       document.querySelector("#friendCount").value = adConfig.friend || 10;

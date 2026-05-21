@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>线路选择</title>
+  <script src="/config.js"></script>
+  <style>
+    :root {
+      --bg: #211f20;
+      --panel: #1a191a;
+      --line: #64f06f;
+      --text: #f7f7f4;
+      --muted: #cfcfc9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px 16px;
+      color: var(--text);
+      background: var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    main {
+      width: min(680px, 100%);
+      display: grid;
+      justify-items: center;
+      gap: 22px;
+      text-align: center;
+    }
+    .brand {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(56px, 12vw, 104px);
+      line-height: .92;
+      font-weight: 1000;
+    }
+    .accent { color: #60f0aa; }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(22px, 5vw, 34px);
+      font-weight: 900;
+      line-height: 1.35;
+    }
+    .routes {
+      width: min(500px, 100%);
+      display: grid;
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .route {
+      display: grid;
+      gap: 6px;
+      min-height: 86px;
+      align-content: center;
+      padding: 16px 18px;
+      border: 2px solid var(--line);
+      border-radius: 18px;
+      color: var(--text);
+      background: var(--panel);
+      text-decoration: none;
+      box-shadow: 0 0 0 rgba(100, 240, 111, 0);
+      transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+    .route:hover {
+      transform: translateY(-2px);
+      background: #181d18;
+      box-shadow: 0 14px 36px rgba(100, 240, 111, .16);
+    }
+    .route strong {
+      font-size: 24px;
+      line-height: 1.2;
+    }
+    .route span {
+      color: var(--line);
+      font-size: 21px;
+      font-weight: 900;
+      overflow-wrap: anywhere;
+    }
+    .notice {
+      width: min(500px, 100%);
+      margin-top: 12px;
+      padding: 18px;
+      border-radius: 14px;
+      color: #fff;
+      background: rgba(0, 0, 0, .38);
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.55;
+    }
+    .notice a {
+      color: var(--line);
+      text-decoration-thickness: 2px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="brand" aria-label="站点">
+      <h1 id="title">51<span class="accent">视频</span></h1>
+      <p class="subtitle" id="subtitle">看片娱乐两不误</p>
+    </section>
+    <nav class="routes" id="routes" aria-label="线路选择"></nav>
+    <section class="notice">
+      发送任意消息到邮箱，自动获取最新地址<br>
+      <a id="mail" href="mailto:51sp1@proton.me">51sp1@proton.me</a>
+    </section>
+  </main>
+  <script>
+    const config = window.POSTWAVE_CONFIG || {};
+    const title = String(config.routeSelectorTitle || "51视频");
+    const subtitle = String(config.routeSelectorSubtitle || "看片娱乐两不误");
+    const lines = Array.isArray(config.routeLines) ? config.routeLines : [];
+    document.querySelector("#title").innerHTML = title.replace("视频", "<span class=\"accent\">视频</span>");
+    document.querySelector("#subtitle").textContent = subtitle;
+    document.title = `${title} - 线路选择`;
+    document.querySelector("#routes").innerHTML = lines.length
+      ? lines.map((line, index) => {
+          const url = String(line.origin || "").replace(/\/+$/, "");
+          const label = line.label || `线路${index + 1}`;
+          const host = line.host || url.replace(/^https?:\/\//, "");
+          return `<a class="route" href="${url}/"><strong>${title}-${label}</strong><span>${host}</span></a>`;
+        }).join("")
+      : `<a class="route" href="/"><strong>${title}-线路一</strong><span>线路暂未配置</span></a>`;
+  </script>
+</body>
+</html>
