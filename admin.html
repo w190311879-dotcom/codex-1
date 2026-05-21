@@ -76,6 +76,7 @@
     .table-row.posts-row { grid-template-columns: 1fr 110px 110px 150px 260px; }
     .table-row.header { color: #64748b; background: #f8fafc; font-weight: 900; }
     .settings { padding: 18px; display: grid; gap: 12px; max-width: 620px; }
+    .settings.wide { max-width: 980px; }
     .ads { padding: 18px; display: grid; gap: 14px; max-width: 980px; }
     .ad-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
     .ad-tab { height: 40px; padding: 0 16px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
@@ -240,8 +241,9 @@
           <h2>外观与栏目</h2>
           <input class="field" id="siteNameInput" value="PostWave" placeholder="网站名称，仅用于标题和版权">
           <div class="logo-config">
-            <div class="logo-preview" id="logoPreview">上传 Logo 图片</div>
-            <label class="btn" style="display:grid;place-items:center">上传 Logo 图片<input id="logoImageInput" type="file" accept="image/*,.gif" hidden></label>
+            <div class="logo-preview" id="logoPreview"><img src="/assets/logo.png" alt="固定 Logo"></div>
+            <div style="color:#64748b;font-weight:900;line-height:1.7">前台 Logo 已固定使用项目内 <code>/assets/logo.png</code>，不再从后台配置读取。</div>
+            <input id="logoImageInput" type="file" accept="image/*,.gif" hidden>
           </div>
           <input class="field" id="commentLogoInput" value="51暗网" placeholder="评论列表左侧标识文字">
           <select class="field" id="themeSelect"><option>深色荧光绿主题</option><option>浅色主题</option></select>
@@ -288,7 +290,23 @@
           </div>
         </div>
       </section>
-      <section class="view hidden" id="footerView"><div class="settings"><h2>导航页脚</h2><input class="field" value="往期回顾 / 回家的路 / 我要投稿 / 商务合作 / 加入我们 / 关于我们"><input class="field" value="用户协议 / 隐私政策 / DMCA / 2257合规声明"><button class="btn dark" id="saveFooter">保存导航页脚</button></div></section>
+      <section class="view hidden" id="footerView">
+        <div class="settings wide">
+          <h2>导航页脚</h2>
+          <textarea class="field" id="footerIntroInput" style="min-height:92px;padding:14px" placeholder="页脚说明文字，支持 {{siteName}}"></textarea>
+          <textarea class="field" id="footerQuickLinksInput" style="min-height:120px;padding:14px" placeholder="底部四宫格入口，每行：文字|链接|图标|动作"></textarea>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <input class="field" id="topAppLinkInput" placeholder="顶部 App 链接">
+            <input class="field" id="topGroupLinkInput" placeholder="顶部 Q群 链接">
+            <input class="field" id="topTelegramLinkInput" placeholder="顶部 Telegram 链接">
+            <input class="field" id="topXLinkInput" placeholder="顶部 X 链接">
+          </div>
+          <textarea class="field" id="footerLinksInput" style="min-height:120px;padding:14px" placeholder="页脚文字链接，每行：文字|链接"></textarea>
+          <textarea class="field" id="socialLinksInput" style="min-height:92px;padding:14px" placeholder="社交图标链接，每行：文字|链接|图标"></textarea>
+          <textarea class="field" id="legalLinksInput" style="min-height:92px;padding:14px" placeholder="合规链接，每行：文字|链接"></textarea>
+          <button class="btn dark" id="saveFooter">保存导航页脚</button>
+        </div>
+      </section>
       <section class="view hidden" id="noticeView"><div class="settings"><h2>官方公告</h2><textarea class="field" id="noticeText" style="min-height:140px;padding:14px">欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。</textarea><button class="btn dark" id="saveNotice">保存公告</button></div></section>
       <section class="view hidden" id="emailView">
         <div class="settings">
@@ -402,6 +420,40 @@
     };
     let siteConfig = JSON.parse(JSON.stringify(defaultSiteConfig));
     currentLogoImage = siteConfig.logoImage || "";
+    const defaultFooterConfig = {
+      introText: "PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+      quickLinks: [
+        { label: "首页", href: "/", icon: "home" },
+        { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
+        { label: "Q群", href: "qq.html", icon: "message-circle" },
+        { label: "网站导航", href: "#site-map", icon: "map" }
+      ],
+      footerLinks: [
+        { label: "往期回顾", href: "#archive" },
+        { label: "回家的路", href: "/" },
+        { label: "我要投稿", href: "admin-login.html" },
+        { label: "商务合作", href: "mailto:business@example.com" },
+        { label: "加入我们", href: "mailto:join@example.com" },
+        { label: "关于我们", href: "#about" }
+      ],
+      topLinks: {
+        app: { href: "app.html", action: "app-placeholder" },
+        group: { href: "qq.html" },
+        telegram: { href: "https://t.me/example_group" },
+        x: { href: "https://x.com/example" }
+      },
+      socialLinks: [
+        { label: "X", href: "https://x.com/example", icon: "text:x" },
+        { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
+      ],
+      legalLinks: [
+        { label: "用户协议", href: "#terms" },
+        { label: "隐私政策", href: "#privacy" },
+        { label: "DMCA", href: "#dmca" },
+        { label: "2257合规声明", href: "#compliance" }
+      ]
+    };
+    let footerConfig = JSON.parse(JSON.stringify(defaultFooterConfig));
     function normalizeAdPlacement(ad) {
       const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
       const key = raw.toLowerCase();
@@ -595,7 +647,7 @@
     document.querySelector("#friendCount").value = adConfig.friend || 10;
     document.querySelector("#siteNameInput").value = siteConfig.siteName;
     document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
-    document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">` : "Logo";
+    document.querySelector("#logoPreview").innerHTML = `<img src="/assets/logo.png" alt="固定 Logo">`;
     document.querySelector("#replyTextInput").value = defaultEmailAutoReply.text;
 
     function save(key, value) {
@@ -615,9 +667,10 @@
     }
     function currentSiteSettingsPayload() {
       return {
-        siteConfig,
+        siteConfig: { ...siteConfig, logoImage: "" },
         ads,
         adConfig,
+        footer: currentFooterConfigFromForm(),
         routing: {
           entryHosts: normalizeHosts(document.querySelector("#routeEntryHostsInput")?.value || "")
         },
@@ -650,7 +703,8 @@
     function applySiteSettings(settings = {}) {
       if (settings.siteConfig) {
         siteConfig = settings.siteConfig;
-        currentLogoImage = siteConfig.logoImage || "";
+        siteConfig.logoImage = "";
+        currentLogoImage = "";
       }
       if (Array.isArray(settings.ads)) {
         ads = settings.ads.map(normalizeAd);
@@ -669,7 +723,9 @@
       document.querySelector("#noticeText").value = typeof settings.notice === "string" ? settings.notice : document.querySelector("#noticeText").value;
       document.querySelector("#siteNameInput").value = siteConfig.siteName || "PostWave";
       document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
-      document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">` : "Logo";
+      footerConfig = normalizeFooterConfig(settings.footer || footerConfig);
+      document.querySelector("#logoPreview").innerHTML = `<img src="/assets/logo.png" alt="固定 Logo">`;
+      renderFooterEditor();
       renderSiteTabsEditor();
       renderCategoryPicker();
       renderAds();
@@ -758,8 +814,75 @@
     }
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
-      if (/^(https?:|blob:|data:image\/|\/uploads\/|app\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:)/i.test(url)) return url;
+      if (/^(https?:|blob:|data:image\/|\/|app\.html|admin\.html|admin-login\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
+    }
+    function normalizeFooterLink(link = {}, fallback = {}) {
+      return {
+        label: String(link.label || fallback.label || "").trim(),
+        href: String(link.href || fallback.href || "#").trim() || "#",
+        icon: String(link.icon || fallback.icon || "").trim(),
+        action: String(link.action || fallback.action || "").trim()
+      };
+    }
+    function normalizeFooterLinks(links, fallback) {
+      const source = Array.isArray(links) ? links : fallback;
+      const normalized = source.map((link, index) => normalizeFooterLink(link, fallback[index] || {})).filter((link) => link.label);
+      return normalized.length ? normalized : fallback.map((link) => normalizeFooterLink(link));
+    }
+    function normalizeFooterConfig(input = {}) {
+      return {
+        introText: String(input.introText ?? defaultFooterConfig.introText),
+        quickLinks: normalizeFooterLinks(input.quickLinks, defaultFooterConfig.quickLinks),
+        footerLinks: normalizeFooterLinks(input.footerLinks, defaultFooterConfig.footerLinks),
+        topLinks: {
+          app: normalizeFooterLink(input.topLinks?.app, defaultFooterConfig.topLinks.app),
+          group: normalizeFooterLink(input.topLinks?.group, defaultFooterConfig.topLinks.group),
+          telegram: normalizeFooterLink(input.topLinks?.telegram, defaultFooterConfig.topLinks.telegram),
+          x: normalizeFooterLink(input.topLinks?.x, defaultFooterConfig.topLinks.x)
+        },
+        socialLinks: normalizeFooterLinks(input.socialLinks, defaultFooterConfig.socialLinks),
+        legalLinks: normalizeFooterLinks(input.legalLinks, defaultFooterConfig.legalLinks)
+      };
+    }
+    function footerLinksToLines(links) {
+      return (Array.isArray(links) ? links : []).map((link) => [link.label, link.href, link.icon, link.action].map((item) => String(item || "")).join("|").replace(/\|+$/g, "")).join("\n");
+    }
+    function footerLinesToLinks(value, fallbackLinks) {
+      const links = String(value || "").split(/\n+/).map((line) => {
+        const [label = "", href = "", icon = "", action = ""] = line.split("|").map((part) => part.trim());
+        return { label, href, icon, action };
+      }).filter((link) => link.label);
+      return links.length ? links : fallbackLinks;
+    }
+    function renderFooterEditor() {
+      footerConfig = normalizeFooterConfig(footerConfig);
+      document.querySelector("#footerIntroInput").value = footerConfig.introText;
+      document.querySelector("#footerQuickLinksInput").value = footerLinksToLines(footerConfig.quickLinks);
+      document.querySelector("#footerLinksInput").value = footerLinksToLines(footerConfig.footerLinks);
+      document.querySelector("#socialLinksInput").value = footerLinksToLines(footerConfig.socialLinks);
+      document.querySelector("#legalLinksInput").value = footerLinksToLines(footerConfig.legalLinks);
+      document.querySelector("#topAppLinkInput").value = footerConfig.topLinks.app.href || "";
+      document.querySelector("#topGroupLinkInput").value = footerConfig.topLinks.group.href || "";
+      document.querySelector("#topTelegramLinkInput").value = footerConfig.topLinks.telegram.href || "";
+      document.querySelector("#topXLinkInput").value = footerConfig.topLinks.x.href || "";
+    }
+    function currentFooterConfigFromForm() {
+      const next = {
+        introText: document.querySelector("#footerIntroInput")?.value || defaultFooterConfig.introText,
+        quickLinks: footerLinesToLinks(document.querySelector("#footerQuickLinksInput")?.value, defaultFooterConfig.quickLinks),
+        footerLinks: footerLinesToLinks(document.querySelector("#footerLinksInput")?.value, defaultFooterConfig.footerLinks),
+        topLinks: {
+          app: { href: document.querySelector("#topAppLinkInput")?.value.trim() || "app.html", action: "app-placeholder" },
+          group: { href: document.querySelector("#topGroupLinkInput")?.value.trim() || "qq.html" },
+          telegram: { href: document.querySelector("#topTelegramLinkInput")?.value.trim() || "https://t.me/example_group" },
+          x: { href: document.querySelector("#topXLinkInput")?.value.trim() || "https://x.com/example" }
+        },
+        socialLinks: footerLinesToLinks(document.querySelector("#socialLinksInput")?.value, defaultFooterConfig.socialLinks),
+        legalLinks: footerLinesToLinks(document.querySelector("#legalLinksInput")?.value, defaultFooterConfig.legalLinks)
+      };
+      footerConfig = normalizeFooterConfig(next);
+      return footerConfig;
     }
     function withCacheVersion(url) {
       const cleanUrl = String(url || "").trim();
@@ -1454,25 +1577,8 @@
     document.querySelector("#logoImageInput").addEventListener("change", async (event) => {
       const file = event.target.files[0];
       if (!file) return;
-      const localPreview = previewObjectUrl(file);
-      document.querySelector("#logoPreview").innerHTML = `<img src="${safeUrl(localPreview)}" alt="Logo 预览">`;
-      try {
-        const media = await uploadMediaFile(file, "logo");
-        currentLogoImage = withCacheVersion(media.url);
-        const tabs = collectSiteTabs();
-        siteConfig = {
-          siteName: document.querySelector("#siteNameInput").value.trim() || "PostWave",
-          logoImage: currentLogoImage,
-          commentLogoText: document.querySelector("#commentLogoInput").value.trim() || "51暗网",
-          tabs: tabs.length ? tabs : defaultSiteConfig.tabs
-        };
-        await syncSiteSettingsToApi();
-        document.querySelector("#logoPreview").innerHTML = `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">`;
-        toast("Logo 图片已上传并保存");
-      } catch (error) {
-        console.error(error);
-        toast(error.message || "Logo 上传失败");
-      }
+      event.target.value = "";
+      toast("Logo 已固定为项目内图片，不再从后台上传");
     });
     document.querySelector("#adTabs").addEventListener("click", (event) => {
       const tab = event.target.closest("[data-ad-section]");
@@ -1739,7 +1845,7 @@
       const tabs = collectSiteTabs();
       siteConfig = {
         siteName: document.querySelector("#siteNameInput").value.trim() || "PostWave",
-        logoImage: currentLogoImage,
+        logoImage: "",
         commentLogoText: document.querySelector("#commentLogoInput").value.trim() || "51暗网",
         tabs: tabs.length ? tabs : defaultSiteConfig.tabs
       };
@@ -1781,7 +1887,10 @@
       syncSiteSettingsToApi().then(() => toast("自动回信内容已保存"));
     });
     document.querySelector("#saveRecommend").addEventListener("click", () => toast("推荐规则已保存"));
-    document.querySelector("#saveFooter").addEventListener("click", () => toast("导航页脚已保存"));
+    document.querySelector("#saveFooter").addEventListener("click", () => {
+      currentFooterConfigFromForm();
+      syncSiteSettingsToApi().then(() => toast("导航页脚已保存，前台刷新后生效"));
+    });
     document.querySelector("#themeAdmin").addEventListener("click", () => {
       document.body.classList.toggle("admin-dark");
       toast(document.body.classList.contains("admin-dark") ? "已切换深色后台" : "已切换浅色后台");
@@ -1791,6 +1900,7 @@
       toast("主题已切换");
     });
     renderSiteTabsEditor();
+    renderFooterEditor();
     renderCategoryPicker();
     renderAuthorSelect();
     renderTables();

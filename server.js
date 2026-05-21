@@ -249,6 +249,39 @@ const defaultSiteSettings = {
     subject: "51视频最新地址",
     text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
   },
+  footer: {
+    introText: "PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+    quickLinks: [
+      { label: "首页", href: "/", icon: "home" },
+      { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
+      { label: "Q群", href: "qq.html", icon: "message-circle" },
+      { label: "网站导航", href: "#site-map", icon: "map" }
+    ],
+    footerLinks: [
+      { label: "往期回顾", href: "#archive" },
+      { label: "回家的路", href: "/" },
+      { label: "我要投稿", href: "admin-login.html" },
+      { label: "商务合作", href: "mailto:business@example.com" },
+      { label: "加入我们", href: "mailto:join@example.com" },
+      { label: "关于我们", href: "#about" }
+    ],
+    topLinks: {
+      app: { href: "app.html", action: "app-placeholder" },
+      group: { href: "qq.html" },
+      telegram: { href: "https://t.me/example_group" },
+      x: { href: "https://x.com/example" }
+    },
+    socialLinks: [
+      { label: "X", href: "https://x.com/example", icon: "text:x" },
+      { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
+    ],
+    legalLinks: [
+      { label: "用户协议", href: "#terms" },
+      { label: "隐私政策", href: "#privacy" },
+      { label: "DMCA", href: "#dmca" },
+      { label: "2257合规声明", href: "#compliance" }
+    ]
+  },
   notice: "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
 };
 
@@ -362,10 +395,24 @@ function normalizeSiteSettings(input = {}) {
     .filter(Boolean);
   const emailAutoReply = input.emailAutoReply || {};
   const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
+  const incomingFooter = input.footer || {};
+  const normalizeLink = (link, fallback = {}) => ({
+    label: String(link?.label || fallback.label || "").trim(),
+    href: String(link?.href || fallback.href || "#").trim() || "#",
+    icon: String(link?.icon || fallback.icon || "").trim(),
+    action: String(link?.action || fallback.action || "").trim()
+  });
+  const normalizeLinks = (links, fallbackLinks) => {
+    const source = Array.isArray(links) ? links : fallbackLinks;
+    const fallback = Array.isArray(fallbackLinks) ? fallbackLinks : [];
+    const normalized = source.map((link, index) => normalizeLink(link, fallback[index])).filter((link) => link.label);
+    return normalized.length ? normalized : fallback.map((link) => normalizeLink(link));
+  };
+  const normalizeTopLink = (key) => normalizeLink(incomingFooter.topLinks?.[key], defaultSiteSettings.footer.topLinks[key]);
   return {
     siteConfig: {
       siteName: String(incomingConfig.siteName || defaultSiteSettings.siteConfig.siteName).trim() || defaultSiteSettings.siteConfig.siteName,
-      logoImage: String(incomingConfig.logoImage || ""),
+      logoImage: "",
       commentLogoText: String(incomingConfig.commentLogoText || defaultSiteSettings.siteConfig.commentLogoText).trim() || defaultSiteSettings.siteConfig.commentLogoText,
       tabs: tabs.length ? tabs : defaultSiteSettings.siteConfig.tabs
     },
@@ -382,6 +429,19 @@ function normalizeSiteSettings(input = {}) {
       from: String(emailAutoReply.from || defaultSiteSettings.emailAutoReply.from).trim() || defaultSiteSettings.emailAutoReply.from,
       subject: String(emailAutoReply.subject || defaultSiteSettings.emailAutoReply.subject).trim() || defaultSiteSettings.emailAutoReply.subject,
       text: replyText || defaultSiteSettings.emailAutoReply.text
+    },
+    footer: {
+      introText: String(incomingFooter.introText ?? defaultSiteSettings.footer.introText),
+      quickLinks: normalizeLinks(incomingFooter.quickLinks, defaultSiteSettings.footer.quickLinks),
+      footerLinks: normalizeLinks(incomingFooter.footerLinks, defaultSiteSettings.footer.footerLinks),
+      topLinks: {
+        app: normalizeTopLink("app"),
+        group: normalizeTopLink("group"),
+        telegram: normalizeTopLink("telegram"),
+        x: normalizeTopLink("x")
+      },
+      socialLinks: normalizeLinks(incomingFooter.socialLinks, defaultSiteSettings.footer.socialLinks),
+      legalLinks: normalizeLinks(incomingFooter.legalLinks, defaultSiteSettings.footer.legalLinks)
     },
     notice: String(input.notice ?? defaultSiteSettings.notice)
   };
@@ -2209,6 +2269,7 @@ app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
   res.type("application/javascript");
   res.sendFile(path.join(__dirname, "vendor/lucide/lucide.min.js"));
 });
+app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
 
 app.use((error, _req, res, _next) => {

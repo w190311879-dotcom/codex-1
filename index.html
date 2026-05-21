@@ -159,16 +159,16 @@
       <button class="mobile-nav-toggle" id="mobileNavToggle" type="button" aria-label="打开导航">
         <i data-lucide="menu"></i><span>导航</span>
       </button>
-      <a class="brand" href="index.html">
+      <a class="brand" href="/">
         <span class="brand-mark" id="brandMark"><i data-lucide="play"></i></span>
       </a>
       <nav class="nav" id="mainNav" aria-label="主导航"></nav>
       <div class="actions">
         <button class="icon-btn mobile-hide" id="searchToggle" aria-label="搜索" title="搜索"><i data-lucide="search"></i></button>
-        <a class="icon-btn mobile-hide" href="app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
-        <a class="icon-btn mobile-hide" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
-        <a class="icon-btn" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><i data-lucide="send"></i></a>
-        <a class="icon-btn" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X">X</a>
+        <a class="icon-btn mobile-hide" id="topAppLink" href="app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
+        <a class="icon-btn mobile-hide" id="topGroupLink" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
+        <a class="icon-btn" id="topTelegramLink" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><i data-lucide="send"></i></a>
+        <a class="icon-btn" id="topXLink" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X">X</a>
         <button class="icon-btn mobile-hide" id="themeToggle" aria-label="日间夜间模式" title="日间夜间模式"><i data-lucide="sun-moon"></i></button>
         <button class="icon-btn" id="authOpen" aria-label="登录注册" title="登录/注册"><i data-lucide="user-round"></i></button>
       </div>
@@ -198,38 +198,18 @@
 
     <section class="ad-stack" id="adStack" aria-label="广告位"></section>
 
-    <section class="footer-icons">
-      <a href="index.html"><i data-lucide="home"></i><span>首页</span></a>
-      <a href="app.html"><i data-lucide="smartphone"></i><span>App</span></a>
-      <a href="qq.html" target="_blank" rel="noreferrer"><i data-lucide="message-circle"></i><span>Q群</span></a>
-      <a href="#site-map"><i data-lucide="map"></i><span>网站导航</span></a>
-    </section>
+    <section class="footer-icons" id="footerQuickLinks"></section>
 
     <section class="intro" id="site-map">
       PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。
     </section>
 
-    <nav class="footer-links">
-      <a href="#archive">往期回顾</a>
-      <a href="index.html">回家的路</a>
-      <a href="admin-login.html">我要投稿</a>
-      <a href="mailto:business@example.com">商务合作</a>
-      <a href="mailto:join@example.com">加入我们</a>
-      <a href="#about">关于我们</a>
-    </nav>
+    <nav class="footer-links" id="footerLinks"></nav>
 
-    <div class="social-row">
-      <a class="icon-btn" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X">X</a>
-      <a class="icon-btn" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram"><i data-lucide="send"></i></a>
-    </div>
+    <div class="social-row" id="socialLinks"></div>
 
     <footer class="legal">
-      <div>
-        <a id="terms" href="#terms">用户协议</a>
-        <a id="privacy" href="#privacy">隐私政策</a>
-        <a id="dmca" href="#dmca">DMCA</a>
-        <a id="compliance" href="#compliance">2257合规声明</a>
-      </div>
+      <div id="legalLinks"></div>
       <div>Copyright © 2026 PostWave. All rights reserved.</div>
     </footer>
   </main>
@@ -276,23 +256,123 @@
         { name: "专题", subtitle: "按主题整理的合集页面。" }
       ]
     };
+    const defaultFooterConfig = {
+      introText: "PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+      quickLinks: [
+        { label: "首页", href: "/", icon: "home" },
+        { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
+        { label: "Q群", href: "qq.html", icon: "message-circle" },
+        { label: "网站导航", href: "#site-map", icon: "map" }
+      ],
+      footerLinks: [
+        { label: "往期回顾", href: "#archive" },
+        { label: "回家的路", href: "/" },
+        { label: "我要投稿", href: "admin-login.html" },
+        { label: "商务合作", href: "mailto:business@example.com" },
+        { label: "加入我们", href: "mailto:join@example.com" },
+        { label: "关于我们", href: "#about" }
+      ],
+      topLinks: {
+        app: { href: "app.html", action: "app-placeholder" },
+        group: { href: "qq.html" },
+        telegram: { href: "https://t.me/example_group" },
+        x: { href: "https://x.com/example" }
+      },
+      socialLinks: [
+        { label: "X", href: "https://x.com/example", icon: "text:x" },
+        { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
+      ],
+      legalLinks: [
+        { label: "用户协议", href: "#terms" },
+        { label: "隐私政策", href: "#privacy" },
+        { label: "DMCA", href: "#dmca" },
+        { label: "2257合规声明", href: "#compliance" }
+      ]
+    };
     let siteConfig = defaultSiteConfig;
+    let footerConfig = defaultFooterConfig;
     document.title = siteConfig.siteName || "PostWave";
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
     }
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
-      if (/^(https?:|data:image\/|\/uploads\/|app\.html|admin-login\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
+      if (/^(https?:|data:image\/|\/|app\.html|admin-login\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
+    }
+    function normalizeLink(link = {}, fallback = {}) {
+      return {
+        label: String(link.label || fallback.label || "").trim(),
+        href: String(link.href || fallback.href || "#").trim() || "#",
+        icon: String(link.icon || fallback.icon || "").trim(),
+        action: String(link.action || fallback.action || "").trim()
+      };
+    }
+    function normalizeLinks(links, fallback) {
+      const source = Array.isArray(links) ? links : fallback;
+      const normalized = source.map((link, index) => normalizeLink(link, fallback[index] || {})).filter((link) => link.label);
+      return normalized.length ? normalized : fallback.map((link) => normalizeLink(link));
+    }
+    function normalizeFooterConfig(input = {}) {
+      return {
+        introText: String(input.introText ?? defaultFooterConfig.introText),
+        quickLinks: normalizeLinks(input.quickLinks, defaultFooterConfig.quickLinks),
+        footerLinks: normalizeLinks(input.footerLinks, defaultFooterConfig.footerLinks),
+        topLinks: {
+          app: normalizeLink(input.topLinks?.app, defaultFooterConfig.topLinks.app),
+          group: normalizeLink(input.topLinks?.group, defaultFooterConfig.topLinks.group),
+          telegram: normalizeLink(input.topLinks?.telegram, defaultFooterConfig.topLinks.telegram),
+          x: normalizeLink(input.topLinks?.x, defaultFooterConfig.topLinks.x)
+        },
+        socialLinks: normalizeLinks(input.socialLinks, defaultFooterConfig.socialLinks),
+        legalLinks: normalizeLinks(input.legalLinks, defaultFooterConfig.legalLinks)
+      };
+    }
+    function isExternalUrl(url) {
+      return /^(https?:|mailto:)/i.test(String(url || ""));
+    }
+    function linkAttrs(link, fallback = "#") {
+      const href = safeUrl(link.href, fallback);
+      const attrs = [`href="${escapeHtml(href)}"`];
+      if (isExternalUrl(href)) attrs.push(`target="_blank"`, `rel="noreferrer"`);
+      if (link.action === "app-placeholder") attrs.push(`data-app-placeholder="true"`);
+      return attrs.join(" ");
+    }
+    function iconMarkup(icon, label = "") {
+      if (String(icon || "").startsWith("text:")) return escapeHtml(String(icon).slice(5) || label);
+      return icon ? `<i data-lucide="${escapeHtml(icon)}"></i>` : "";
+    }
+    function applyTopLink(selector, link, fallbackHref) {
+      const el = document.querySelector(selector);
+      if (!el) return;
+      const href = safeUrl(link.href, fallbackHref);
+      el.href = href;
+      el.toggleAttribute("data-app-placeholder", link.action === "app-placeholder");
+      if (isExternalUrl(href)) {
+        el.target = "_blank";
+        el.rel = "noreferrer";
+      } else {
+        el.removeAttribute("target");
+        el.removeAttribute("rel");
+      }
     }
     function renderSiteChrome() {
       const siteName = siteConfig.siteName || "PostWave";
       document.title = siteName;
-      document.querySelector("#brandMark").innerHTML = siteConfig.logoImage
-        ? `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteName)}">`
-        : `<i data-lucide="play"></i>`;
-      document.querySelector("#site-map").textContent = `${siteName} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
+      document.querySelector(".brand").href = "/";
+      document.querySelector("#brandMark").innerHTML = `<img src="/assets/logo.png" alt="${escapeHtml(siteName)}">`;
+      const introText = String(footerConfig.introText || defaultFooterConfig.introText).replaceAll("{{siteName}}", siteName);
+      document.querySelector("#site-map").textContent = introText;
+      document.querySelector("#footerQuickLinks").innerHTML = footerConfig.quickLinks.map((link) => `
+        <a ${linkAttrs(link, "#")}>${iconMarkup(link.icon, link.label)}<span>${escapeHtml(link.label)}</span></a>
+      `).join("");
+      document.querySelector("#footerLinks").innerHTML = footerConfig.footerLinks.map((link) => `<a ${linkAttrs(link, "#")}>${escapeHtml(link.label)}</a>`).join("");
+      document.querySelector("#socialLinks").innerHTML = footerConfig.socialLinks.map((link) => `<a class="icon-btn" ${linkAttrs(link, "#")} aria-label="${escapeHtml(link.label)}">${iconMarkup(link.icon, link.label) || escapeHtml(link.label)}</a>`).join("");
+      document.querySelector("#legalLinks").innerHTML = footerConfig.legalLinks.map((link) => `<a ${linkAttrs(link, "#")}>${escapeHtml(link.label)}</a>`).join("");
+      applyTopLink("#topAppLink", footerConfig.topLinks.app, "app.html");
+      applyTopLink("#topGroupLink", footerConfig.topLinks.group, "qq.html");
+      applyTopLink("#topTelegramLink", footerConfig.topLinks.telegram, "https://t.me/example_group");
+      applyTopLink("#topXLink", footerConfig.topLinks.x, "https://x.com/example");
       document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteName}. All rights reserved.`;
       window.lucide?.createIcons?.();
     }
@@ -523,6 +603,7 @@
       if (settings.siteConfig) {
         siteConfig = settings.siteConfig;
       }
+      footerConfig = normalizeFooterConfig(settings.footer || footerConfig);
       if (Array.isArray(settings.ads)) {
         ads = settings.ads.map(normalizeAd);
       }
@@ -599,6 +680,11 @@
       document.querySelector("#mainNav").classList.toggle("open");
     });
     document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-app-placeholder]")) {
+        event.preventDefault();
+        alert("敬请期待");
+        return;
+      }
       if (!event.target.closest("#mainNav") && !event.target.closest("#mobileNavToggle")) {
         document.querySelector("#mainNav").classList.remove("open");
       }
