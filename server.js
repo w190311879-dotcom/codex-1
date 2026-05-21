@@ -147,8 +147,8 @@ const publicAdminOrigin = (process.env.PUBLIC_ADMIN_ORIGIN || "").replace(/\/+$/
 const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").replace(/\/+$/, "");
 const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl || "").replace(/\/+$/, "");
 const routeSelectorOrigin = normalizeOrigin(process.env.ROUTE_SELECTOR_ORIGIN || "");
-const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51视频";
-const routeSelectorSubtitle = process.env.ROUTE_SELECTOR_SUBTITLE || "看片娱乐两不误";
+const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51春梦";
+const routeSelectorSubtitle = process.env.ROUTE_SELECTOR_SUBTITLE || "看片吃瓜，把心动留给你。";
 const routeLineOrigins = uniqueList(splitList(process.env.ROUTE_LINE_ORIGINS).map(normalizeOrigin));
 function originHost(value = "") {
   if (!value) return "";
@@ -242,6 +242,11 @@ const defaultSiteSettings = {
   adConfig: { station: 10, latest: 10, friend: 10 },
   routing: {
     entryHosts: []
+  },
+  emailAutoReply: {
+    from: "51视频最新地址 <get@51cmtv.com>",
+    subject: "51视频最新地址",
+    text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
   },
   notice: "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
 };
@@ -354,6 +359,8 @@ function normalizeSiteSettings(input = {}) {
   const entryHosts = normalizeArray(routing.entryHosts || input.routeEntryHosts || input.entryHosts)
     .map(normalizeHost)
     .filter(Boolean);
+  const emailAutoReply = input.emailAutoReply || {};
+  const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
   return {
     siteConfig: {
       siteName: String(incomingConfig.siteName || defaultSiteSettings.siteConfig.siteName).trim() || defaultSiteSettings.siteConfig.siteName,
@@ -369,6 +376,11 @@ function normalizeSiteSettings(input = {}) {
     },
     routing: {
       entryHosts: uniqueList(entryHosts)
+    },
+    emailAutoReply: {
+      from: String(emailAutoReply.from || defaultSiteSettings.emailAutoReply.from).trim() || defaultSiteSettings.emailAutoReply.from,
+      subject: String(emailAutoReply.subject || defaultSiteSettings.emailAutoReply.subject).trim() || defaultSiteSettings.emailAutoReply.subject,
+      text: replyText || defaultSiteSettings.emailAutoReply.text
     },
     notice: String(input.notice ?? defaultSiteSettings.notice)
   };
@@ -975,6 +987,18 @@ function routeEntryHosts() {
   return uniqueList([...fixedRouteEntryHosts, ...(cachedRoutingSettings.entryHosts || [])]);
 }
 
+function extractEmailAddress(value = "") {
+  const match = String(value || "").match(/<([^<>@\s]+@[^<>@\s]+)>|([^\s<>]+@[^\s<>]+)/);
+  return match ? (match[1] || match[2]) : "";
+}
+
+function cachedSettingsMeta(settings) {
+  return {
+    ...(settings.routing || { entryHosts: [] }),
+    email: extractEmailAddress(settings.emailAutoReply?.from) || "51sp1@proton.me"
+  };
+}
+
 function routeSelectorUrl() {
   if (routeSelectorOrigin) return `${routeSelectorOrigin}/`;
   return "/route-select.html";
@@ -1374,7 +1398,7 @@ async function readSiteSettings() {
   if (pool) {
     const { rows } = await pool.query("SELECT payload FROM site_settings WHERE id = 1");
     settings = rows.length ? normalizeSiteSettings(rows[0].payload) : normalizeSiteSettings(defaultSiteSettings);
-    cachedRoutingSettings = settings.routing || { entryHosts: [] };
+    cachedRoutingSettings = cachedSettingsMeta(settings);
     return settings;
   }
   try {
@@ -1382,13 +1406,13 @@ async function readSiteSettings() {
   } catch {
     settings = normalizeSiteSettings(defaultSiteSettings);
   }
-  cachedRoutingSettings = settings.routing || { entryHosts: [] };
+  cachedRoutingSettings = cachedSettingsMeta(settings);
   return settings;
 }
 
 async function replaceSiteSettings(settings) {
   const nextSettings = normalizeSiteSettings(settings);
-  cachedRoutingSettings = nextSettings.routing || { entryHosts: [] };
+  cachedRoutingSettings = cachedSettingsMeta(nextSettings);
   if (pool) {
     await pool.query(
       `INSERT INTO site_settings (id, payload, updated_at)
@@ -1752,11 +1776,27 @@ app.get("/config.js", (req, res) => {
     routeSelectorOrigin,
     routeSelectorTitle,
     routeSelectorSubtitle,
+    routeSelectorEmail: cachedRoutingSettings.email || "51sp1@proton.me",
     routeLines,
     routeEntryHosts: routeEntryHosts(),
     demoSeedEnabled,
     localPostFallbackEnabled: !isProduction
   })};`);
+});
+
+app.get("/api/public/email-autoreply", async (_req, res, next) => {
+  try {
+    const settings = await readSiteSettings();
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      ok: true,
+      from: settings.emailAutoReply.from,
+      subject: settings.emailAutoReply.subject,
+      text: settings.emailAutoReply.text
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/session", (req, res) => {

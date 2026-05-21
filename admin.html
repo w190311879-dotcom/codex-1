@@ -150,6 +150,7 @@
         <a class="side-link" href="#" data-view="appearance"><i data-lucide="palette"></i>外观</a>
         <a class="side-link" href="#" data-view="ads"><i data-lucide="badge-percent"></i>广告位</a>
         <a class="side-link" href="#" data-view="notice"><i data-lucide="megaphone"></i>官方公告</a>
+        <a class="side-link" href="#" data-view="email"><i data-lucide="mail"></i>自动回信</a>
         <a class="side-link" href="#" data-view="footer"><i data-lucide="layout-list"></i>导航页脚</a>
         <a class="side-link" href="#" data-view="comments"><i data-lucide="message-square-check"></i>评论审核</a>
         <a class="side-link" href="#" data-view="authors"><i data-lucide="user-pen"></i>作者管理</a>
@@ -289,6 +290,15 @@
       </section>
       <section class="view hidden" id="footerView"><div class="settings"><h2>导航页脚</h2><input class="field" value="往期回顾 / 回家的路 / 我要投稿 / 商务合作 / 加入我们 / 关于我们"><input class="field" value="用户协议 / 隐私政策 / DMCA / 2257合规声明"><button class="btn dark" id="saveFooter">保存导航页脚</button></div></section>
       <section class="view hidden" id="noticeView"><div class="settings"><h2>官方公告</h2><textarea class="field" id="noticeText" style="min-height:140px;padding:14px">欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。</textarea><button class="btn dark" id="saveNotice">保存公告</button></div></section>
+      <section class="view hidden" id="emailView">
+        <div class="settings">
+          <h2>自动回信</h2>
+          <input class="field" id="replyFromInput" value="51视频最新地址 <get@51cmtv.com>" placeholder="发件人，例如：51视频最新地址 <get@51cmtv.com>">
+          <input class="field" id="replySubjectInput" value="51视频最新地址" placeholder="邮件标题">
+          <textarea class="field" id="replyTextInput" style="min-height:180px;padding:14px" placeholder="自动回信内容"></textarea>
+          <button class="btn dark" id="saveEmailReply" type="button">保存自动回信</button>
+        </div>
+      </section>
       <section class="view hidden" id="commentsView"><div class="table" id="commentsTable"></div></section>
       <section class="view hidden" id="authorsView">
         <div class="settings">
@@ -574,6 +584,11 @@
       return "";
     }
     let adConfig = { station: 10, latest: 10, friend: 10 };
+    const defaultEmailAutoReply = {
+      from: "51视频最新地址 <get@51cmtv.com>",
+      subject: "51视频最新地址",
+      text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
+    };
     document.querySelector("#currentAdminName").textContent = localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
     document.querySelector("#stationCount").value = adConfig.station || 10;
     document.querySelector("#latestCount").value = adConfig.latest || 10;
@@ -581,6 +596,7 @@
     document.querySelector("#siteNameInput").value = siteConfig.siteName;
     document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
     document.querySelector("#logoPreview").innerHTML = currentLogoImage ? `<img src="${safeUrl(currentLogoImage)}" alt="Logo 预览">` : "Logo";
+    document.querySelector("#replyTextInput").value = defaultEmailAutoReply.text;
 
     function save(key, value) {
       if (["postwave_ads", "postwave_site_config", "postwave_ad_config", "postwave_notice"].includes(key)) {
@@ -604,6 +620,11 @@
         adConfig,
         routing: {
           entryHosts: normalizeHosts(document.querySelector("#routeEntryHostsInput")?.value || "")
+        },
+        emailAutoReply: {
+          from: document.querySelector("#replyFromInput")?.value.trim() || defaultEmailAutoReply.from,
+          subject: document.querySelector("#replySubjectInput")?.value.trim() || defaultEmailAutoReply.subject,
+          text: document.querySelector("#replyTextInput")?.value || defaultEmailAutoReply.text
         },
         notice: document.querySelector("#noticeText")?.value || ""
       };
@@ -638,6 +659,10 @@
         adConfig = settings.adConfig;
       }
       document.querySelector("#routeEntryHostsInput").value = Array.isArray(settings.routing?.entryHosts) ? settings.routing.entryHosts.join("\n") : "";
+      const reply = settings.emailAutoReply || defaultEmailAutoReply;
+      document.querySelector("#replyFromInput").value = reply.from || defaultEmailAutoReply.from;
+      document.querySelector("#replySubjectInput").value = reply.subject || defaultEmailAutoReply.subject;
+      document.querySelector("#replyTextInput").value = reply.text || defaultEmailAutoReply.text;
       document.querySelector("#stationCount").value = adConfig.station || 10;
       document.querySelector("#latestCount").value = adConfig.latest || 10;
       document.querySelector("#friendCount").value = adConfig.friend || 10;
@@ -1751,6 +1776,9 @@
     });
     document.querySelector("#saveNotice").addEventListener("click", () => {
       syncSiteSettingsToApi().then(() => toast("官方公告已保存"));
+    });
+    document.querySelector("#saveEmailReply").addEventListener("click", () => {
+      syncSiteSettingsToApi().then(() => toast("自动回信内容已保存"));
     });
     document.querySelector("#saveRecommend").addEventListener("click", () => toast("推荐规则已保存"));
     document.querySelector("#saveFooter").addEventListener("click", () => toast("导航页脚已保存"));

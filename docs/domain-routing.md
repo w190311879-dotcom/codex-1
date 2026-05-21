@@ -39,3 +39,6 @@ cross-site cookie issues.
 
 Media URLs remain on `PUBLIC_MEDIA_BASE_URL`, backed by bunny.net CDN and
 Storage.
+
+The latest-address email autoresponder is separate from page routing. See
+`docs/email-autoreply.md` for the Cloudflare Email Routing + Worker setup.

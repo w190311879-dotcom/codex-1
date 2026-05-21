@@ -9,7 +9,9 @@
     :root {
       --bg: #211f20;
       --panel: #1a191a;
-      --line: #64f06f;
+      --line: #ff7a45;
+      --line-2: #ff4fa3;
+      --hot: #ffd166;
       --text: #f7f7f4;
       --muted: #cfcfc9;
     }
@@ -42,8 +44,11 @@
       font-size: clamp(56px, 12vw, 104px);
       line-height: .92;
       font-weight: 1000;
+      color: transparent;
+      background: linear-gradient(100deg, #fff 0 20%, var(--hot) 38%, var(--line) 62%, var(--line-2) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
     }
-    .accent { color: #60f0aa; }
     .subtitle {
       margin: 0;
       color: var(--muted);
@@ -68,13 +73,13 @@
       color: var(--text);
       background: var(--panel);
       text-decoration: none;
-      box-shadow: 0 0 0 rgba(100, 240, 111, 0);
+      box-shadow: 0 0 0 rgba(255, 122, 69, 0);
       transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
     }
     .route:hover {
       transform: translateY(-2px);
-      background: #181d18;
-      box-shadow: 0 14px 36px rgba(100, 240, 111, .16);
+      background: #211717;
+      box-shadow: 0 14px 36px rgba(255, 79, 163, .18);
     }
     .route strong {
       font-size: 24px;
@@ -106,8 +111,8 @@
 <body>
   <main>
     <section class="brand" aria-label="站点">
-      <h1 id="title">51<span class="accent">视频</span></h1>
-      <p class="subtitle" id="subtitle">看片娱乐两不误</p>
+      <h1 id="title">51春梦</h1>
+      <p class="subtitle" id="subtitle">看片吃瓜，把心动留给你。</p>
     </section>
     <nav class="routes" id="routes" aria-label="线路选择"></nav>
     <section class="notice">
@@ -117,20 +122,37 @@
   </main>
   <script>
     const config = window.POSTWAVE_CONFIG || {};
-    const title = String(config.routeSelectorTitle || "51视频");
-    const subtitle = String(config.routeSelectorSubtitle || "看片娱乐两不误");
+    const title = String(config.routeSelectorTitle || "51春梦");
+    const subtitle = String(config.routeSelectorSubtitle || "看片吃瓜，把心动留给你。");
+    const email = String(config.routeSelectorEmail || "51sp1@proton.me");
     const lines = Array.isArray(config.routeLines) ? config.routeLines : [];
-    document.querySelector("#title").innerHTML = title.replace("视频", "<span class=\"accent\">视频</span>");
+    document.querySelector("#title").textContent = title;
     document.querySelector("#subtitle").textContent = subtitle;
+    document.querySelector("#mail").textContent = email;
+    document.querySelector("#mail").href = `mailto:${email}`;
     document.title = `${title} - 线路选择`;
-    document.querySelector("#routes").innerHTML = lines.length
-      ? lines.map((line, index) => {
-          const url = String(line.origin || "").replace(/\/+$/, "");
-          const label = line.label || `线路${index + 1}`;
-          const host = line.host || url.replace(/^https?:\/\//, "");
-          return `<a class="route" href="${url}/"><strong>${title}-${label}</strong><span>${host}</span></a>`;
-        }).join("")
-      : `<a class="route" href="/"><strong>${title}-线路一</strong><span>线路暂未配置</span></a>`;
+    const routes = document.querySelector("#routes");
+    function addRoute({ href, label, host }) {
+      const anchor = document.createElement("a");
+      anchor.className = "route";
+      anchor.href = href;
+      const name = document.createElement("strong");
+      name.textContent = label;
+      const target = document.createElement("span");
+      target.textContent = host;
+      anchor.append(name, target);
+      routes.append(anchor);
+    }
+    if (lines.length) {
+      lines.forEach((line, index) => {
+        const url = String(line.origin || "").replace(/\/+$/, "");
+        const label = line.label || `线路${index + 1}`;
+        const host = line.host || url.replace(/^https?:\/\//, "");
+        addRoute({ href: `${url}/`, label: `${title}-${label}`, host });
+      });
+    } else {
+      addRoute({ href: "/", label: `${title}-线路一`, host: "线路暂未配置" });
+    }
   </script>
 </body>
 </html>
