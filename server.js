@@ -149,6 +149,7 @@ const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl
 const routeSelectorOrigin = normalizeOrigin(process.env.ROUTE_SELECTOR_ORIGIN || "");
 const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51春梦";
 const routeSelectorSubtitle = process.env.ROUTE_SELECTOR_SUBTITLE || "看片吃瓜，把心动留给你。";
+const routeSelectorEmail = String(process.env.ROUTE_SELECTOR_EMAIL || "").trim();
 const routeLineOrigins = uniqueList(splitList(process.env.ROUTE_LINE_ORIGINS).map(normalizeOrigin));
 function originHost(value = "") {
   if (!value) return "";
@@ -832,9 +833,17 @@ function readSession(req, cookieName = sessionCookieName, expectedRole = "") {
   }
 }
 
-function sessionCookie(value, maxAge = sessionMaxAgeSeconds, cookieName = sessionCookieName) {
+function cookieDomainForRequest(req) {
+  if (!cookieDomain || !req) return cookieDomain;
+  const host = hostWithoutPort(requestHost(req));
+  const normalizedDomain = String(cookieDomain).replace(/^\./, "").toLowerCase();
+  return host === normalizedDomain || host.endsWith(`.${normalizedDomain}`) ? cookieDomain : "";
+}
+
+function sessionCookie(value, maxAge = sessionMaxAgeSeconds, cookieName = sessionCookieName, req = null) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  const domain = cookieDomain ? `; Domain=${cookieDomain}` : "";
+  const requestCookieDomain = cookieDomainForRequest(req);
+  const domain = requestCookieDomain ? `; Domain=${requestCookieDomain}` : "";
   return `${cookieName}=${encodeURIComponent(value)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${domain}${secure}`;
 }
 
@@ -1776,7 +1785,7 @@ app.get("/config.js", (req, res) => {
     routeSelectorOrigin,
     routeSelectorTitle,
     routeSelectorSubtitle,
-    routeSelectorEmail: cachedRoutingSettings.email || "51sp1@proton.me",
+    routeSelectorEmail: routeSelectorEmail || cachedRoutingSettings.email || "51sp1@proton.me",
     routeLines,
     routeEntryHosts: routeEntryHosts(),
     demoSeedEnabled,
@@ -1822,15 +1831,15 @@ app.post("/api/login", loginRateLimit("admin-login"), async (req, res, next) => 
     }
     clearLoginFailures(req);
     const sessionToken = createSession(admin, "admin");
-    res.setHeader("Set-Cookie", sessionCookie(sessionToken));
+    res.setHeader("Set-Cookie", sessionCookie(sessionToken, sessionMaxAgeSeconds, sessionCookieName, req));
     res.json({ ok: true, user: { account: admin.account, name: admin.name }, csrfToken: createCsrfToken(sessionToken) });
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/logout", (_req, res) => {
-  res.setHeader("Set-Cookie", sessionCookie("", 0));
+app.post("/api/logout", (req, res) => {
+  res.setHeader("Set-Cookie", sessionCookie("", 0, sessionCookieName, req));
   res.json({ ok: true });
 });
 
@@ -1847,7 +1856,7 @@ app.post("/api/user/register", loginRateLimit("user-register"), async (req, res,
       name: req.body?.name
     });
     clearLoginFailures(req);
-    res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName));
+    res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName, req));
     res.json({ ok: true, user });
   } catch (error) {
     recordLoginFailure(req);
@@ -1864,15 +1873,15 @@ app.post("/api/user/login", loginRateLimit("user-login"), async (req, res, next)
       return;
     }
     clearLoginFailures(req);
-    res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName));
+    res.setHeader("Set-Cookie", sessionCookie(createSession(user, "user"), sessionMaxAgeSeconds, userSessionCookieName, req));
     res.json({ ok: true, user });
   } catch (error) {
     next(error);
   }
 });
 
-app.post("/api/user/logout", (_req, res) => {
-  res.setHeader("Set-Cookie", sessionCookie("", 0, userSessionCookieName));
+app.post("/api/user/logout", (req, res) => {
+  res.setHeader("Set-Cookie", sessionCookie("", 0, userSessionCookieName, req));
   res.json({ ok: true });
 });
 
