@@ -36,7 +36,8 @@ Worker template uses Resend.
 
 ```text
 CONFIG_URL=https://line1.51cmtv.com/api/public/email-autoreply
-REPLY_FROM=51视频最新地址 <get@51cmtv.com>
+REPLY_FROM=51视频最新地址 <notice@send.51cmtv.com>
+REPLY_TO=get@51cmtv.com
 REPLY_SUBJECT=51视频最新地址
 FORWARD_TO=your-private-mailbox@example.com
 ```
