@@ -234,7 +234,7 @@
       <div class="comment-row"><input id="commentName" placeholder="称呼 *"><span class="captcha">OuO</span></div>
       <p class="comment-auth-note" id="commentAuthNote">评论需要登录/注册，提交后由后台审核，通过后展示。</p>
       <button class="submit" id="submitComment">提交评论</button>
-      <div class="comment-count" id="commentCount">已有 51 条评论</div>
+      <div class="comment-count" id="commentCount">暂无评论</div>
       <div class="comment-list" id="commentList"></div>
     </section>
 
@@ -667,11 +667,11 @@
     }
     async function renderComments() {
       const comments = await fetchApprovedComments();
-      const base = [{ name:"曾经小白菜", time:"3 小时前", text:"6" }, { name:"端庄蓝天", time:"5 天前", text:"签到" }, { name:"认真路人", time:"1 周前", text:"排版清楚，内容展示很完整。" }];
-      const rows = [...comments, ...base];
-      document.querySelector("#commentCount").textContent = `已有 ${51 + comments.length} 条评论`;
+      document.querySelector("#commentCount").textContent = comments.length ? `已有 ${comments.length} 条评论` : "暂无评论";
       const commentLogo = siteConfig.commentLogoText || "51暗网";
-      document.querySelector("#commentList").innerHTML = rows.map((item) => `<div class="comment"><div class="comment-logo">${escapeHtml(commentLogo)}</div><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.time || "刚刚")}</small><p>${escapeHtml(item.text)}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("");
+      document.querySelector("#commentList").innerHTML = comments.length
+        ? comments.map((item) => `<div class="comment"><div class="comment-logo">${escapeHtml(commentLogo)}</div><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.time || "刚刚")}</small><p>${escapeHtml(item.text)}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("")
+        : `<div class="comment"><div class="comment-logo">${escapeHtml(commentLogo)}</div><div><strong>暂无评论</strong><small>成为第一个真实评论的人</small><p>评论提交后会进入后台审核，通过后显示在这里。</p></div></div>`;
     }
 
     function isHlsMedia(item, url) {
