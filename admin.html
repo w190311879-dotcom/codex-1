@@ -116,6 +116,16 @@
     .video-queue-item { display: grid; grid-template-columns: 1fr 140px; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #dbe4ef; border-radius: 7px; background: #f8fafc; font-weight: 900; }
     .video-queue-item small { display: block; margin-top: 3px; color: #64748b; font-weight: 800; }
     .media-row { grid-template-columns: 1fr 120px 160px 150px 100px; }
+    .media-panel { margin: 18px 24px; display: grid; gap: 12px; }
+    .media-panel .table { margin: 0; }
+    .media-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid #dbe4ef; border-radius: 8px; background: #f8fafc; }
+    .media-filter-group, .media-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .media-filter { height: 36px; padding: 0 14px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
+    .media-filter.active, .media-page-btn.active { color: #fff; border-color: #18181b; background: #18181b; }
+    .media-count { color: #64748b; font-weight: 900; }
+    .media-page-btn { min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
+    body.admin-dark .media-controls { border-color: #253044; background: #111827; }
+    body.admin-dark .media-filter, body.admin-dark .media-page-btn { color: #e5e7eb; border-color: #334155; background: #0f172a; }
     .comment-text { color: #475569; line-height: 1.6; }
     .progress { height: 10px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
     .progress span { display: block; width: 0%; height: 100%; border-radius: inherit; background: #111827; transition: width .2s ease; }
@@ -237,7 +247,20 @@
           <div class="video-queue" id="videoQueueList"></div>
         </div>
       </section>
-      <section class="view hidden" id="mediaView"><div class="table" id="mediaTable"></div></section>
+      <section class="view hidden" id="mediaView">
+        <div class="media-panel">
+          <div class="media-controls">
+            <div class="media-filter-group" id="mediaFilterGroup">
+              <button class="media-filter active" data-media-filter="all" type="button">全部</button>
+              <button class="media-filter" data-media-filter="image" type="button">图片</button>
+              <button class="media-filter" data-media-filter="video" type="button">视频</button>
+            </div>
+            <span class="media-count" id="mediaCount">共 0 个媒体</span>
+          </div>
+          <div class="table" id="mediaTable"></div>
+          <div class="media-pager" id="mediaPager"></div>
+        </div>
+      </section>
       <section class="view hidden" id="recommendView"><div class="settings"><h2>推荐管理</h2><select class="field"><option>热门推荐：展示最新 4 条</option><option>热门推荐：展示后台置顶</option></select><button class="btn dark" id="saveRecommend">保存推荐规则</button></div></section>
       <section class="view hidden" id="appearanceView">
         <div class="settings">
@@ -385,6 +408,9 @@
     let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
     let mediaLibrary = [];
+    const MEDIA_PAGE_SIZE = 20;
+    let mediaFilter = "all";
+    let mediaPage = 1;
     let serverComments = [];
     let currentCoverData = "";
     let currentVideoData = "";
@@ -1284,19 +1310,59 @@
         </div>
       `).join("");
     }
+    function mediaTypeOf(item) {
+      const type = String(item?.type || "").toLowerCase();
+      const mime = String(item?.mimeType || item?.mime_type || "").toLowerCase();
+      const kind = String(item?.kind || "").toLowerCase();
+      if (type === "video" || mime.startsWith("video/") || kind.includes("video") || String(item?.playbackType || "").toLowerCase() === "hls") return "video";
+      return "image";
+    }
+    function mediaStatusCell(item) {
+      const progress = Math.min(100, Math.max(0, Number(item.progress) || 0));
+      if (item.status === "queued") return '<span>排队生成 HLS</span><div class="progress"><span style="width:100%"></span></div>';
+      if (item.status === "processing") return `<span>生成 HLS 中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+      if (item.status === "ready") return '<span class="status-ready">已完成</span>';
+      if (item.status === "failed") return '<span class="status-failed">处理失败，请重新上传</span>';
+      return `<span>上传中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+    }
+    function mediaFormatLabel(item) {
+      if (mediaTypeOf(item) === "video") return `${item.format || "HLS"} · ${item.quality || "720P"}${item.encrypted ? " · AES-128" : ""}`;
+      return item.mimeType || item.kind || "图片";
+    }
+    function filteredMediaItems() {
+      return mediaLibrary.filter((item) => mediaFilter === "all" || mediaTypeOf(item) === mediaFilter);
+    }
+    function renderMediaTable() {
+      const table = document.querySelector("#mediaTable");
+      const pager = document.querySelector("#mediaPager");
+      const count = document.querySelector("#mediaCount");
+      const buttons = document.querySelectorAll("[data-media-filter]");
+      const filtered = filteredMediaItems();
+      const totalPages = Math.max(1, Math.ceil(filtered.length / MEDIA_PAGE_SIZE));
+      mediaPage = Math.min(Math.max(1, mediaPage), totalPages);
+      const start = (mediaPage - 1) * MEDIA_PAGE_SIZE;
+      const pageItems = filtered.slice(start, start + MEDIA_PAGE_SIZE);
+      buttons.forEach((button) => button.classList.toggle("active", button.dataset.mediaFilter === mediaFilter));
+      if (count) count.textContent = `共 ${filtered.length} 个媒体 · 第 ${mediaPage}/${totalPages} 页`;
+      table.innerHTML = `<div class="table-row header media-row"><span>媒体</span><span>格式</span><span>状态</span><span>时间</span><span>操作</span></div>` + (pageItems.length ? pageItems.map((item) => `
+        <div class="table-row media-row">
+          <strong>${escapeHtml(item.name || item.originalName || item.id || "未命名媒体")}</strong>
+          <span>${escapeHtml(mediaFormatLabel(item))}</span>
+          <span>${mediaStatusCell(item)}</span>
+          <span>${escapeHtml(item.date || item.createdAt || "-")}</span>
+          <span><button class="btn" data-delete-media="${escapeHtml(item.id)}">删除</button></span>
+        </div>
+      `).join("") : `<div class="table-row media-row"><strong>暂无媒体</strong><span>-</span><span>等待上传</span><span>-</span><span>-</span></div>`);
+      pager.innerHTML = totalPages > 1 ? `
+        <button class="media-page-btn" data-media-page="${mediaPage - 1}" ${mediaPage <= 1 ? "disabled" : ""}>上一页</button>
+        ${Array.from({ length: totalPages }, (_, index) => `<button class="media-page-btn ${index + 1 === mediaPage ? "active" : ""}" data-media-page="${index + 1}">${index + 1}</button>`).join("")}
+        <button class="media-page-btn" data-media-page="${mediaPage + 1}" ${mediaPage >= totalPages ? "disabled" : ""}>下一页</button>
+      ` : "";
+    }
     function renderTables() {
       document.querySelector("#postsTable").innerHTML = postRows();
       document.querySelector("#draftsTable").innerHTML = tableRows(storedDrafts);
-      document.querySelector("#mediaTable").innerHTML = `<div class="table-row header media-row"><span>媒体</span><span>格式</span><span>状态</span><span>时间</span><span>操作</span></div>` + (mediaLibrary.length ? mediaLibrary.map((item) => {
-        const progress = Math.min(100, Math.max(0, Number(item.progress) || 0));
-        let statusCell = `<span>上传中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
-        if (item.status === "queued") statusCell = '<span>排队生成 HLS</span><div class="progress"><span style="width:100%"></span></div>';
-        if (item.status === "processing") statusCell = `<span>生成 HLS 中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
-        if (item.status === "ready") statusCell = '<span class="status-ready">已完成</span>';
-        if (item.status === "failed") statusCell = '<span class="status-failed">处理失败，请重新上传</span>';
-        const format = item.type === "video" ? `${item.format || "HLS"} · ${item.quality || "720P"}${item.encrypted ? " · AES-128" : ""}` : (item.mimeType || item.kind || "图片");
-        return `<div class="table-row media-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(format)}</span><span>${statusCell}</span><span>${escapeHtml(item.date)}</span><span><button class="btn" data-delete-media="${escapeHtml(item.id)}">删除</button></span></div>`;
-      }).join("") : `<div class="table-row media-row"><strong>暂无媒体</strong><span>-</span><span>等待上传</span><span>-</span><span>-</span></div>`);
+      renderMediaTable();
       document.querySelector("#usersTable").innerHTML = `<div class="table-row header"><span>对象</span><span>类型</span><span>状态</span><span>时间</span></div><div class="table-row"><strong>guest@example.com</strong><span>用户</span><span>正常</span><span>2026/5/13</span></div><div class="table-row"><strong>示例举报</strong><span>举报</span><span>待处理</span><span>2026/5/13</span></div>`;
       renderAuthorsTable();
       renderCommentsTable();
@@ -1725,6 +1791,19 @@
       document.querySelectorAll(".ad-tab").forEach((item) => item.classList.toggle("active", item.dataset.adSection === "home-feed"));
       renderAds();
       toast("首页内容流排序已更新");
+    });
+    document.querySelector("#mediaFilterGroup").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-media-filter]");
+      if (!button) return;
+      mediaFilter = button.dataset.mediaFilter || "all";
+      mediaPage = 1;
+      renderMediaTable();
+    });
+    document.querySelector("#mediaPager").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-media-page]");
+      if (!button || button.disabled) return;
+      mediaPage = Number(button.dataset.mediaPage) || 1;
+      renderMediaTable();
     });
     document.querySelector("#mediaTable").addEventListener("click", async (event) => {
       const button = event.target.closest("[data-delete-media]");

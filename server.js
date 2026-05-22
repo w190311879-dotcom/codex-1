@@ -61,6 +61,7 @@ const videoChunkLimitMb = Math.max(5, Number(process.env.POSTWAVE_VIDEO_CHUNK_MB
 const videoChunkBytes = Math.floor(videoChunkLimitMb * 1024 * 1024 * 0.9);
 const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
 const hlsSegmentSeconds = Math.max(2, Number(process.env.POSTWAVE_HLS_SEGMENT_SECONDS || 5) || 5);
+const bunnyHlsUploadConcurrency = Math.min(12, Math.max(1, Number(process.env.POSTWAVE_BUNNY_UPLOAD_CONCURRENCY || 6) || 6));
 const hlsLandscapeMaxWidth = 1280;
 const hlsLandscapeMaxHeight = 720;
 const hlsPortraitMaxWidth = 720;
@@ -703,22 +704,75 @@ function hlsStorageDir(mediaId) {
   return `videos/${day}/${mediaId}`;
 }
 
-async function uploadHlsDirectory(outputDir, storageDir) {
+async function runConcurrent(items, limit, worker) {
+  if (!items.length) return;
+  const concurrency = Math.min(Math.max(1, limit), items.length);
+  let nextIndex = 0;
+  let firstError = null;
+  const workers = Array.from({ length: concurrency }, async () => {
+    while (!firstError) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= items.length) return;
+      try {
+        await worker(items[currentIndex], currentIndex);
+      } catch (error) {
+        firstError = error;
+      }
+    }
+  });
+  await Promise.allSettled(workers);
+  if (firstError) throw firstError;
+}
+
+async function uploadHlsDirectory(outputDir, storageDir, onProgress) {
   const filenames = await readHlsOutputFiles(outputDir);
-  const storagePaths = [];
-  let totalSize = 0;
-  let playlistUrl = "";
-  for (const filename of filenames) {
+  const fileInfos = await Promise.all(filenames.map(async (filename) => {
     const localPath = path.join(outputDir, filename);
     const stats = await fs.stat(localPath);
-    totalSize += stats.size;
-    const storagePath = `${storageDir}/${filename}`;
-    const fileUrl = useBunnyStorage
-      ? await uploadLocalPathToBunny(localPath, hlsMimeType(filename), storagePath)
-      : await uploadLocalPathLocally(localPath, storagePath);
-    if (filename === "index.m3u8") playlistUrl = fileUrl;
-    storagePaths.push(storagePath);
+    return {
+      filename,
+      localPath,
+      size: stats.size,
+      storagePath: `${storageDir}/${filename}`,
+      mimeType: hlsMimeType(filename)
+    };
+  }));
+  const totalSize = fileInfos.reduce((sum, item) => sum + item.size, 0);
+  const storagePaths = fileInfos.map((item) => item.storagePath);
+  let playlistUrl = "";
+  let uploadedSize = 0;
+  let uploadedFiles = 0;
+  let lastProgress = 90;
+  const uploadConcurrency = useBunnyStorage ? bunnyHlsUploadConcurrency : 4;
+  const playlist = fileInfos.find((item) => item.filename === "index.m3u8");
+  const keyFiles = fileInfos.filter((item) => item.filename === "key.bin");
+  const segmentFiles = fileInfos.filter((item) => item.filename !== "index.m3u8" && item.filename !== "key.bin");
+  async function markUploaded(item, fileUrl) {
+    uploadedSize += item.size;
+    uploadedFiles += 1;
+    if (item.filename === "index.m3u8") playlistUrl = fileUrl;
+    if (!totalSize || !onProgress) return;
+    const progress = Math.min(99, Math.max(90, 90 + Math.floor((uploadedSize / totalSize) * 9)));
+    if (progress <= lastProgress) return;
+    lastProgress = progress;
+    await onProgress(progress, {
+      filename: item.filename,
+      uploadedSize,
+      totalSize,
+      uploadedFiles,
+      totalFiles: fileInfos.length
+    });
   }
+  async function uploadOne(item) {
+    const fileUrl = useBunnyStorage
+      ? await uploadLocalPathToBunny(item.localPath, item.mimeType, item.storagePath)
+      : await uploadLocalPathLocally(item.localPath, item.storagePath);
+    await markUploaded(item, fileUrl);
+  }
+  for (const item of keyFiles) await uploadOne(item);
+  await runConcurrent(segmentFiles, uploadConcurrency, uploadOne);
+  if (playlist) await uploadOne(playlist);
   return {
     url: playlistUrl || publicUploadUrl(`${storageDir}/index.m3u8`),
     storagePaths,
@@ -728,10 +782,10 @@ async function uploadHlsDirectory(outputDir, storageDir) {
   };
 }
 
-async function uploadProcessedHls(outputDir, originalFile, metadata = {}, mediaId = crypto.randomUUID()) {
+async function uploadProcessedHls(outputDir, originalFile, metadata = {}, mediaId = crypto.randomUUID(), onUploadProgress) {
   const outputName = `${path.parse(originalFile.originalname || "video").name || "video"}.m3u8`;
   const storagePath = hlsStorageDir(mediaId);
-  const uploaded = await uploadHlsDirectory(outputDir, storagePath);
+  const uploaded = await uploadHlsDirectory(outputDir, storagePath, onUploadProgress);
   const record = {
     id: mediaId,
     kind: "video",
@@ -1939,6 +1993,8 @@ async function runTranscodeJob(job) {
     }, inputMetadata.duration, job.id);
     if (cancelledTranscodes.has(job.id)) return;
     await saveMediaRecord({ ...processingJob, ...hlsMetadata, status: "processing", progress: 90 });
+    let lastUploadProgress = 90;
+    const uploadProgressJob = { ...processingJob, ...hlsMetadata, status: "processing" };
     const media = await uploadProcessedHls(outputDir, {
       originalname: job.originalName,
       mimetype: "application/vnd.apple.mpegurl"
@@ -1947,7 +2003,12 @@ async function runTranscodeJob(job) {
       posterUrl: job.posterUrl || "",
       posterStoragePath: job.posterStoragePath || "",
       posterMediaId: job.posterMediaId || ""
-    }, job.id);
+    }, job.id, async (progress) => {
+      if (cancelledTranscodes.has(job.id)) return;
+      if (progress <= lastUploadProgress) return;
+      lastUploadProgress = progress;
+      await saveMediaRecord({ ...uploadProgressJob, progress });
+    });
     if (cancelledTranscodes.has(job.id)) {
       await deleteStoredMediaObjects(media).catch((error) => console.error(error));
       return;
