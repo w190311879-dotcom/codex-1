@@ -12,6 +12,8 @@
       document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
     } catch (error) {}
   </script>
+  <script src="/vendor/hls/hls.min.js"></script>
+  <script src="/vendor/dplayer/DPlayer.min.js"></script>
   <script defer src="/vendor/lucide/lucide.min.js" onload="window.lucide?.createIcons?.()"></script>
   <style>
     :root { --bg:#0b0f0f; --card:#15191d; --line:#293038; --text:#f5f7f4; --muted:#a5adb5; --green:#28d4b0; --pink:#ef477d; --radius:8px; }
@@ -62,7 +64,10 @@
     .video-media { display:grid; place-items:center; background:#000; }
     .video-media.ratio-16-9 { aspect-ratio:16 / 9; }
     .video-media.ratio-9-16 { width:min(420px, 100%); aspect-ratio:9 / 16; }
-    .video-media video { display:block; width:100%; height:100%; object-fit:contain; background:#000; }
+    .video-media video,
+    .video-media .dplayer,
+    .video-media .hls-player { display:block; width:100%; height:100%; background:#000; }
+    .video-media video { object-fit:contain; }
     .tags { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:12px 0 0; }
     .tag { min-height:34px; display:inline-flex; align-items:center; padding:0 12px; border:1px solid rgba(40,212,176,.55); border-radius:999px; color:var(--green); background:rgba(40,212,176,.08); font-weight:900; }
     .notice { margin:24px auto 0; max-width:940px; padding:20px; border:1px solid rgba(40,212,176,.48); border-radius:8px; background:rgba(40,212,176,.08); line-height:1.8; }
@@ -669,6 +674,58 @@
       document.querySelector("#commentList").innerHTML = rows.map((item) => `<div class="comment"><div class="comment-logo">${escapeHtml(commentLogo)}</div><div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.time || "刚刚")}</small><p>${escapeHtml(item.text)}</p></div><a class="reply" href="#commentText">回复</a></div>`).join("");
     }
 
+    function isHlsMedia(item, url) {
+      return item?.playbackType === "hls" || /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
+    }
+    function attachVideoFallback(container, url, posterUrl, hls) {
+      const video = document.createElement("video");
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      if (posterUrl) video.poster = safeUrl(posterUrl);
+      container.innerHTML = "";
+      container.appendChild(video);
+      if (hls && window.Hls?.isSupported?.()) {
+        const player = new window.Hls();
+        player.loadSource(url);
+        player.attachMedia(video);
+        return;
+      }
+      video.src = url;
+    }
+    async function mountVideoPlayer(container, mediaId) {
+      try {
+        const item = await fetchMediaById(mediaId);
+        const url = await mediaUrl(item);
+        if (!url) {
+          container.closest(".media")?.remove();
+          return;
+        }
+        if (item?.aspect === "9-16") {
+          container.closest(".media")?.classList.remove("ratio-16-9");
+          container.closest(".media")?.classList.add("ratio-9-16");
+        }
+        const posterUrl = item?.posterUrl || "";
+        const hls = isHlsMedia(item, url);
+        container.innerHTML = "";
+        if (window.DPlayer) {
+          new window.DPlayer({
+            container,
+            screenshot: false,
+            hotkey: true,
+            video: {
+              url: safeUrl(url),
+              type: hls ? "hls" : "auto",
+              pic: posterUrl ? safeUrl(posterUrl) : undefined
+            }
+          });
+          return;
+        }
+        attachVideoFallback(container, safeUrl(url), posterUrl, hls);
+      } catch (_error) {
+        container.closest(".media")?.remove();
+      }
+    }
     function renderContentFlow() {
       const flow = document.querySelector("#contentFlow");
       const body = current.body || "";
@@ -689,7 +746,7 @@
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);
           const videoId = match && match[1] ? match[1] : "";
-          if (videoId) flow.insertAdjacentHTML("beforeend", `<div class="media video-media ratio-16-9"><video data-media-video="${escapeHtml(videoId)}" controls></video></div>`);
+          if (videoId) flow.insertAdjacentHTML("beforeend", `<div class="media video-media ratio-16-9"><div class="hls-player" data-media-video="${escapeHtml(videoId)}"></div></div>`);
         } else {
           if (!part.trim()) return;
           const div = document.createElement("div");
@@ -698,18 +755,7 @@
           flow.appendChild(div);
         }
       });
-      flow.querySelectorAll("[data-media-video]").forEach((videoEl) => {
-        fetchMediaById(videoEl.dataset.mediaVideo).then(async (item) => {
-          if (item?.aspect === "9-16") {
-            videoEl.closest(".media")?.classList.remove("ratio-16-9");
-            videoEl.closest(".media")?.classList.add("ratio-9-16");
-          }
-          const url = await mediaUrl(item);
-          if (item?.posterUrl) videoEl.setAttribute("poster", safeUrl(item.posterUrl));
-          if (url) videoEl.src = url;
-          else videoEl.closest(".media")?.remove();
-        }).catch(() => videoEl.closest(".media")?.remove());
-      });
+      flow.querySelectorAll("[data-media-video]").forEach((playerEl) => mountVideoPlayer(playerEl, playerEl.dataset.mediaVideo));
     }
     function cleanTag(tag) { return String(tag).replace(/^#+/, ""); }
     async function renderDetailPage() {

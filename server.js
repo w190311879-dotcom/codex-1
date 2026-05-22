@@ -60,6 +60,11 @@ const videoUploadLimitMb = Number(process.env.POSTWAVE_VIDEO_UPLOAD_LIMIT_MB || 
 const videoChunkLimitMb = Math.max(5, Number(process.env.POSTWAVE_VIDEO_CHUNK_MB || 50) || 50);
 const videoChunkBytes = Math.floor(videoChunkLimitMb * 1024 * 1024 * 0.9);
 const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
+const hlsSegmentSeconds = Math.max(2, Number(process.env.POSTWAVE_HLS_SEGMENT_SECONDS || 5) || 5);
+const hlsLandscapeMaxWidth = 1280;
+const hlsLandscapeMaxHeight = 720;
+const hlsPortraitMaxWidth = 720;
+const hlsPortraitMaxHeight = 1280;
 const loginRateWindowMs = Math.max(60, Number(process.env.POSTWAVE_LOGIN_RATE_WINDOW_SECONDS || 900) || 900) * 1000;
 const loginRateMaxAttempts = Math.max(3, Number(process.env.POSTWAVE_LOGIN_RATE_MAX || 10) || 10);
 const demoSeedEnabled = process.env.POSTWAVE_ENABLE_DEMO_SEED === undefined
@@ -647,7 +652,7 @@ async function deletePathLocally(storagePath) {
   const filePath = path.resolve(uploadsDir, storagePath);
   const uploadsRoot = path.resolve(uploadsDir);
   if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) throw new Error("媒体路径无效");
-  await fs.rm(filePath, { force: true }).catch(() => {});
+  await fs.rm(filePath, { recursive: true, force: true }).catch(() => {});
 }
 
 async function deleteStoredObject(storageProvider, storagePath) {
@@ -658,38 +663,90 @@ async function deleteStoredObject(storageProvider, storagePath) {
 
 async function deleteStoredMediaObjects(record) {
   const provider = record.storageProvider || record.storage_provider || "local";
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const hlsFiles = Array.isArray(record.hlsFiles) ? record.hlsFiles : (Array.isArray(metadata.hlsFiles) ? metadata.hlsFiles : []);
+  const primaryPaths = provider === "bunny" && hlsFiles.length ? hlsFiles : [record.storagePath || record.storage_path];
   const paths = [
-    record.storagePath || record.storage_path,
+    ...primaryPaths,
     record.posterStoragePath,
-    record.metadata?.posterStoragePath
+    metadata.posterStoragePath
   ].filter(Boolean);
   for (const storagePath of Array.from(new Set(paths))) {
     await deleteStoredObject(provider, storagePath);
   }
 }
 
-async function uploadProcessedVideo(localPath, originalFile, metadata = {}, mediaId = crypto.randomUUID()) {
-  const outputName = `${path.parse(originalFile.originalname || "video").name || "video"}.mp4`;
-  const storagePath = createMediaStoragePath({ originalname: outputName, mimetype: "video/mp4" }, "video");
-  const stats = await fs.stat(localPath);
-  const url = useBunnyStorage
-    ? await uploadLocalPathToBunny(localPath, "video/mp4", storagePath)
-    : await uploadLocalPathLocally(localPath, storagePath);
+function hlsMimeType(filename = "") {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === ".m3u8") return "application/vnd.apple.mpegurl";
+  if (ext === ".ts") return "video/mp2t";
+  if (ext === ".bin") return "application/octet-stream";
+  return "application/octet-stream";
+}
+
+async function readHlsOutputFiles(outputDir) {
+  const entries = await fs.readdir(outputDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name !== "key_info.txt")
+    .map((entry) => entry.name)
+    .sort((left, right) => {
+      if (left === "index.m3u8") return -1;
+      if (right === "index.m3u8") return 1;
+      if (left === "key.bin") return -1;
+      if (right === "key.bin") return 1;
+      return left.localeCompare(right);
+    });
+}
+
+function hlsStorageDir(mediaId) {
+  const day = new Date().toISOString().slice(0, 10);
+  return `videos/${day}/${mediaId}`;
+}
+
+async function uploadHlsDirectory(outputDir, storageDir) {
+  const filenames = await readHlsOutputFiles(outputDir);
+  const storagePaths = [];
+  let totalSize = 0;
+  let playlistUrl = "";
+  for (const filename of filenames) {
+    const localPath = path.join(outputDir, filename);
+    const stats = await fs.stat(localPath);
+    totalSize += stats.size;
+    const storagePath = `${storageDir}/${filename}`;
+    const fileUrl = useBunnyStorage
+      ? await uploadLocalPathToBunny(localPath, hlsMimeType(filename), storagePath)
+      : await uploadLocalPathLocally(localPath, storagePath);
+    if (filename === "index.m3u8") playlistUrl = fileUrl;
+    storagePaths.push(storagePath);
+  }
+  return {
+    url: playlistUrl || publicUploadUrl(`${storageDir}/index.m3u8`),
+    storagePaths,
+    totalSize,
+    playlistStoragePath: `${storageDir}/index.m3u8`,
+    keyStoragePath: storagePaths.find((item) => item.endsWith("/key.bin")) || ""
+  };
+}
+
+async function uploadProcessedHls(outputDir, originalFile, metadata = {}, mediaId = crypto.randomUUID()) {
+  const outputName = `${path.parse(originalFile.originalname || "video").name || "video"}.m3u8`;
+  const storagePath = hlsStorageDir(mediaId);
+  const uploaded = await uploadHlsDirectory(outputDir, storagePath);
   const record = {
     id: mediaId,
     kind: "video",
     type: "video",
     originalName: originalFile.originalname || "",
     name: outputName,
-    mimeType: "video/mp4",
-    size: stats.size,
+    mimeType: "application/vnd.apple.mpegurl",
+    size: uploaded.totalSize,
     storagePath,
     storageProvider: useBunnyStorage ? "bunny" : "local",
-    url,
+    url: uploaded.url,
     status: "ready",
     progress: 100,
-    format: "H.264 MP4",
-    quality: "medium",
+    format: "HLS",
+    quality: "720P",
     aspect: metadata.height > metadata.width ? "9-16" : "16-9",
     width: metadata.width || 0,
     height: metadata.height || 0,
@@ -697,7 +754,14 @@ async function uploadProcessedVideo(localPath, originalFile, metadata = {}, medi
     posterUrl: metadata.posterUrl || "",
     posterStoragePath: metadata.posterStoragePath || "",
     posterMediaId: metadata.posterMediaId || "",
-    segments: 1,
+    segments: metadata.segments || 0,
+    playbackType: "hls",
+    encrypted: true,
+    playlistStoragePath: uploaded.playlistStoragePath,
+    keyStoragePath: uploaded.keyStoragePath,
+    hlsFiles: uploaded.storagePaths,
+    processingMode: metadata.processingMode || "transcode",
+    hlsSegmentSeconds,
     createdAt: new Date().toISOString(),
     date: new Date().toLocaleString()
   };
@@ -750,8 +814,7 @@ async function probeVideo(localPath) {
     const output = await new Promise((resolve, reject) => {
       const child = spawn(ffprobeBin, [
         "-v", "error",
-        "-select_streams", "v:0",
-        "-show_entries", "stream=width,height,duration:format=duration",
+        "-show_entries", "stream=index,codec_type,codec_name,pix_fmt,width,height,duration:format=duration,format_name",
         "-of", "json",
         localPath
       ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -766,15 +829,21 @@ async function probeVideo(localPath) {
       });
     });
     const data = JSON.parse(output || "{}");
-    const stream = data.streams?.[0] || {};
+    const streams = Array.isArray(data.streams) ? data.streams : [];
+    const stream = streams.find((item) => item.codec_type === "video") || streams[0] || {};
+    const audio = streams.find((item) => item.codec_type === "audio") || {};
     const format = data.format || {};
     return {
       width: Number(stream.width) || 0,
       height: Number(stream.height) || 0,
-      duration: Number(stream.duration) || Number(format.duration) || 0
+      duration: Number(stream.duration) || Number(format.duration) || 0,
+      videoCodec: String(stream.codec_name || ""),
+      audioCodec: String(audio.codec_name || ""),
+      pixFmt: String(stream.pix_fmt || ""),
+      formatName: String(format.format_name || "")
     };
   } catch {
-    return { width: 0, height: 0, duration: 0 };
+    return { width: 0, height: 0, duration: 0, videoCodec: "", audioCodec: "", pixFmt: "", formatName: "" };
   }
 }
 
@@ -787,24 +856,88 @@ function parseFfmpegProgressTime(line = "") {
   return (Number(match[1]) * 3600) + (Number(match[2]) * 60) + Number(match[3]);
 }
 
-async function transcodeVideoToH264(inputPath, outputPath, onProgress, durationSeconds = 0, jobId = "") {
-  await new Promise((resolve, reject) => {
-    const child = spawn(ffmpegBin, [
-      "-y",
-      "-i", inputPath,
-      "-map", "0:v:0",
-      "-map", "0:a?",
+function fitHls720Dimensions(width = 0, height = 0) {
+  const sourceWidth = Number(width) || 0;
+  const sourceHeight = Number(height) || 0;
+  if (!sourceWidth || !sourceHeight) return { width: 0, height: 0 };
+  const landscape = sourceWidth >= sourceHeight;
+  const maxWidth = landscape ? hlsLandscapeMaxWidth : hlsPortraitMaxWidth;
+  const maxHeight = landscape ? hlsLandscapeMaxHeight : hlsPortraitMaxHeight;
+  const ratio = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight);
+  return {
+    width: Math.max(2, Math.floor((sourceWidth * ratio) / 2) * 2),
+    height: Math.max(2, Math.floor((sourceHeight * ratio) / 2) * 2)
+  };
+}
+
+function hlsScaleFilter() {
+  const ratio = `if(gte(iw,ih),min(1,min(${hlsLandscapeMaxWidth}/iw,${hlsLandscapeMaxHeight}/ih)),min(1,min(${hlsPortraitMaxWidth}/iw,${hlsPortraitMaxHeight}/ih)))`;
+  return `scale='trunc(iw*${ratio}/2)*2':'trunc(ih*${ratio}/2)*2'`;
+}
+
+function canCopyToHls(metadata = {}) {
+  const { width, height } = fitHls720Dimensions(metadata.width, metadata.height);
+  const originalWidth = Number(metadata.width) || 0;
+  const originalHeight = Number(metadata.height) || 0;
+  const videoOk = String(metadata.videoCodec || "").toLowerCase() === "h264";
+  const audioCodec = String(metadata.audioCodec || "").toLowerCase();
+  const audioOk = !audioCodec || audioCodec === "aac";
+  const pixFmt = String(metadata.pixFmt || "").toLowerCase();
+  const pixOk = !pixFmt || pixFmt === "yuv420p";
+  const sizeOk = width === originalWidth && height === originalHeight;
+  return Boolean(videoOk && audioOk && pixOk && sizeOk);
+}
+
+async function prepareHlsEncryption(outputDir) {
+  const keyPath = path.join(outputDir, "key.bin");
+  const keyInfoPath = path.join(outputDir, "key_info.txt");
+  const iv = crypto.randomBytes(16).toString("hex").toUpperCase();
+  await fs.writeFile(keyPath, crypto.randomBytes(16));
+  await fs.writeFile(keyInfoPath, `key.bin\n${keyPath}\n${iv}\n`);
+  return keyInfoPath;
+}
+
+async function generateHlsVideo(inputPath, outputDir, metadata = {}, onProgress, jobId = "") {
+  await fs.rm(outputDir, { recursive: true, force: true }).catch(() => {});
+  await fs.mkdir(outputDir, { recursive: true });
+  const playlistPath = path.join(outputDir, "index.m3u8");
+  const segmentPattern = path.join(outputDir, "segment_%05d.ts");
+  const keyInfoPath = await prepareHlsEncryption(outputDir);
+  const copyMode = canCopyToHls(metadata);
+  const args = [
+    "-y",
+    "-i", inputPath,
+    "-map", "0:v:0",
+    "-map", "0:a?",
+    "-sn"
+  ];
+  if (copyMode) {
+    args.push("-c", "copy");
+  } else {
+    args.push(
+      "-vf", hlsScaleFilter(),
       "-c:v", "libx264",
-      "-preset", "medium",
-      "-crf", "23",
+      "-preset", "veryfast",
+      "-crf", "24",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac",
       "-b:a", "128k",
-      "-movflags", "+faststart",
-      "-progress", "pipe:2",
-      "-nostats",
-      outputPath
-    ], { stdio: ["ignore", "ignore", "pipe"] });
+      "-max_muxing_queue_size", "1024"
+    );
+  }
+  args.push(
+    "-hls_time", String(hlsSegmentSeconds),
+    "-hls_playlist_type", "vod",
+    "-hls_flags", "independent_segments",
+    "-hls_segment_filename", segmentPattern,
+    "-hls_key_info_file", keyInfoPath,
+    "-progress", "pipe:2",
+    "-nostats",
+    playlistPath
+  );
+  const durationSeconds = Number(metadata.duration) || 0;
+  await new Promise((resolve, reject) => {
+    const child = spawn(ffmpegBin, args, { stdio: ["ignore", "ignore", "pipe"] });
     if (jobId) activeTranscodeChildren.set(jobId, child);
     let stderr = "";
     let lastProgress = 10;
@@ -830,6 +963,14 @@ async function transcodeVideoToH264(inputPath, outputPath, onProgress, durationS
       else reject(new Error(`${ffmpegBin} 执行失败：${stderr || `退出码 ${code}`}`));
     });
   });
+  const files = await readHlsOutputFiles(outputDir);
+  const dimensions = copyMode ? { width: metadata.width || 0, height: metadata.height || 0 } : fitHls720Dimensions(metadata.width, metadata.height);
+  return {
+    ...metadata,
+    ...dimensions,
+    segments: files.filter((file) => file.endsWith(".ts")).length,
+    processingMode: copyMode ? "copy" : "transcode"
+  };
 }
 
 function parseCookies(header = "") {
@@ -1074,7 +1215,7 @@ function routeSelectorUrl() {
 }
 
 function isRouteSelectorPath(pathname = "") {
-  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js";
+  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
 }
 
 function enforceHostBoundary(req, res, next) {
@@ -1584,8 +1725,8 @@ function normalizeMediaRecord(record = {}, { includeInternal = false } = {}) {
     url: String(record.url || metadata.url || ""),
     status,
     progress: Number(record.progress ?? metadata.progress ?? (status === "ready" ? 100 : 0)) || 0,
-    format: String(record.format || metadata.format || (kind === "video" ? "H.264 MP4" : "")),
-    quality: String(record.quality || metadata.quality || (kind === "video" ? "medium" : "")),
+    format: String(record.format || metadata.format || (kind === "video" ? "HLS" : "")),
+    quality: String(record.quality || metadata.quality || (kind === "video" ? "720P" : "")),
     aspect: String(record.aspect || metadata.aspect || (Number(record.height || metadata.height) > Number(record.width || metadata.width) ? "9-16" : "16-9")),
     width: Number(record.width ?? metadata.width ?? 0) || 0,
     height: Number(record.height ?? metadata.height ?? 0) || 0,
@@ -1594,12 +1735,19 @@ function normalizeMediaRecord(record = {}, { includeInternal = false } = {}) {
     posterStoragePath: String(record.posterStoragePath || metadata.posterStoragePath || ""),
     posterMediaId: String(record.posterMediaId || metadata.posterMediaId || ""),
     segments: Number(record.segments ?? metadata.segments ?? (kind === "video" ? 1 : 0)) || 0,
+    playbackType: String(record.playbackType || metadata.playbackType || (kind === "video" ? "hls" : "")),
+    encrypted: Boolean(record.encrypted ?? metadata.encrypted ?? false),
+    processingMode: String(record.processingMode || metadata.processingMode || ""),
+    playlistStoragePath: String(record.playlistStoragePath || metadata.playlistStoragePath || ""),
+    keyStoragePath: String(record.keyStoragePath || metadata.keyStoragePath || ""),
+    hlsSegmentSeconds: Number(record.hlsSegmentSeconds ?? metadata.hlsSegmentSeconds ?? 0) || 0,
     createdAt: record.createdAt || record.created_at || metadata.createdAt || "",
     date: record.date || metadata.date || (record.created_at ? new Date(record.created_at).toLocaleString() : "")
   };
   if (includeInternal) {
     normalized.tempInputPath = record.tempInputPath || metadata.tempInputPath || "";
     normalized.originalMimeType = record.originalMimeType || metadata.originalMimeType || record.mimeType || record.mime_type || "";
+    normalized.hlsFiles = Array.isArray(record.hlsFiles) ? record.hlsFiles : (Array.isArray(metadata.hlsFiles) ? metadata.hlsFiles : []);
   }
   return normalized;
 }
@@ -1706,14 +1854,14 @@ async function assembleVideoChunks(meta, outputPath) {
 }
 
 function createQueuedVideoRecord(file, poster = {}) {
-  const outputName = `${path.parse(file.originalname || "video").name || "video"}.mp4`;
+  const outputName = `${path.parse(file.originalname || "video").name || "video"}.m3u8`;
   return {
     id: crypto.randomUUID(),
     kind: "video",
     type: "video",
     originalName: file.originalname || "",
     name: outputName,
-    mimeType: "video/mp4",
+    mimeType: "application/vnd.apple.mpegurl",
     originalMimeType: file.mimetype || "",
     size: file.size || 0,
     storagePath: "",
@@ -1721,8 +1869,8 @@ function createQueuedVideoRecord(file, poster = {}) {
     url: "",
     status: "queued",
     progress: 0,
-    format: "H.264 MP4",
-    quality: "medium",
+    format: "HLS",
+    quality: "720P",
     aspect: "16-9",
     width: 0,
     height: 0,
@@ -1731,6 +1879,9 @@ function createQueuedVideoRecord(file, poster = {}) {
     posterStoragePath: poster.posterStoragePath || "",
     posterMediaId: poster.posterMediaId || "",
     segments: 0,
+    playbackType: "hls",
+    encrypted: true,
+    hlsSegmentSeconds,
     tempInputPath: file.path,
     createdAt: new Date().toISOString(),
     date: new Date().toLocaleString()
@@ -1762,28 +1913,37 @@ function processTranscodeQueue() {
 }
 
 async function runTranscodeJob(job) {
-  let outputPath = "";
+  let outputDir = "";
   try {
     if (cancelledTranscodes.has(job.id)) return;
-    outputPath = path.join(tempVideoDir, `${job.id}-h264.mp4`);
+    outputDir = path.join(tempVideoDir, `${job.id}-hls`);
     const inputMetadata = await probeVideo(job.tempInputPath);
-    const processingJob = { ...job, ...inputMetadata, status: "processing", progress: 10 };
+    const processingJob = {
+      ...job,
+      ...inputMetadata,
+      status: "processing",
+      progress: 10,
+      format: "HLS",
+      quality: "720P",
+      playbackType: "hls",
+      encrypted: true,
+      hlsSegmentSeconds
+    };
     let lastSavedProgress = 10;
     await saveMediaRecord(processingJob);
-    await transcodeVideoToH264(job.tempInputPath, outputPath, (progress) => {
+    const hlsMetadata = await generateHlsVideo(job.tempInputPath, outputDir, inputMetadata, (progress) => {
       if (cancelledTranscodes.has(job.id)) return;
       if (progress <= lastSavedProgress) return;
       lastSavedProgress = progress;
       saveMediaRecord({ ...processingJob, progress }).catch((error) => console.error(error));
     }, inputMetadata.duration, job.id);
     if (cancelledTranscodes.has(job.id)) return;
-    await saveMediaRecord({ ...job, status: "processing", progress: 90 });
-    const metadata = await probeVideo(outputPath);
-    const media = await uploadProcessedVideo(outputPath, {
+    await saveMediaRecord({ ...processingJob, ...hlsMetadata, status: "processing", progress: 90 });
+    const media = await uploadProcessedHls(outputDir, {
       originalname: job.originalName,
-      mimetype: "video/mp4"
+      mimetype: "application/vnd.apple.mpegurl"
     }, {
-      ...metadata,
+      ...hlsMetadata,
       posterUrl: job.posterUrl || "",
       posterStoragePath: job.posterStoragePath || "",
       posterMediaId: job.posterMediaId || ""
@@ -1799,11 +1959,14 @@ async function runTranscodeJob(job) {
       ...job,
       status: "failed",
       progress: 100,
-      error: error.message || "视频转码失败"
+      error: error.message || "HLS 处理失败"
     }).catch(() => {});
   } finally {
     cancelledTranscodes.delete(job.id);
-    await Promise.all([job.tempInputPath, outputPath].filter(Boolean).map((filePath) => fs.rm(filePath, { force: true }).catch(() => {})));
+    await Promise.all([
+      job.tempInputPath ? fs.rm(job.tempInputPath, { force: true }).catch(() => {}) : null,
+      outputDir ? fs.rm(outputDir, { recursive: true, force: true }).catch(() => {}) : null
+    ].filter(Boolean));
   }
 }
 
@@ -2269,12 +2432,28 @@ app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
   res.type("application/javascript");
   res.sendFile(path.join(__dirname, "vendor/lucide/lucide.min.js"));
 });
+app.get("/vendor/hls/hls.min.js", (_req, res) => {
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "vendor/hls/hls.min.js"));
+});
+app.get("/vendor/dplayer/DPlayer.min.js", (_req, res) => {
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "vendor/dplayer/DPlayer.min.js"));
+});
 app.get("/favicon.ico", (_req, res) => {
   res.type("image/png");
   res.sendFile(path.join(__dirname, "assets/favicon-51.png"));
 });
 app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
-app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
+app.use("/uploads", express.static(uploadsDir, {
+  maxAge: "7d",
+  setHeaders(res, filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === ".m3u8") res.type("application/vnd.apple.mpegurl");
+    if (ext === ".ts") res.type("video/mp2t");
+    if (ext === ".bin") res.type("application/octet-stream");
+  }
+}));
 
 app.use((error, _req, res, _next) => {
   console.error(error);

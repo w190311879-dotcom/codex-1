@@ -6,6 +6,7 @@
   <title>PublishHub 后台</title>
   <link rel="icon" type="image/png" href="/assets/favicon-51.png">
   <link rel="apple-touch-icon" href="/assets/favicon-51.png">
+  <script src="/vendor/hls/hls.min.js"></script>
   <script defer src="/vendor/lucide/lucide.min.js" onload="window.lucide?.createIcons?.()"></script>
   <style>
     * { box-sizing: border-box; }
@@ -232,7 +233,7 @@
           <div class="video-aspect-note" id="videoAspectLabel">自动识别尺寸：请选择视频</div>
           <div class="progress"><span id="videoProgress"></span></div>
           <div id="videoStatus" style="color:#64748b;font-weight:800">等待上传</div>
-          <button class="btn dark" id="uploadVideoBtn">加入上传队列并转 H.264</button>
+          <button class="btn dark" id="uploadVideoBtn">加入上传队列并生成 HLS</button>
           <div class="video-queue" id="videoQueueList"></div>
         </div>
       </section>
@@ -632,7 +633,7 @@
       if (!active) return;
       const value = active.status === "queued" ? 100 : Math.max(10, Math.min(95, Number(active.progress) || 10));
       progress.style.width = `${value}%`;
-      status.textContent = active.status === "queued" ? "上传完成，等待转码队列处理" : `服务端转码 H.264 中 ${value}%`;
+      status.textContent = active.status === "queued" ? "上传完成，等待 HLS 队列处理" : `服务端生成 720P HLS 中 ${value}%`;
     }
     async function adImageUrl(ad) {
       if (!ad) return "";
@@ -1141,7 +1142,7 @@
             }, posterMedia);
             task.status = "上传完成，等待服务端处理";
             progress.style.width = "100%";
-            status.textContent = "上传完成，已交给服务端转码队列";
+            status.textContent = "上传完成，已交给服务端 HLS 队列";
             if (media?.id) {
               mediaLibrary = mediaLibrary.filter((item) => item.id !== media.id);
               mediaLibrary.unshift(media);
@@ -1149,7 +1150,7 @@
             }
             loadMediaLibraryFromApi();
             startMediaPolling();
-            toast("视频已上传，转码完成后可在发布页插入");
+            toast("视频已上传，HLS 处理完成后可在发布页插入");
           } catch (error) {
             task.status = "上传失败，已跳过";
             status.textContent = `上传失败：${error.message || "请重新上传视频"}。已跳过该组，继续处理队列。`;
@@ -1289,11 +1290,11 @@
       document.querySelector("#mediaTable").innerHTML = `<div class="table-row header media-row"><span>媒体</span><span>格式</span><span>状态</span><span>时间</span><span>操作</span></div>` + (mediaLibrary.length ? mediaLibrary.map((item) => {
         const progress = Math.min(100, Math.max(0, Number(item.progress) || 0));
         let statusCell = `<span>上传中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
-        if (item.status === "queued") statusCell = '<span>排队转码中</span><div class="progress"><span style="width:100%"></span></div>';
-        if (item.status === "processing") statusCell = `<span>转码中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+        if (item.status === "queued") statusCell = '<span>排队生成 HLS</span><div class="progress"><span style="width:100%"></span></div>';
+        if (item.status === "processing") statusCell = `<span>生成 HLS 中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
         if (item.status === "ready") statusCell = '<span class="status-ready">已完成</span>';
         if (item.status === "failed") statusCell = '<span class="status-failed">处理失败，请重新上传</span>';
-        const format = item.type === "video" ? item.format : (item.mimeType || item.kind || "图片");
+        const format = item.type === "video" ? `${item.format || "HLS"} · ${item.quality || "720P"}${item.encrypted ? " · AES-128" : ""}` : (item.mimeType || item.kind || "图片");
         return `<div class="table-row media-row"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(format)}</span><span>${statusCell}</span><span>${escapeHtml(item.date)}</span><span><button class="btn" data-delete-media="${escapeHtml(item.id)}">删除</button></span></div>`;
       }).join("") : `<div class="table-row media-row"><strong>暂无媒体</strong><span>-</span><span>等待上传</span><span>-</span><span>-</span></div>`);
       document.querySelector("#usersTable").innerHTML = `<div class="table-row header"><span>对象</span><span>类型</span><span>状态</span><span>时间</span></div><div class="table-row"><strong>guest@example.com</strong><span>用户</span><span>正常</span><span>2026/5/13</span></div><div class="table-row"><strong>示例举报</strong><span>举报</span><span>待处理</span><span>2026/5/13</span></div>`;
@@ -1487,6 +1488,19 @@
       insertBodyMarkers([marker], pendingBodyInsertionRange || currentBodySelectionRange());
       pendingBodyInsertionRange = null;
     }
+    function attachVideoSource(videoEl, item) {
+      mediaUrl(item).then((url) => {
+        if (!url) return;
+        const safe = safeUrl(url);
+        if ((item?.playbackType === "hls" || /\.m3u8(?:[?#]|$)/i.test(safe)) && window.Hls?.isSupported?.()) {
+          const hls = new window.Hls();
+          hls.loadSource(safe);
+          hls.attachMedia(videoEl);
+          return;
+        }
+        videoEl.src = safe;
+      });
+    }
     function renderInsertedMediaPreview() {
       const body = document.querySelector("#bodyText").value;
       const markers = [...body.matchAll(/\[(图片|视频)(?::([^\]]+))?\]/g)];
@@ -1505,13 +1519,13 @@
         }
         const video = mediaLibrary.find((item) => item.id === match[2]);
         return video && video.status === "ready"
-          ? `<div class="preview-card"><video data-preview-video="${escapeHtml(video.id)}" muted controls></video><span>${escapeHtml(video.name)} · ${video.aspect === "9-16" ? "9:16" : "16:9"}</span></div>`
+          ? `<div class="preview-card"><video data-preview-video="${escapeHtml(video.id)}" muted controls></video><span>${escapeHtml(video.name)} · HLS · 720P · ${video.aspect === "9-16" ? "9:16" : "16:9"}</span></div>`
           : `<div class="preview-card empty">视频未处理完成</div>`;
       }).join("");
       list.querySelectorAll("[data-preview-video]").forEach((videoEl) => {
         const item = mediaLibrary.find((media) => media.id === videoEl.dataset.previewVideo);
         if (item?.posterUrl) videoEl.setAttribute("poster", safeUrl(item.posterUrl));
-        mediaUrl(item).then((url) => { if (url) videoEl.src = url; });
+        attachVideoSource(videoEl, item);
       });
     }
     document.querySelector("#insertImageBtn").addEventListener("click", () => {
@@ -1552,10 +1566,10 @@
       const ready = mediaLibrary.filter((item) => item.type === "video" && item.status === "ready");
       document.querySelector("#videoPickerList").innerHTML = ready.length ? ready.map((item) => `
         <div class="video-choice">
-          <span><strong>${escapeHtml(item.name)}</strong><br><small>${escapeHtml(item.format)} · ${escapeHtml(item.quality)} · ${item.aspect === "9-16" ? "9:16" : "16:9"} · ${escapeHtml(item.segments)} 段切片</small></span>
+          <span><strong>${escapeHtml(item.name)}</strong><br><small>${escapeHtml(item.format || "HLS")} · ${escapeHtml(item.quality || "720P")} · ${item.encrypted ? "AES-128 · " : ""}${item.aspect === "9-16" ? "9:16" : "16:9"} · ${escapeHtml(item.segments)} 段</small></span>
           <button class="btn dark" data-pick-video="${escapeHtml(item.id)}">插入</button>
         </div>
-      `).join("") : `<div class="video-choice"><span>暂无已处理视频，请先到“视频上传”完成上传和转码。</span><button class="btn" type="button">等待</button></div>`;
+      `).join("") : `<div class="video-choice"><span>暂无已处理视频，请先到“视频上传”完成上传和 HLS 处理。</span><button class="btn" type="button">等待</button></div>`;
     }
     document.querySelector("#videoPickerList").addEventListener("click", (event) => {
       const button = event.target.closest("[data-pick-video]");
