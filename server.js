@@ -223,7 +223,7 @@ function validateProductionSecurityConfig() {
 validateProductionSecurityConfig();
 const defaultSiteSettings = {
   siteConfig: {
-    siteName: "PostWave",
+    siteName: "51春梦",
     logoImage: "",
     commentLogoText: "51暗网",
     tabs: [
@@ -1074,7 +1074,7 @@ function routeSelectorUrl() {
 }
 
 function isRouteSelectorPath(pathname = "") {
-  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/vendor/lucide/lucide.min.js";
+  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js";
 }
 
 function enforceHostBoundary(req, res, next) {
@@ -2268,6 +2268,10 @@ app.get("/admin-login.html", sendHtmlPage("admin-login.html"));
 app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
   res.type("application/javascript");
   res.sendFile(path.join(__dirname, "vendor/lucide/lucide.min.js"));
+});
+app.get("/favicon.ico", (_req, res) => {
+  res.type("image/jpeg");
+  res.sendFile(path.join(__dirname, "assets/favicon.jpg"));
 });
 app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));

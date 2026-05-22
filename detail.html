@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>帖子详情 - PostWave</title>
+  <title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.jpg">
+  <link rel="apple-touch-icon" href="/assets/favicon.jpg">
   <script src="/config.js"></script>
   <script>
     try {
@@ -265,7 +267,7 @@
     const demoSeedEnabled = appConfig.demoSeedEnabled !== false;
     const localPostFallbackEnabled = appConfig.localPostFallbackEnabled === true;
     const defaultSiteConfig = {
-      siteName: "PostWave",
+      siteName: "51春梦",
       tabs: [
         { name: "首页", subtitle: "精选图文与视频内容，按发布时间聚合展示。" },
         { name: "视频", subtitle: "视频内容列表，适合接入媒体 CDN 和在线播放。" },
@@ -286,13 +288,13 @@
       return fallback;
     }
     function renderSiteChrome() {
-      const siteName = siteConfig.siteName || "PostWave";
+      const siteName = siteConfig.siteName || "51春梦";
       document.querySelector("#brandMark").innerHTML = siteConfig.logoImage
         ? `<img src="${safeUrl(siteConfig.logoImage)}" alt="${escapeHtml(siteName)}">`
         : `<i data-lucide="play"></i>`;
       document.querySelector("#site-map").textContent = `${siteName} 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。`;
       document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteName}. All rights reserved.`;
-      document.title = siteName;
+      document.title = "51春梦 - 吃瓜爆料 + 成人视频，一站搞定";
       window.lucide?.createIcons?.();
     }
     renderSiteChrome();
@@ -611,7 +613,7 @@
     async function renderDetailPage() {
       renderSiteChrome();
       renderNav();
-      document.title = `${current.title} - ${siteConfig.siteName || "PostWave"}`;
+      document.title = `${current.title} - 51春梦`;
       document.querySelector("#crumbTitle").textContent = current.title;
       document.querySelector("#title").textContent = current.title;
       document.querySelector("#author").textContent = current.author;

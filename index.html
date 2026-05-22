@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PostWave</title>
+  <title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>
+  <link rel="icon" type="image/jpeg" href="/assets/favicon.jpg">
+  <link rel="apple-touch-icon" href="/assets/favicon.jpg">
   <script src="/config.js"></script>
   <script>
     try {
@@ -235,6 +237,7 @@
 
   <script>
     const appConfig = window.POSTWAVE_CONFIG || {};
+    const publicSiteTitle = "51春梦 - 吃瓜爆料 + 成人视频，一站搞定";
     function apiPath(path) {
       const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
       return base ? `${base}${path}` : path;
@@ -245,7 +248,7 @@
     const demoSeedEnabled = appConfig.demoSeedEnabled !== false;
     const localPostFallbackEnabled = appConfig.localPostFallbackEnabled === true;
     const defaultSiteConfig = {
-      siteName: "PostWave",
+      siteName: "51春梦",
       tabs: [
         { name: "首页", subtitle: "精选图文与视频内容，按发布时间聚合展示。" },
         { name: "视频", subtitle: "视频内容列表，适合接入媒体 CDN 和在线播放。" },
@@ -291,7 +294,7 @@
     };
     let siteConfig = defaultSiteConfig;
     let footerConfig = defaultFooterConfig;
-    document.title = siteConfig.siteName || "PostWave";
+    document.title = publicSiteTitle;
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
     }
@@ -357,8 +360,8 @@
       }
     }
     function renderSiteChrome() {
-      const siteName = siteConfig.siteName || "PostWave";
-      document.title = siteName;
+      const siteName = siteConfig.siteName || "51春梦";
+      document.title = publicSiteTitle;
       document.querySelector(".brand").href = "/";
       document.querySelector("#brandMark").innerHTML = `<img src="/assets/logo.png" alt="${escapeHtml(siteName)}">`;
       const introText = String(footerConfig.introText || defaultFooterConfig.introText).replaceAll("{{siteName}}", siteName);
