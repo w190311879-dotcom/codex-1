@@ -60,8 +60,8 @@ const videoUploadLimitMb = Number(process.env.POSTWAVE_VIDEO_UPLOAD_LIMIT_MB || 
 const videoChunkLimitMb = Math.max(5, Number(process.env.POSTWAVE_VIDEO_CHUNK_MB || 50) || 50);
 const videoChunkBytes = Math.floor(videoChunkLimitMb * 1024 * 1024 * 0.9);
 const transcodeConcurrency = Math.max(1, Number(process.env.POSTWAVE_TRANSCODE_CONCURRENCY || 1) || 1);
-const hlsSegmentSeconds = Math.max(2, Number(process.env.POSTWAVE_HLS_SEGMENT_SECONDS || 5) || 5);
-const bunnyHlsUploadConcurrency = Math.min(12, Math.max(1, Number(process.env.POSTWAVE_BUNNY_UPLOAD_CONCURRENCY || 6) || 6));
+const hlsSegmentSeconds = Math.max(2, Number(process.env.POSTWAVE_HLS_SEGMENT_SECONDS || 10) || 10);
+const bunnyHlsUploadConcurrency = Math.min(12, Math.max(1, Number(process.env.POSTWAVE_BUNNY_UPLOAD_CONCURRENCY || 8) || 8));
 const hlsLandscapeMaxWidth = 1280;
 const hlsLandscapeMaxHeight = 720;
 const hlsPortraitMaxWidth = 720;
@@ -1795,6 +1795,7 @@ function normalizeMediaRecord(record = {}, { includeInternal = false } = {}) {
     playlistStoragePath: String(record.playlistStoragePath || metadata.playlistStoragePath || ""),
     keyStoragePath: String(record.keyStoragePath || metadata.keyStoragePath || ""),
     hlsSegmentSeconds: Number(record.hlsSegmentSeconds ?? metadata.hlsSegmentSeconds ?? 0) || 0,
+    uploadProgress: record.uploadProgress || metadata.uploadProgress || null,
     createdAt: record.createdAt || record.created_at || metadata.createdAt || "",
     date: record.date || metadata.date || (record.created_at ? new Date(record.created_at).toLocaleString() : "")
   };
@@ -2003,11 +2004,11 @@ async function runTranscodeJob(job) {
       posterUrl: job.posterUrl || "",
       posterStoragePath: job.posterStoragePath || "",
       posterMediaId: job.posterMediaId || ""
-    }, job.id, async (progress) => {
+    }, job.id, async (progress, uploadProgress) => {
       if (cancelledTranscodes.has(job.id)) return;
       if (progress <= lastUploadProgress) return;
       lastUploadProgress = progress;
-      await saveMediaRecord({ ...uploadProgressJob, progress });
+      await saveMediaRecord({ ...uploadProgressJob, progress, uploadProgress });
     });
     if (cancelledTranscodes.has(job.id)) {
       await deleteStoredMediaObjects(media).catch((error) => console.error(error));

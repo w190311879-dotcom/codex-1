@@ -124,6 +124,7 @@
     .media-filter.active, .media-page-btn.active { color: #fff; border-color: #18181b; background: #18181b; }
     .media-count { color: #64748b; font-weight: 900; }
     .media-page-btn { min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
+    .media-row small { display: block; margin-top: 4px; color: #64748b; font-size: 12px; font-weight: 800; line-height: 1.45; }
     body.admin-dark .media-controls { border-color: #253044; background: #111827; }
     body.admin-dark .media-filter, body.admin-dark .media-page-btn { color: #e5e7eb; border-color: #334155; background: #0f172a; }
     .comment-text { color: #475569; line-height: 1.6; }
@@ -1317,10 +1318,23 @@
       if (type === "video" || mime.startsWith("video/") || kind.includes("video") || String(item?.playbackType || "").toLowerCase() === "hls") return "video";
       return "image";
     }
+    function formatBytes(value) {
+      const bytes = Number(value) || 0;
+      if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)}GB`;
+      if (bytes >= 1024 * 1024) return `${Math.round(bytes / 1024 / 1024)}MB`;
+      if (bytes >= 1024) return `${Math.round(bytes / 1024)}KB`;
+      return `${bytes}B`;
+    }
     function mediaStatusCell(item) {
       const progress = Math.min(100, Math.max(0, Number(item.progress) || 0));
       if (item.status === "queued") return '<span>排队生成 HLS</span><div class="progress"><span style="width:100%"></span></div>';
-      if (item.status === "processing") return `<span>生成 HLS 中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
+      if (item.status === "processing") {
+        const upload = item.uploadProgress || null;
+        const uploadText = upload && progress >= 90
+          ? `<small>上传 Bunny：${Number(upload.uploadedFiles) || 0}/${Number(upload.totalFiles) || 0} 个文件 · ${formatBytes(upload.uploadedSize)}/${formatBytes(upload.totalSize)}</small>`
+          : "";
+        return `<span>${progress >= 90 ? "上传 Bunny 中" : "生成 HLS 中"} ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>${uploadText}`;
+      }
       if (item.status === "ready") return '<span class="status-ready">已完成</span>';
       if (item.status === "failed") return '<span class="status-failed">处理失败，请重新上传</span>';
       return `<span>上传中 ${progress}%</span><div class="progress"><span style="width:${progress}%"></span></div>`;
