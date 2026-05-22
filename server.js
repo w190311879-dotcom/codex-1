@@ -2270,8 +2270,8 @@ app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
   res.sendFile(path.join(__dirname, "vendor/lucide/lucide.min.js"));
 });
 app.get("/favicon.ico", (_req, res) => {
-  res.type("image/jpeg");
-  res.sendFile(path.join(__dirname, "assets/favicon.jpg"));
+  res.type("image/png");
+  res.sendFile(path.join(__dirname, "assets/favicon.png"));
 });
 app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
