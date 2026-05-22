@@ -2271,7 +2271,7 @@ app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
 });
 app.get("/favicon.ico", (_req, res) => {
   res.type("image/png");
-  res.sendFile(path.join(__dirname, "assets/favicon.png"));
+  res.sendFile(path.join(__dirname, "assets/favicon-51.png"));
 });
 app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
 app.use("/uploads", express.static(uploadsDir, { maxAge: "7d" }));
