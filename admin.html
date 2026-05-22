@@ -260,6 +260,7 @@
           <h2>广告位管理</h2>
           <div class="ad-tabs" id="adTabs">
             <button class="ad-tab active" data-ad-section="home-banner" type="button">首页广告</button>
+            <button class="ad-tab" data-ad-section="home-popup" type="button">首页弹窗广告</button>
             <button class="ad-tab" data-ad-section="home-feed" type="button">首页内容流广告</button>
             <button class="ad-tab" data-ad-section="detail-top" type="button">帖子标题下广告</button>
             <button class="ad-tab" data-ad-section="detail-text" type="button">标题文字广告</button>
@@ -462,6 +463,7 @@
       const title = String(ad.title || "");
       const aliases = {
         "home-banner": ["home-banner", "home", "首页广告"],
+        "home-popup": ["home-popup", "popup", "modal-ad", "首页弹窗广告", "弹窗广告", "首页弹窗"],
         "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
         "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
         "detail-text": ["detail-text", "text-ad", "post-title-text-ad", "帖子标题文字广告", "标题文字广告", "纯文字广告"],
@@ -1331,6 +1333,7 @@
     function adPlacementLabel(placement) {
       return {
         "home-banner": "首页广告",
+        "home-popup": "首页弹窗广告",
         "home-feed": "首页内容流广告",
         "detail-top": "帖子标题下广告",
         "detail-text": "标题文字广告",
@@ -1348,7 +1351,7 @@
       const entries = ads
         .map((ad, index) => ({ ad, index }))
         .filter(({ ad }) => currentAdSection === "square" ? square.includes(ad.placement) : ad.placement === currentAdSection);
-      if (["home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
+      if (["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
         return entries.sort((a, b) => (Number(a.ad.slot) || 1) - (Number(b.ad.slot) || 1) || a.index - b.index);
       }
       return entries;
@@ -1357,7 +1360,7 @@
       const isTextAd = currentAdSection === "detail-text";
       const imageButton = document.querySelector("#adImageInput").closest("label");
       document.querySelector("#squarePlacement").style.display = currentAdSection === "square" ? "" : "none";
-      document.querySelector("#adSlot").style.display = ["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? "" : "none";
+      document.querySelector("#adSlot").style.display = ["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? "" : "none";
       document.querySelector("#adSlot").max = isTextAd ? "20" : "";
       document.querySelector("#adTitle").placeholder = isTextAd ? "文字广告内容，例如 33直播" : "广告标题";
       document.querySelector("#adDesc").style.display = isTextAd ? "none" : "";
@@ -1430,8 +1433,8 @@
         <div class="ad-admin-item">
           <span><strong>${escapeHtml(ad.title)}</strong>${ad.desc ? `<br>${escapeHtml(ad.desc)}` : ""}<br><small>位置：${escapeHtml(adPlacementLabel(ad.placement))}${ad.slot ? ` · 插入位置 ${escapeHtml(ad.slot)}` : ""} · ${escapeHtml(ad.link || "app.html")}</small>${preview ? `<br><img class="ad-preview" src="${safeUrl(preview)}" alt="${escapeHtml(ad.title)}">` : ""}</span>
           <span class="mini-actions">
-            <button class="btn" data-move-ad="${index}" data-dir="-1" ${["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((Number(ad.slot) || 1) <= 1 ? "disabled" : "") : (position === 0 ? "disabled" : "")}>上移</button>
-            <button class="btn" data-move-ad="${index}" data-dir="1" ${["home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((currentAdSection === "detail-text" && (Number(ad.slot) || 1) >= 20) ? "disabled" : "") : (position === entries.length - 1 ? "disabled" : "")}>下移</button>
+            <button class="btn" data-move-ad="${index}" data-dir="-1" ${["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((Number(ad.slot) || 1) <= 1 ? "disabled" : "") : (position === 0 ? "disabled" : "")}>上移</button>
+            <button class="btn" data-move-ad="${index}" data-dir="1" ${["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((currentAdSection === "detail-text" && (Number(ad.slot) || 1) >= 20) ? "disabled" : "") : (position === entries.length - 1 ? "disabled" : "")}>下移</button>
             <button class="btn" data-remove-ad="${index}">删除</button>
           </span>
         </div>
@@ -1641,7 +1644,7 @@
         link: document.querySelector("#adLink").value || "app.html",
         image: uploadedAd.url,
         imageKey: "",
-        slot: ["home-feed", "detail-top"].includes(currentAdSection) ? Number(document.querySelector("#adSlot").value || 1) : 0,
+        slot: ["home-popup", "home-feed", "detail-top"].includes(currentAdSection) ? Number(document.querySelector("#adSlot").value || 1) : 0,
         placement: currentAdPlacement()
       };
       ads.push(nextAd);
@@ -1675,7 +1678,7 @@
       if (move) {
         const index = Number(move.dataset.moveAd);
         const dir = Number(move.dataset.dir);
-        if (["home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
+        if (["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
           const maxSlot = currentAdSection === "detail-text" ? 20 : Number.MAX_SAFE_INTEGER;
           ads[index].slot = Math.max(1, Math.min(maxSlot, (Number(ads[index].slot) || 1) + dir));
           save("postwave_ads", ads);
