@@ -1272,6 +1272,10 @@ function isRouteSelectorPath(pathname = "") {
   return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
 }
 
+function isEntryHostDirectAssetPath(pathname = "") {
+  return pathname === "/favicon.ico" || pathname.startsWith("/assets/");
+}
+
 function enforceHostBoundary(req, res, next) {
   if (!hasConfiguredSplitHosts() || isLocalRequest(req)) {
     next();
@@ -1279,6 +1283,10 @@ function enforceHostBoundary(req, res, next) {
   }
 
   if (hostInList(req, routeEntryHosts())) {
+    if (isEntryHostDirectAssetPath(req.path)) {
+      next();
+      return;
+    }
     res.redirect(302, routeSelectorUrl());
     return;
   }
