@@ -138,6 +138,9 @@
     .picker-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
     .picker-head h2 { margin: 0; }
     .video-choice { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid #dbe4ef; border-radius: 8px; margin-top: 8px; }
+    .video-picker-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
+    .video-picker-page { min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
+    .video-picker-page.active { color: #fff; border-color: #18181b; background: #18181b; }
     .mini-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .mini-actions .btn { height: 34px; padding: 0 10px; }
     .toast { position: fixed; right: 18px; bottom: 18px; z-index: 20; min-width: 220px; padding: 12px 14px; border-radius: 8px; color: #fff; background: #111827; box-shadow: 0 14px 40px rgba(15,23,42,.25); opacity: 0; transform: translateY(12px); pointer-events: none; transition: .18s ease; font-weight: 900; }
@@ -412,6 +415,8 @@
     const MEDIA_PAGE_SIZE = 20;
     let mediaFilter = "all";
     let mediaPage = 1;
+    const VIDEO_PICKER_PAGE_SIZE = 20;
+    let videoPickerPage = 1;
     let serverComments = [];
     let currentCoverData = "";
     let currentVideoData = "";
@@ -1343,6 +1348,21 @@
       if (mediaTypeOf(item) === "video") return `${item.format || "HLS"} · ${item.quality || "720P"}${item.encrypted ? " · AES-128" : ""}`;
       return item.mimeType || item.kind || "图片";
     }
+    function mediaTimeValue(item) {
+      const candidates = [
+        item?.createdAt,
+        item?.created_at,
+        item?.updatedAt,
+        item?.updated_at,
+        item?.date,
+        item?.time
+      ];
+      for (const value of candidates) {
+        const time = new Date(value).getTime();
+        if (Number.isFinite(time)) return time;
+      }
+      return 0;
+    }
     function filteredMediaItems() {
       return mediaLibrary.filter((item) => mediaFilter === "all" || mediaTypeOf(item) === mediaFilter);
     }
@@ -1615,6 +1635,7 @@
     document.querySelector("#insertVideoBtn").addEventListener("click", async () => {
       pendingBodyInsertionRange = currentBodySelectionRange();
       await loadMediaLibraryFromApi({ render: false });
+      videoPickerPage = 1;
       renderVideoPicker();
       document.querySelector("#videoPicker").classList.add("active");
     });
@@ -1643,15 +1664,34 @@
       }
     });
     function renderVideoPicker() {
-      const ready = mediaLibrary.filter((item) => item.type === "video" && item.status === "ready");
-      document.querySelector("#videoPickerList").innerHTML = ready.length ? ready.map((item) => `
+      const ready = mediaLibrary
+        .filter((item) => item.type === "video" && item.status === "ready")
+        .sort((a, b) => mediaTimeValue(b) - mediaTimeValue(a));
+      const totalPages = Math.max(1, Math.ceil(ready.length / VIDEO_PICKER_PAGE_SIZE));
+      videoPickerPage = Math.min(Math.max(1, videoPickerPage), totalPages);
+      const pageItems = ready.slice((videoPickerPage - 1) * VIDEO_PICKER_PAGE_SIZE, videoPickerPage * VIDEO_PICKER_PAGE_SIZE);
+      const rows = pageItems.length ? pageItems.map((item) => `
         <div class="video-choice">
           <span><strong>${escapeHtml(item.name)}</strong><br><small>${escapeHtml(item.format || "HLS")} · ${escapeHtml(item.quality || "720P")} · ${item.encrypted ? "AES-128 · " : ""}${item.aspect === "9-16" ? "9:16" : "16:9"} · ${escapeHtml(item.segments)} 段</small></span>
           <button class="btn dark" data-pick-video="${escapeHtml(item.id)}">插入</button>
         </div>
       `).join("") : `<div class="video-choice"><span>暂无已处理视频，请先到“视频上传”完成上传和 HLS 处理。</span><button class="btn" type="button">等待</button></div>`;
+      const pager = totalPages > 1 ? `
+        <div class="video-picker-pager">
+          <button class="video-picker-page" data-video-picker-page="${videoPickerPage - 1}" ${videoPickerPage <= 1 ? "disabled" : ""}>上一页</button>
+          ${Array.from({ length: totalPages }, (_, index) => `<button class="video-picker-page ${index + 1 === videoPickerPage ? "active" : ""}" data-video-picker-page="${index + 1}">${index + 1}</button>`).join("")}
+          <button class="video-picker-page" data-video-picker-page="${videoPickerPage + 1}" ${videoPickerPage >= totalPages ? "disabled" : ""}>下一页</button>
+        </div>
+      ` : "";
+      document.querySelector("#videoPickerList").innerHTML = `${rows}${pager}`;
     }
     document.querySelector("#videoPickerList").addEventListener("click", (event) => {
+      const pageButton = event.target.closest("[data-video-picker-page]");
+      if (pageButton) {
+        videoPickerPage = Number(pageButton.dataset.videoPickerPage) || 1;
+        renderVideoPicker();
+        return;
+      }
       const button = event.target.closest("[data-pick-video]");
       if (!button) return;
       appendToBody(`[视频:${button.dataset.pickVideo}]`);
