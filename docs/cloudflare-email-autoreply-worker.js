@@ -1,6 +1,5 @@
 const DEFAULT_CONFIG = {
   from: "51视频最新地址 <get@51cmtv.com>",
-  replyTo: "get@51cmtv.com",
   subject: "51视频最新地址",
   text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
 };
@@ -8,7 +7,6 @@ const DEFAULT_CONFIG = {
 function fallbackConfig(env) {
   return {
     from: env.REPLY_FROM || DEFAULT_CONFIG.from,
-    replyTo: env.REPLY_TO || DEFAULT_CONFIG.replyTo,
     subject: env.REPLY_SUBJECT || DEFAULT_CONFIG.subject,
     text: env.REPLY_TEXT || DEFAULT_CONFIG.text
   };
@@ -32,7 +30,6 @@ async function loadConfig(env) {
     const data = await response.json();
     return {
       from: String(data.from || fallback.from),
-      replyTo: String(env.REPLY_TO || fallback.replyTo),
       subject: String(data.subject || fallback.subject),
       text: String(data.text || fallback.text)
     };
@@ -69,7 +66,6 @@ export default {
     const payload = {
       from: config.from,
       to: recipient,
-      reply_to: config.replyTo,
       subject: config.subject,
       text: config.text
     };
