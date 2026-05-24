@@ -3067,7 +3067,8 @@ function seoCanonical(origin = "", pathname = "/") {
   return `${base}${pathValue.startsWith("/") ? pathValue : `/${pathValue}`}`;
 }
 
-function seoDefaultImage(req) {
+function seoDefaultImage(req, origin = "") {
+  if (origin) return seoCanonical(origin, "/assets/logo.png");
   return absolutePublicUrl(req, "/assets/logo.png");
 }
 
@@ -3329,15 +3330,134 @@ function detailClientPost(post = {}, includeBody = false) {
   };
 }
 
-function detailSeoHead(req, post, description, mediaById = new Map()) {
+function homeSeoHead(req, settings = {}, posts = []) {
+  const siteName = seoSiteName(settings);
+  const title = `${siteName} - 吃瓜爆料 + 成人视频，一站搞定`;
+  const description = seoDescription(settings);
+  const canonical = seoCanonical(canonicalSiteOrigin(req), "/");
+  const image = seoDefaultImage(req);
+  const listItems = posts.slice(0, 26).map((post, index) => {
+    const item = {
+      "@type": "ListItem",
+      position: index + 1,
+      url: detailUrl(req, post),
+      name: post.title
+    };
+    const postImage = absolutePublicUrl(req, post.image || post.cover || "");
+    if (postImage) item.image = postImage;
+    return item;
+  });
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        name: siteName,
+        url: canonical,
+        description,
+        inLanguage: "zh-CN",
+        image,
+        isFamilyFriendly: false
+      },
+      {
+        "@type": "CollectionPage",
+        name: title,
+        url: canonical,
+        description,
+        inLanguage: "zh-CN",
+        image,
+        isFamilyFriendly: false,
+        mainEntity: {
+          "@type": "ItemList",
+          itemListElement: listItems
+        }
+      }
+    ]
+  };
+  return {
+    title,
+    meta: seoHeadTags({
+      title,
+      description,
+      canonical,
+      image,
+      type: "website",
+      siteName,
+      imageAlt: `${siteName} Logo`,
+      jsonLd
+    })
+  };
+}
+
+function routeSelectorCanonicalOrigin(req) {
+  if (!isLocalRequest(req) && routeSelectorOrigin) return routeSelectorOrigin;
+  return requestHostOrigin(req) || routeSelectorOrigin || canonicalSiteOrigin(req);
+}
+
+function routeSelectorSeoHead(req, settings = {}) {
+  const siteName = routeSelectorTitle || seoSiteName(settings);
+  const title = `${siteName} - 最新线路导航`;
+  const description = truncateText(routeSelectorSubtitle || "获取51春梦最新地址，选择可用线路访问内容站。", 160);
+  const origin = routeSelectorCanonicalOrigin(req);
+  const canonical = seoCanonical(origin, "/");
+  const image = seoDefaultImage(req, origin);
+  const lineUrls = routeLines.map((line) => normalizeOrigin(line.origin)).filter(Boolean).map((origin) => `${origin}/`);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        name: siteName,
+        url: canonical,
+        description,
+        inLanguage: "zh-CN",
+        image,
+        sameAs: lineUrls,
+        isFamilyFriendly: false
+      },
+      {
+        "@type": "SiteNavigationElement",
+        name: "线路选择",
+        url: lineUrls.length ? lineUrls : [canonical]
+      }
+    ]
+  };
+  return {
+    title,
+    meta: seoHeadTags({
+      title,
+      description,
+      canonical,
+      image,
+      type: "website",
+      siteName,
+      imageAlt: `${siteName} Logo`,
+      jsonLd
+    })
+  };
+}
+
+function detailSeoHead(req, post, description, mediaById = new Map(), settings = {}) {
   const canonical = detailUrl(req, post);
   const image = absolutePublicUrl(req, post.image || post.cover || post.bodyImages?.[0] || "");
-  const title = `${post.title} - 51春梦`;
+  const siteName = seoSiteName(settings);
+  const fallbackImage = seoDefaultImage(req);
+  const title = `${post.title} - ${siteName}`;
   const published = parsePostDate(post.date);
   const images = [post.image || post.cover, ...(post.bodyImages || [])]
     .map((url) => absolutePublicUrl(req, url))
     .filter(Boolean)
     .slice(0, 8);
+  if (!images.length && fallbackImage) images.push(fallbackImage);
+  const articleTags = uniqueList([
+    ...normalizeArray(post.tags),
+    ...normalizeArray(post.keywords)
+  ].map((item) => String(item).replace(/^#+/, "").trim()).filter(Boolean)).slice(0, 12);
+  const publisher = {
+    "@type": "Organization",
+    name: siteName,
+    logo: fallbackImage ? { "@type": "ImageObject", url: fallbackImage } : undefined
+  };
   const article = {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -3345,11 +3465,14 @@ function detailSeoHead(req, post, description, mediaById = new Map()) {
     description,
     image: images,
     author: { "@type": "Person", name: post.author || "51春梦" },
+    publisher,
     datePublished: published || undefined,
     dateModified: published || undefined,
     keywords: normalizeArray(post.keywords).join(", "),
     articleSection: post.categories?.length ? post.categories.join(", ") : post.category,
-    mainEntityOfPage: canonical
+    mainEntityOfPage: canonical,
+    inLanguage: "zh-CN",
+    isFamilyFriendly: false
   };
   const videos = extractPostVideoIds(post).map((id) => {
     const media = mediaById.get(id);
@@ -3363,26 +3486,29 @@ function detailSeoHead(req, post, description, mediaById = new Map()) {
       uploadDate: published || undefined,
       duration: isoDuration(media?.duration),
       contentUrl: absolutePublicUrl(req, media?.url || ""),
-      embedUrl: canonical
+      embedUrl: canonical,
+      inLanguage: "zh-CN",
+      isFamilyFriendly: false
     };
   });
   const graph = [article, ...videos].map((item) => Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined && value !== "" && !(Array.isArray(value) && !value.length))));
   const jsonLd = graph.length === 1 ? graph[0] : { "@context": "https://schema.org", "@graph": graph.map(({ "@context": _context, ...item }) => item) };
-  const meta = [
-    `<meta name="description" content="${htmlEscape(description)}">`,
-    `<meta name="rating" content="adult">`,
-    `<link rel="canonical" href="${htmlEscape(canonical)}">`,
-    `<meta property="og:type" content="article">`,
-    `<meta property="og:title" content="${htmlEscape(post.title)}">`,
-    `<meta property="og:description" content="${htmlEscape(description)}">`,
-    `<meta property="og:url" content="${htmlEscape(canonical)}">`,
-    image ? `<meta property="og:image" content="${htmlEscape(image)}">` : "",
-    `<meta name="twitter:card" content="summary_large_image">`,
-    `<meta name="twitter:title" content="${htmlEscape(post.title)}">`,
-    `<meta name="twitter:description" content="${htmlEscape(description)}">`,
-    image ? `<meta name="twitter:image" content="${htmlEscape(image)}">` : "",
-    `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
-  ].filter(Boolean).join("\n  ");
+  const meta = seoHeadTags({
+    title,
+    description,
+    canonical,
+    image: image || fallbackImage,
+    type: "article",
+    siteName,
+    imageAlt: post.title,
+    extra: [
+      published ? `<meta property="article:published_time" content="${htmlEscape(published)}">` : "",
+      published ? `<meta property="article:modified_time" content="${htmlEscape(published)}">` : "",
+      post.category ? `<meta property="article:section" content="${htmlEscape(post.category)}">` : "",
+      ...articleTags.map((tag) => `<meta property="article:tag" content="${htmlEscape(tag)}">`)
+    ].filter(Boolean),
+    jsonLd
+  });
   return { title, canonical, meta };
 }
 
@@ -3522,7 +3648,7 @@ async function renderSitemapXml(req, res, next) {
   }
 }
 
-async function renderIndexPage(_req, res, next) {
+async function renderIndexPage(req, res, next) {
   try {
     const [rawPosts, settings, html] = await Promise.all([
       readPosts(),
@@ -3545,19 +3671,39 @@ async function renderIndexPage(_req, res, next) {
     const postHtml = rows.join("");
     const pageTitle = settings.siteConfig?.tabs?.[0]?.name || "首页";
     const pageSubtitle = settings.siteConfig?.tabs?.[0]?.subtitle || "精选图文与视频内容，按发布时间聚合展示。";
+    const seo = homeSeoHead(req, settings, posts);
     const ssrPayload = {
       posts: rawPosts,
       siteConfig: settings.siteConfig,
       footer: settings.footer,
       ads: settings.ads
     };
-    const rendered = html
+    const rendered = injectSeoHead(html, seo.meta)
+      .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
       .replace("</head>", `${ssrJsonScript(ssrPayload)}\n</head>`)
       .replace('<h1 class="page-title" id="pageTitle">首页</h1>', `<h1 class="page-title" id="pageTitle">${htmlEscape(pageTitle)}</h1>`)
       .replace('<p class="page-subtitle" id="pageSubtitle">精选图文与视频内容，按发布时间聚合展示。</p>', `<p class="page-subtitle" id="pageSubtitle">${htmlEscape(pageSubtitle)}</p>`)
       .replace('<section class="content-list" id="postList" aria-label="内容列表"></section>', `<section class="content-list" id="postList" aria-label="内容列表">${postHtml}</section>`)
       .replace('<div class="empty" id="emptyState">没有找到匹配内容</div>', `<div class="empty" id="emptyState" style="${pagePosts.length ? "display:none" : "display:block"}">没有找到匹配内容</div>`)
       .replace('<nav class="pager" id="pager" aria-label="分页"></nav>', `<nav class="pager" id="pager" aria-label="分页">${ssrPager(totalPages, 1)}</nav>`);
+    res.type("html").send(rendered);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function renderRouteSelectPage(req, res, next) {
+  try {
+    const [settings, html] = await Promise.all([
+      readSiteSettings(),
+      fs.readFile(path.join(__dirname, "route-select.html"), "utf8")
+    ]);
+    const seo = routeSelectorSeoHead(req, settings);
+    const rendered = injectSeoHead(html, seo.meta)
+      .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
+      .replace('<h1 id="title">51春梦</h1>', `<h1 id="title">${htmlEscape(routeSelectorTitle || seoSiteName(settings))}</h1>`)
+      .replace('<p class="subtitle" id="subtitle">看片吃瓜，把心动留给你。</p>', `<p class="subtitle" id="subtitle">${htmlEscape(routeSelectorSubtitle)}</p>`)
+      .replace('document.title = "51春梦 - 吃瓜爆料 + 成人视频，一站搞定";', `document.title = ${JSON.stringify(seo.title)};`);
     res.type("html").send(rendered);
   } catch (error) {
     next(error);
@@ -3585,7 +3731,7 @@ async function renderDetailPage(req, res, next) {
     const videoIds = extractPostVideoIds(current);
     const mediaById = await mediaMapForVideoIds(videoIds);
     const description = detailDescription(current);
-    const seo = detailSeoHead(req, current, description, mediaById);
+    const seo = detailSeoHead(req, current, description, mediaById, settings);
     const contentHtml = ssrDetailContent(current, mediaById);
     const categories = current.categories && current.categories.length ? current.categories.join("、") : current.category;
     const clientPosts = posts.map((post) => detailClientPost(post, String(post.id) === String(current.id)));
@@ -3600,9 +3746,9 @@ async function renderDetailPage(req, res, next) {
       media
     };
 
-    const rendered = html
+    const rendered = injectSeoHead(html, seo.meta)
       .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
-      .replace("</head>", `  ${seo.meta}\n  ${ssrDetailJsonScript(ssrPayload)}\n</head>`)
+      .replace("</head>", `${ssrDetailJsonScript(ssrPayload)}\n</head>`)
       .replace('<span id="crumbTitle">帖子详情</span>', `<span id="crumbTitle">${htmlEscape(current.title)}</span>`)
       .replace('<h1 id="title">帖子详情</h1>', `<h1 id="title">${htmlEscape(current.title)}</h1>`)
       .replace('<span id="author"></span>', `<span id="author">${htmlEscape(current.author || "alun")}</span>`)
@@ -3634,7 +3780,7 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
 
 app.get("/robots.txt", renderRobotsTxt);
 app.get("/sitemap.xml", renderSitemapXml);
-app.get("/route-select.html", sendHtmlPage("route-select.html"));
+app.get("/route-select.html", renderRouteSelectPage);
 app.get(["/", "/index.html"], renderIndexPage);
 app.get("/detail.html", renderDetailPage);
 app.get("/app.html", sendHtmlPage("app.html"));
