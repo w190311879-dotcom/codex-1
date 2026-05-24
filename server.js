@@ -3358,6 +3358,20 @@ function detailClientPost(post = {}, includeBody = false) {
   };
 }
 
+function homeClientPost(post = {}) {
+  return {
+    id: post.id,
+    title: post.title,
+    image: post.image || post.cover || "",
+    author: post.author || "alun",
+    date: post.date || "",
+    category: post.category || "",
+    categories: post.categories || [],
+    keywords: post.keywords || [],
+    tags: post.tags || []
+  };
+}
+
 function homeSeoHead(req, settings = {}, posts = [], category = "首页") {
   const siteName = seoSiteName(settings);
   const isHome = !category || category === "首页";
@@ -3722,7 +3736,10 @@ async function renderIndexPage(req, res, next) {
     const pageSubtitle = activeTab?.subtitle || `${activeCategory}内容聚合展示。`;
     const seo = homeSeoHead(req, settings, filteredPosts, activeCategory);
     const ssrPayload = {
-      posts: rawPosts,
+      posts: pagePosts.map(homeClientPost),
+      postsPartial: true,
+      postsCount: filteredPosts.length,
+      totalPages,
       siteConfig: settings.siteConfig,
       footer: settings.footer,
       ads: settings.ads,

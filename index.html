@@ -487,6 +487,7 @@
     }
     const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
     let adminPostSource = Array.isArray(ssrData.posts) ? ssrData.posts : (Array.isArray(localAdminPostSource) ? localAdminPostSource : []);
+    let postsArePartial = Boolean(ssrData.postsPartial);
     let adminPosts = mapAdminPosts(adminPostSource);
     function combinedPosts() {
       return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
@@ -645,6 +646,7 @@
       const apiText = JSON.stringify(apiPosts);
       if (localText === apiText) return;
       adminPostSource = apiPosts;
+      postsArePartial = false;
       adminPosts = mapAdminPosts(adminPostSource);
       posts = combinedPosts();
       if (localPostFallbackEnabled) localStorage.setItem("postwave_posts", apiText);
@@ -671,7 +673,7 @@
       }
       renderSiteChrome();
       renderNav();
-      renderPosts();
+      if (!postsArePartial) renderPosts();
       renderRecommend();
       renderAds();
     }
@@ -885,7 +887,7 @@
       renderPosts();
     });
     renderNav();
-    renderPosts();
+    if (!postsArePartial) renderPosts();
     renderRecommend();
     renderAds();
     loadSiteSettingsFromApi();
