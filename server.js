@@ -256,7 +256,7 @@ const defaultSiteSettings = {
     text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
   },
   footer: {
-    introText: "PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+    introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
     quickLinks: [
       { label: "首页", href: "/", icon: "home" },
       { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
@@ -288,7 +288,7 @@ const defaultSiteSettings = {
       { label: "2257合规声明", href: "#compliance" }
     ]
   },
-  notice: "欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
+  notice: "欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
 };
 
 app.use(express.json({ limit: "80mb" }));
@@ -2674,6 +2674,6 @@ if (storageMode === "postgres") {
 await resumePendingTranscodes();
 
 app.listen(port, () => {
-  console.log(`PostWave server running at http://localhost:${port}`);
+  console.log(`51cm server running at http://localhost:${port}`);
   console.log(`Posts storage mode: ${storageMode}`);
 });

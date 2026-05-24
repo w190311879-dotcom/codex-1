@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PublishHub 后台</title>
+  <title>51cm 后台</title>
   <link rel="icon" type="image/png" href="/assets/favicon-51.png">
   <link rel="apple-touch-icon" href="/assets/favicon-51.png">
   <script src="/vendor/hls/hls.min.js"></script>
@@ -154,7 +154,7 @@
 <body>
   <div class="app">
     <aside class="sidebar">
-      <a class="brand" href="index.html"><span class="brand-icon"><i data-lucide="command"></i></span><span>PublishHub<small>Ver 1.0.1</small></span></a>
+      <a class="brand" href="index.html"><span class="brand-icon"><i data-lucide="command"></i></span><span>51cm<small>Ver 1.0.1</small></span></a>
       <nav>
         <div class="group-title">常规</div>
         <a class="side-link active" href="#" data-view="publish"><i data-lucide="route"></i>帖子发布</a>
@@ -269,7 +269,7 @@
       <section class="view hidden" id="appearanceView">
         <div class="settings">
           <h2>外观与栏目</h2>
-          <input class="field" id="siteNameInput" value="PostWave" placeholder="网站名称，仅用于标题和版权">
+          <input class="field" id="siteNameInput" value="51春梦" placeholder="网站名称，仅用于标题和版权">
           <div class="logo-config">
             <div class="logo-preview" id="logoPreview"><img src="/assets/logo.png" alt="固定 Logo"></div>
             <div style="color:#64748b;font-weight:900;line-height:1.7">前台 Logo 已固定使用项目内 <code>/assets/logo.png</code>，不再从后台配置读取。</div>
@@ -338,7 +338,7 @@
           <button class="btn dark" id="saveFooter">保存导航页脚</button>
         </div>
       </section>
-      <section class="view hidden" id="noticeView"><div class="settings"><h2>官方公告</h2><textarea class="field" id="noticeText" style="min-height:140px;padding:14px">欢迎来到 PostWave。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。</textarea><button class="btn dark" id="saveNotice">保存公告</button></div></section>
+      <section class="view hidden" id="noticeView"><div class="settings"><h2>官方公告</h2><textarea class="field" id="noticeText" style="min-height:140px;padding:14px">欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。</textarea><button class="btn dark" id="saveNotice">保存公告</button></div></section>
       <section class="view hidden" id="emailView">
         <div class="settings">
           <h2>自动回信</h2>
@@ -441,7 +441,7 @@
     let authors = defaultAuthors.slice();
     localStorage.removeItem("postwave_authors");
     const defaultSiteConfig = {
-      siteName: "PostWave",
+      siteName: "51春梦",
       logoImage: "",
       commentLogoText: "51暗网",
       tabs: [
@@ -457,7 +457,7 @@
     let siteConfig = JSON.parse(JSON.stringify(defaultSiteConfig));
     currentLogoImage = siteConfig.logoImage || "";
     const defaultFooterConfig = {
-      introText: "PostWave 是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+      introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
       quickLinks: [
         { label: "首页", href: "/", icon: "home" },
         { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
@@ -758,7 +758,7 @@
       document.querySelector("#latestCount").value = adConfig.latest || 10;
       document.querySelector("#friendCount").value = adConfig.friend || 10;
       document.querySelector("#noticeText").value = typeof settings.notice === "string" ? settings.notice : document.querySelector("#noticeText").value;
-      document.querySelector("#siteNameInput").value = siteConfig.siteName || "PostWave";
+      document.querySelector("#siteNameInput").value = siteConfig.siteName || "51春梦";
       document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
       footerConfig = normalizeFooterConfig(settings.footer || footerConfig);
       document.querySelector("#logoPreview").innerHTML = `<img src="/assets/logo.png" alt="固定 Logo">`;
@@ -1996,7 +1996,7 @@
     document.querySelector("#saveAppearance").addEventListener("click", () => {
       const tabs = collectSiteTabs();
       siteConfig = {
-        siteName: document.querySelector("#siteNameInput").value.trim() || "PostWave",
+        siteName: document.querySelector("#siteNameInput").value.trim() || "51春梦",
         logoImage: "",
         commentLogoText: document.querySelector("#commentLogoInput").value.trim() || "51暗网",
         tabs: tabs.length ? tabs : defaultSiteConfig.tabs
