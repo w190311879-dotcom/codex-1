@@ -308,8 +308,9 @@
         { label: "2257合规声明", href: "#compliance" }
       ]
     };
-    let siteConfig = defaultSiteConfig;
-    let footerConfig = defaultFooterConfig;
+    const ssrData = window.POSTWAVE_SSR_DATA || {};
+    let siteConfig = ssrData.siteConfig || defaultSiteConfig;
+    let footerConfig = normalizeFooterConfig(ssrData.footer || defaultFooterConfig);
     document.title = publicSiteTitle;
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
@@ -466,7 +467,7 @@
       }));
     }
     const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
-    let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
+    let adminPostSource = Array.isArray(ssrData.posts) ? ssrData.posts : (Array.isArray(localAdminPostSource) ? localAdminPostSource : []);
     let adminPosts = mapAdminPosts(adminPostSource);
     function combinedPosts() {
       return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
@@ -476,7 +477,7 @@
       { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
       { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "home-banner" }
     ];
-    let ads = null;
+    let ads = Array.isArray(ssrData.ads) ? ssrData.ads : null;
     function normalizeAdPlacement(ad) {
       const raw = String(ad.placement || ad.position || ad.adPlacement || ad.section || ad.area || ad.type || "").trim();
       const key = raw.toLowerCase();

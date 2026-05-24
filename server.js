@@ -2480,6 +2480,129 @@ function sendHtmlPage(filename) {
   };
 }
 
+function htmlEscape(value = "") {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
+
+function safePublicUrl(value = "", fallback = "") {
+  const url = String(value || "").trim();
+  if (/^(https?:|data:image\/|\/|app\.html|admin-login\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
+  return fallback;
+}
+
+function ssrJsonScript(data) {
+  return `<script>window.POSTWAVE_SSR_DATA=${JSON.stringify(data).replace(/</g, "\\u003c")};</script>`;
+}
+
+function publicPostForHome(post = {}, index = 0) {
+  const categories = Array.isArray(post.categories) && post.categories.length
+    ? post.categories
+    : normalizeArray(post.category);
+  return {
+    ...post,
+    id: String(post.id || post.clientId || post.client_id || `post-${index}`),
+    title: post.title || "未命名帖子",
+    image: post.cover || post.cover_url || post.image || "",
+    author: post.author || "alun",
+    date: post.date || post.date_text || "",
+    category: post.category || categories[0] || "内容",
+    categories,
+    tags: normalizeArray(post.tags),
+    keywords: normalizeArray(post.keywords),
+    body: post.body || ""
+  };
+}
+
+function ssrPostRow(post) {
+  const categories = post.categories && post.categories.length ? post.categories.join("、") : post.category;
+  return `
+        <a class="post-row" href="detail.html?id=${encodeURIComponent(post.id)}">
+          <img src="${htmlEscape(safePublicUrl(post.image))}" alt="${htmlEscape(post.title)}">
+          <div class="post-content">
+            <h2 class="post-title">${htmlEscape(post.title)}</h2>
+            <p class="post-meta"><span>${htmlEscape(post.author || "alun")}</span><span>·</span><span>${htmlEscape(post.date || "")}</span><span>·</span><span>${htmlEscape(categories || "内容")}</span></p>
+          </div>
+        </a>
+      `;
+}
+
+function normalizeSsrAd(ad = {}) {
+  const possibleUrl = String(ad.url || "");
+  const urlIsImage = /^(data:image|blob:)|\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(possibleUrl);
+  return {
+    ...ad,
+    title: ad.title || "",
+    desc: ad.desc || "",
+    link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+    image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+    slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
+    placement: ad.placement || "home-banner"
+  };
+}
+
+function ssrFeedAdRow(ad) {
+  if (!ad.image) return "";
+  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}"><img src="${htmlEscape(safePublicUrl(ad.image))}" alt="${htmlEscape(ad.title || "广告")}"><div class="post-content" aria-hidden="true"></div></a>`;
+}
+
+function ssrPager(totalPages, currentPage = 1) {
+  return `
+        <button class="page-btn" data-prev ${currentPage === 1 ? "disabled" : ""}>上一页</button>
+        ${Array.from({ length: totalPages }, (_, i) => `<button class="page-btn ${i + 1 === currentPage ? "active" : ""}" data-page="${i + 1}">${i + 1}</button>`).join("")}
+        <button class="page-btn" data-next ${currentPage === totalPages ? "disabled" : ""}>下一页</button>
+        <input class="page-jump" id="pageJumpInput" type="number" min="1" max="${totalPages}" value="${currentPage}" aria-label="跳转页码">
+        <button class="page-btn" data-jump>跳转</button>
+      `;
+}
+
+async function renderIndexPage(_req, res, next) {
+  try {
+    const [rawPosts, settings, html] = await Promise.all([
+      readPosts(),
+      readSiteSettings(),
+      fs.readFile(path.join(__dirname, "index.html"), "utf8")
+    ]);
+    const perPage = 26;
+    const posts = rawPosts.map(publicPostForHome);
+    const pagePosts = posts.slice(0, perPage);
+    const totalPages = Math.max(1, Math.ceil(posts.length / perPage));
+    const feedAds = (settings.ads || [])
+      .map(normalizeSsrAd)
+      .filter((ad) => ad.placement === "home-feed" && ad.image)
+      .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1));
+    const rows = pagePosts.map(ssrPostRow);
+    feedAds.forEach((ad, order) => {
+      const slot = Math.max(1, Math.min(rows.length + 1, Number(ad.slot) || order + 1));
+      rows.splice(slot - 1, 0, ssrFeedAdRow(ad));
+    });
+    const postHtml = rows.join("");
+    const pageTitle = settings.siteConfig?.tabs?.[0]?.name || "首页";
+    const pageSubtitle = settings.siteConfig?.tabs?.[0]?.subtitle || "精选图文与视频内容，按发布时间聚合展示。";
+    const ssrPayload = {
+      posts: rawPosts,
+      siteConfig: settings.siteConfig,
+      footer: settings.footer,
+      ads: settings.ads
+    };
+    const rendered = html
+      .replace("</head>", `${ssrJsonScript(ssrPayload)}\n</head>`)
+      .replace('<h1 class="page-title" id="pageTitle">首页</h1>', `<h1 class="page-title" id="pageTitle">${htmlEscape(pageTitle)}</h1>`)
+      .replace('<p class="page-subtitle" id="pageSubtitle">精选图文与视频内容，按发布时间聚合展示。</p>', `<p class="page-subtitle" id="pageSubtitle">${htmlEscape(pageSubtitle)}</p>`)
+      .replace('<section class="content-list" id="postList" aria-label="内容列表"></section>', `<section class="content-list" id="postList" aria-label="内容列表">${postHtml}</section>`)
+      .replace('<div class="empty" id="emptyState">没有找到匹配内容</div>', `<div class="empty" id="emptyState" style="${pagePosts.length ? "display:none" : "display:block"}">没有找到匹配内容</div>`)
+      .replace('<nav class="pager" id="pager" aria-label="分页"></nav>', `<nav class="pager" id="pager" aria-label="分页">${ssrPager(totalPages, 1)}</nav>`);
+    res.type("html").send(rendered);
+  } catch (error) {
+    next(error);
+  }
+}
+
 app.use((req, res, next) => {
   if (hostMatches(req, mediaHost) && !req.path.startsWith("/uploads/") && req.path !== "/config.js") {
     res.status(404).send("Media host only serves uploaded files.");
@@ -2493,7 +2616,7 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
 });
 
 app.get("/route-select.html", sendHtmlPage("route-select.html"));
-app.get(["/", "/index.html"], sendHtmlPage("index.html"));
+app.get(["/", "/index.html"], renderIndexPage);
 app.get("/detail.html", sendHtmlPage("detail.html"));
 app.get("/app.html", sendHtmlPage("app.html"));
 app.get("/qq.html", sendHtmlPage("qq.html"));
