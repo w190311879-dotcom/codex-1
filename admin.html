@@ -296,6 +296,14 @@
             <div class="metric-card"><span>当前在线</span><strong id="wmOnline">0</strong><small>最近 5 分钟活跃访客</small></div>
             <div class="metric-card"><span>今日 PV</span><strong id="wmTodayPv">0</strong><small>按上海时间统计</small></div>
             <div class="metric-card"><span>今日 UV</span><strong id="wmTodayUv">0</strong><small>去重访客数</small></div>
+            <div class="metric-card"><span>独立 IP</span><strong id="wmTodayIp">0</strong><small>今日去重 IP</small></div>
+            <div class="metric-card"><span>Session</span><strong id="wmSessions">0</strong><small>今日访问会话</small></div>
+            <div class="metric-card"><span>平均停留</span><strong id="wmAvgStay">0秒</strong><small>基于心跳统计</small></div>
+            <div class="metric-card"><span>搜索流量</span><strong id="wmSearchTraffic">0</strong><small>Google/Bing/百度</small></div>
+            <div class="metric-card"><span>VV 播放</span><strong id="wmVideoViews">0</strong><small>视频播放次数</small></div>
+            <div class="metric-card"><span>页面速度</span><strong id="wmPageSpeed">0ms</strong><small>平均加载耗时</small></div>
+            <div class="metric-card"><span>关键词</span><strong id="wmKeywordCount">0</strong><small>Search Console</small></div>
+            <div class="metric-card"><span>收录量</span><strong id="wmIndexedPages">0</strong><small>Search Console</small></div>
             <div class="metric-card"><span>累计 PV</span><strong id="wmTotalPv">0</strong><small id="wmUpdatedAt">等待数据</small></div>
           </div>
           <div class="webmaster-grid">
@@ -327,6 +335,36 @@
             <div class="webmaster-section">
               <h2>热门页面</h2>
               <div class="stat-list" id="wmPathList"></div>
+            </div>
+          </div>
+          <div class="webmaster-grid">
+            <div class="webmaster-section">
+              <h2>帖子点击率</h2>
+              <div class="stat-list" id="wmPostCtrList"></div>
+            </div>
+            <div class="webmaster-section">
+              <h2>页面速度</h2>
+              <div class="stat-list" id="wmSpeedList"></div>
+            </div>
+          </div>
+          <div class="webmaster-grid">
+            <div class="webmaster-section">
+              <h2>用户画像</h2>
+              <div class="stat-list" id="wmPersonaList"></div>
+            </div>
+            <div class="webmaster-section">
+              <h2>系统</h2>
+              <div class="stat-list" id="wmSystemList"></div>
+            </div>
+          </div>
+          <div class="webmaster-grid">
+            <div class="webmaster-section">
+              <h2>VV 视频播放</h2>
+              <div class="stat-list" id="wmVideoList"></div>
+            </div>
+            <div class="webmaster-section">
+              <h2>关键词排名与收录</h2>
+              <div class="stat-list" id="wmSeoList"></div>
             </div>
           </div>
         </div>
@@ -1464,6 +1502,19 @@
     function compactNumber(value) {
       return new Intl.NumberFormat("zh-CN").format(Number(value || 0));
     }
+    function formatDuration(seconds) {
+      const value = Math.max(0, Number(seconds || 0));
+      if (value < 60) return `${Math.round(value)}秒`;
+      const minutes = Math.floor(value / 60);
+      const rest = Math.round(value % 60);
+      if (minutes < 60) return `${minutes}分${rest}秒`;
+      return `${Math.floor(minutes / 60)}时${minutes % 60}分`;
+    }
+    function formatMs(value) {
+      const number = Number(value || 0);
+      if (!number) return "0ms";
+      return number >= 1000 ? `${(number / 1000).toFixed(1)}s` : `${Math.round(number)}ms`;
+    }
     function timeAgo(value) {
       const time = new Date(value).getTime();
       if (!Number.isFinite(time)) return "-";
@@ -1482,11 +1533,30 @@
         </div>
       `).join("") : `<div class="stat-row"><span>${empty}</span><strong>0</strong></div>`;
     }
+    function renderSimpleRows(selector, rows = [], empty = "暂无数据") {
+      const target = document.querySelector(selector);
+      target.innerHTML = rows.length ? rows.map((row) => `
+        <div class="stat-row">
+          <span>${escapeHtml(row.label)}${row.note ? `<small>${escapeHtml(row.note)}</small>` : ""}</span>
+          <strong>${escapeHtml(row.value)}</strong>
+        </div>
+      `).join("") : `<div class="stat-row"><span>${empty}</span><strong>-</strong></div>`;
+    }
     function renderWebmasterDashboard(data = {}) {
       const overview = data.overview || {};
+      const pageSpeed = data.pageSpeed || {};
+      const seo = data.seo || {};
       document.querySelector("#wmOnline").textContent = compactNumber(overview.online);
       document.querySelector("#wmTodayPv").textContent = compactNumber(overview.todayPv);
       document.querySelector("#wmTodayUv").textContent = compactNumber(overview.todayUv);
+      document.querySelector("#wmTodayIp").textContent = compactNumber(overview.todayIp);
+      document.querySelector("#wmSessions").textContent = compactNumber(overview.sessions);
+      document.querySelector("#wmAvgStay").textContent = formatDuration(overview.avgStaySeconds);
+      document.querySelector("#wmSearchTraffic").textContent = compactNumber(overview.searchTraffic);
+      document.querySelector("#wmVideoViews").textContent = compactNumber(overview.videoViews);
+      document.querySelector("#wmPageSpeed").textContent = formatMs(overview.avgLoadMs);
+      document.querySelector("#wmKeywordCount").textContent = compactNumber(overview.keywordCount);
+      document.querySelector("#wmIndexedPages").textContent = compactNumber(overview.indexedPages);
       document.querySelector("#wmTotalPv").textContent = compactNumber(overview.totalPv);
       document.querySelector("#wmUpdatedAt").textContent = data.updatedAt ? `更新于 ${timeAgo(data.updatedAt)}` : "等待数据";
       const timeline = Array.isArray(data.timeline) ? data.timeline : [];
@@ -1510,6 +1580,40 @@
       renderStatList("#wmSourceList", data.bySource || [], "暂无来源");
       renderStatList("#wmHostList", data.byHost || [], "暂无域名数据");
       renderStatList("#wmPathList", data.byPath || [], "暂无页面数据");
+      renderSimpleRows("#wmPostCtrList", (data.postCtr || []).map((item) => ({
+        label: item.title,
+        note: `曝光 ${compactNumber(item.impressions)} · 点击 ${compactNumber(item.clicks)}`,
+        value: `${item.ctr}%`
+      })), "暂无帖子点击数据");
+      renderSimpleRows("#wmSpeedList", [
+        { label: "平均加载", note: `${compactNumber(pageSpeed.samples)} 个样本`, value: formatMs(pageSpeed.avgLoadMs) },
+        { label: "P75 加载", note: "75% 页面低于该值", value: formatMs(pageSpeed.p75LoadMs) },
+        { label: "平均 TTFB", note: "服务器首字节", value: formatMs(pageSpeed.avgTtfbMs) },
+        { label: "平均 DOMReady", note: "DOM 准备完成", value: formatMs(pageSpeed.avgDomReadyMs) },
+        { label: "平均 FCP", note: "首屏内容绘制", value: formatMs(pageSpeed.avgFcpMs) }
+      ].filter((item) => item.value !== "0ms" || pageSpeed.samples), "暂无速度数据");
+      renderSimpleRows("#wmPersonaList", [
+        ...(data.byDevice || []).map((item) => ({ label: `设备 · ${item.label}`, note: `UV ${compactNumber(item.visitors)}`, value: compactNumber(item.count) })),
+        ...(data.byCountry || []).map((item) => ({ label: `地区 · ${item.label}`, note: `UV ${compactNumber(item.visitors)}`, value: compactNumber(item.count) }))
+      ], "暂无用户画像");
+      renderSimpleRows("#wmSystemList", [
+        ...(data.byBrowser || []).map((item) => ({ label: `浏览器 · ${item.label}`, note: `UV ${compactNumber(item.visitors)}`, value: compactNumber(item.count) })),
+        ...(data.byOs || []).map((item) => ({ label: `系统 · ${item.label}`, note: `UV ${compactNumber(item.visitors)}`, value: compactNumber(item.count) }))
+      ], "暂无系统数据");
+      renderSimpleRows("#wmVideoList", (data.video?.byVideo || []).map((item) => ({
+        label: item.title,
+        note: `观看用户 ${compactNumber(item.visitors)}`,
+        value: compactNumber(item.vv)
+      })), "暂无视频播放数据");
+      renderSimpleRows("#wmSeoList", [
+        { label: "搜索流量", note: "站内实时来源统计", value: compactNumber(data.searchTraffic?.total || 0) },
+        { label: "收录量", note: seo.connected ? "来自 Search Console" : "待接入 Search Console", value: compactNumber(seo.indexedPages || 0) },
+        ...(seo.keywords || []).map((item) => ({
+          label: item.query,
+          note: `点击 ${compactNumber(item.clicks)} · 展示 ${compactNumber(item.impressions)}`,
+          value: item.position ? `#${Math.round(item.position * 10) / 10}` : "-"
+        }))
+      ], "暂无 SEO 数据");
     }
     async function loadWebmasterStats() {
       try {

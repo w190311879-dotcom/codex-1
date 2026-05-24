@@ -44,6 +44,7 @@ const usersFile = path.join(dataDir, "users.json");
 const commentsFile = path.join(dataDir, "comments.json");
 const siteSettingsFile = path.join(dataDir, "site-settings.json");
 const analyticsFile = path.join(dataDir, "analytics.json");
+const searchConsoleFile = path.join(dataDir, "search-console.json");
 const uploadsDir = path.join(dataDir, "uploads");
 const tempUploadDir = path.join(dataDir, "tmp-uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
@@ -1304,12 +1305,52 @@ function sourceFromReferrer(referrer = "", currentHost = "") {
   }
 }
 
+function searchQueryFromReferrer(referrer = "") {
+  const value = String(referrer || "").trim();
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    if (/baidu\./.test(host)) return sanitizeAnalyticsText(parsed.searchParams.get("wd") || parsed.searchParams.get("word") || "", 80);
+    if (/google\.|bing\.|yandex\./.test(host)) return sanitizeAnalyticsText(parsed.searchParams.get("q") || parsed.searchParams.get("text") || "", 80);
+  } catch {}
+  return "";
+}
+
+function numberMetric(value, min = 0, max = 60 * 60 * 1000) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(min, Math.min(max, Math.round(number)));
+}
+
 async function readAnalyticsStore() {
   try {
     const store = JSON.parse(await fs.readFile(analyticsFile, "utf8"));
     return { events: Array.isArray(store.events) ? store.events : [] };
   } catch {
     return { events: [] };
+  }
+}
+
+async function readSearchConsoleSnapshot() {
+  try {
+    const data = JSON.parse(await fs.readFile(searchConsoleFile, "utf8"));
+    const keywords = Array.isArray(data.keywords) ? data.keywords : [];
+    return {
+      connected: true,
+      updatedAt: data.updatedAt || "",
+      indexedPages: Number(data.indexedPages || data.indexed || 0) || 0,
+      searchClicks: Number(data.searchClicks || data.clicks || 0) || 0,
+      searchImpressions: Number(data.searchImpressions || data.impressions || 0) || 0,
+      keywords: keywords.slice(0, 12).map((item) => ({
+        query: sanitizeAnalyticsText(item.query || item.keyword || "", 80),
+        position: Number(item.position || item.avgPosition || 0) || 0,
+        clicks: Number(item.clicks || 0) || 0,
+        impressions: Number(item.impressions || 0) || 0
+      })).filter((item) => item.query)
+    };
+  } catch {
+    return { connected: false, updatedAt: "", indexedPages: 0, searchClicks: 0, searchImpressions: 0, keywords: [] };
   }
 }
 
@@ -1331,23 +1372,28 @@ function normalizeAnalyticsEvent(req, input = {}) {
   const now = Date.now();
   const userAgent = String(req.headers["user-agent"] || "");
   const screen = input.screen && typeof input.screen === "object" ? input.screen : {};
+  const metrics = input.metrics && typeof input.metrics === "object" ? input.metrics : {};
   const host = analyticsHost(input.host || requestHost(req));
   const clientId = sanitizeAnalyticsText(input.clientId, 128);
+  const clientSessionId = sanitizeAnalyticsText(input.sessionId, 128);
   const visitorBasis = clientId || `${clientIp(req)}:${userAgent}`;
   const event = sanitizeAnalyticsText(input.event || "pageview", 32) || "pageview";
   const pathValue = analyticsPath(input.path || req.originalUrl || req.path || "/");
   const referrer = sanitizeAnalyticsText(input.referrer || req.headers.referer || "", 400);
+  const allowedEvents = new Set(["pageview", "heartbeat", "redirect", "post_impression", "post_click", "performance", "video_play"]);
   return {
     id: crypto.randomUUID(),
     ts: now,
-    event: ["pageview", "heartbeat", "redirect"].includes(event) ? event : "pageview",
+    event: allowedEvents.has(event) ? event : "pageview",
     host,
     path: pathValue,
     title: sanitizeAnalyticsText(input.title || "", 140),
     referrer,
     source: sourceFromReferrer(referrer, host),
+    searchQuery: searchQueryFromReferrer(referrer),
+    ipId: stableHash(clientIp(req)).slice(0, 20),
     visitorId: stableHash(`${visitorBasis}:${host}`).slice(0, 20),
-    sessionId: stableHash(`${visitorBasis}:${shanghaiDayStart(now)}:${host}`).slice(0, 20),
+    sessionId: stableHash(`${clientSessionId || visitorBasis}:${host}`).slice(0, 20),
     country: sanitizeAnalyticsText(req.headers["cf-ipcountry"] || input.country || "未知", 40) || "未知",
     device: detectDevice(userAgent, Number(screen.width || 0)),
     browser: detectBrowser(userAgent),
@@ -1358,7 +1404,15 @@ function normalizeAnalyticsEvent(req, input = {}) {
       height: Number(screen.height || 0) || 0
     },
     pageType: sanitizeAnalyticsText(input.pageType || "", 40),
-    postId: sanitizeAnalyticsText(input.postId || "", 80)
+    postId: sanitizeAnalyticsText(input.postId || "", 80),
+    videoId: sanitizeAnalyticsText(input.videoId || "", 80),
+    durationSeconds: numberMetric(input.durationSeconds, 0, 7200),
+    metrics: {
+      ttfbMs: numberMetric(metrics.ttfbMs, 0, 120000),
+      domReadyMs: numberMetric(metrics.domReadyMs, 0, 120000),
+      loadMs: numberMetric(metrics.loadMs, 0, 120000),
+      fcpMs: numberMetric(metrics.fcpMs, 0, 120000)
+    }
   };
 }
 
@@ -1390,6 +1444,70 @@ function topAnalyticsGroups(items = [], key, limit = 8) {
   return [...map.entries()]
     .map(([label, count]) => ({ label, count, visitors: uniques.get(label)?.size || 0 }))
     .sort((left, right) => right.count - left.count)
+    .slice(0, limit);
+}
+
+function percentile(values = [], percentileValue = 75) {
+  const numbers = values.map(Number).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b);
+  if (!numbers.length) return 0;
+  const index = Math.min(numbers.length - 1, Math.max(0, Math.ceil((percentileValue / 100) * numbers.length) - 1));
+  return numbers[index];
+}
+
+function average(values = []) {
+  const numbers = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  if (!numbers.length) return 0;
+  return Math.round(numbers.reduce((sum, value) => sum + value, 0) / numbers.length);
+}
+
+function sessionDurations(events = []) {
+  const sessions = new Map();
+  for (const item of events) {
+    if (!item.sessionId) continue;
+    const current = sessions.get(item.sessionId) || { first: item.ts, last: item.ts, events: 0, visitorId: item.visitorId };
+    current.first = Math.min(current.first, item.ts);
+    current.last = Math.max(current.last, item.ts);
+    current.events += 1;
+    sessions.set(item.sessionId, current);
+  }
+  return [...sessions.values()].map((session) => Math.min(7200, Math.max(0, Math.round((session.last - session.first) / 1000))));
+}
+
+function postClickThrough(impressions = [], clicks = [], limit = 10) {
+  const rows = new Map();
+  const ensure = (item) => {
+    const key = item.postId || item.path || item.title || "unknown";
+    if (!rows.has(key)) {
+      rows.set(key, {
+        id: key,
+        title: sanitizeAnalyticsText(item.title || item.path || "未知帖子", 120),
+        impressions: 0,
+        clicks: 0,
+        ctr: 0
+      });
+    }
+    return rows.get(key);
+  };
+  for (const item of impressions) ensure(item).impressions += 1;
+  for (const item of clicks) ensure(item).clicks += 1;
+  return [...rows.values()]
+    .map((row) => ({ ...row, ctr: row.impressions ? Math.round((row.clicks / row.impressions) * 10000) / 100 : 0 }))
+    .sort((left, right) => right.clicks - left.clicks || right.impressions - left.impressions)
+    .slice(0, limit);
+}
+
+function videoViews(rows = [], limit = 10) {
+  const groups = new Map();
+  for (const item of rows) {
+    const key = item.videoId || item.postId || item.path || "unknown";
+    const current = groups.get(key) || { id: key, title: sanitizeAnalyticsText(item.title || item.path || "未知视频", 120), vv: 0, visitors: new Set() };
+    current.vv += 1;
+    if (item.visitorId) current.visitors.add(item.visitorId);
+    groups.set(key, current);
+  }
+  return [...groups.values()]
+    .map((item) => ({ id: item.id, title: item.title, vv: item.vv, visitors: item.visitors.size }))
+    .sort((left, right) => right.vv - left.vv)
     .slice(0, limit);
 }
 
@@ -1470,10 +1588,19 @@ async function siteStatusSnapshot() {
 async function analyticsSummary() {
   const now = Date.now();
   const todayStart = shanghaiDayStart(now);
-  const store = await readAnalyticsStore();
+  const [store, searchConsole] = await Promise.all([readAnalyticsStore(), readSearchConsoleSnapshot()]);
   const events = store.events.filter((item) => Number(item.ts || 0) > 0);
   const pageViews = events.filter((item) => ["pageview", "redirect"].includes(item.event));
   const todayViews = pageViews.filter((item) => item.ts >= todayStart);
+  const todayEvents = events.filter((item) => item.ts >= todayStart);
+  const todayImpressions = todayEvents.filter((item) => item.event === "post_impression");
+  const todayClicks = todayEvents.filter((item) => item.event === "post_click");
+  const todayVideoPlays = todayEvents.filter((item) => item.event === "video_play");
+  const todayPerformance = todayEvents.filter((item) => item.event === "performance");
+  const todaySearchViews = todayViews.filter((item) => ["Google", "Bing", "百度", "Yandex"].includes(item.source));
+  const durations = sessionDurations(todayEvents);
+  const loadValues = todayPerformance.map((item) => item.metrics?.loadMs || 0);
+  const ttfbValues = todayPerformance.map((item) => item.metrics?.ttfbMs || 0);
   const recentEvents = events.filter((item) => item.ts >= now - analyticsOnlineWindowMs);
   const onlineByVisitor = new Map();
   for (const item of recentEvents) {
@@ -1495,6 +1622,14 @@ async function analyticsSummary() {
       online: onlineByVisitor.size,
       todayPv: todayViews.length,
       todayUv: new Set(todayViews.map((item) => item.visitorId).filter(Boolean)).size,
+      todayIp: new Set(todayEvents.map((item) => item.ipId).filter(Boolean)).size,
+      sessions: new Set(todayEvents.map((item) => item.sessionId).filter(Boolean)).size,
+      avgStaySeconds: average(durations),
+      searchTraffic: todaySearchViews.length,
+      videoViews: todayVideoPlays.length,
+      avgLoadMs: average(loadValues),
+      indexedPages: searchConsole.indexedPages,
+      keywordCount: searchConsole.keywords.length,
       totalPv: pageViews.length,
       events: events.length
     },
@@ -1503,6 +1638,31 @@ async function analyticsSummary() {
     byPath: topAnalyticsGroups(todayViews, (item) => item.title || item.path, 10),
     byDevice: topAnalyticsGroups(todayViews, "device", 6),
     byCountry: topAnalyticsGroups(todayViews, "country", 8),
+    byBrowser: topAnalyticsGroups(todayViews, "browser", 8),
+    byOs: topAnalyticsGroups(todayViews, "os", 8),
+    searchTraffic: {
+      total: todaySearchViews.length,
+      sources: topAnalyticsGroups(todaySearchViews, "source", 6),
+      queries: topAnalyticsGroups(todaySearchViews.filter((item) => item.searchQuery), "searchQuery", 8)
+    },
+    seo: {
+      ...searchConsole,
+      analyticsSearchTraffic: todaySearchViews.length
+    },
+    pageSpeed: {
+      samples: todayPerformance.length,
+      avgLoadMs: average(loadValues),
+      p75LoadMs: percentile(loadValues, 75),
+      avgTtfbMs: average(ttfbValues),
+      p75TtfbMs: percentile(ttfbValues, 75),
+      avgDomReadyMs: average(todayPerformance.map((item) => item.metrics?.domReadyMs || 0)),
+      avgFcpMs: average(todayPerformance.map((item) => item.metrics?.fcpMs || 0))
+    },
+    postCtr: postClickThrough(todayImpressions, todayClicks),
+    video: {
+      vv: todayVideoPlays.length,
+      byVideo: videoViews(todayVideoPlays)
+    },
     timeline: analyticsTimeline(pageViews, now),
     online: [...onlineByVisitor.values()]
       .sort((left, right) => right.ts - left.ts)
@@ -2856,6 +3016,7 @@ app.get("/", (req, res, next) => {
 
 function sendHtmlPage(filename) {
   return (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
     res.sendFile(path.join(__dirname, filename));
   };
 }
@@ -3399,6 +3560,7 @@ app.use((req, res, next) => {
 });
 
 app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
