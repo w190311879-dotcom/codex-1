@@ -3000,7 +3000,7 @@ app.post("/api/media/video/transcode", requireAdminApi, videoUpload.single("file
 
 app.get("/", (req, res, next) => {
   if (hostMatches(req, routeSelectorHost)) {
-    res.sendFile(path.join(__dirname, "route-select.html"));
+    renderRouteSelectPage(req, res, next);
     return;
   }
   if (hostMatches(req, adminHost)) {
@@ -3043,6 +3043,74 @@ function ssrJsonScript(data) {
 
 function ssrDetailJsonScript(data) {
   return `<script>window.POSTWAVE_SSR_DETAIL=${JSON.stringify(data).replace(/</g, "\\u003c")};</script>`;
+}
+
+function jsonLdScript(data) {
+  return `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>`;
+}
+
+function seoSiteName(settings = {}) {
+  return settings.siteConfig?.siteName || routeSelectorTitle || "51春梦";
+}
+
+function seoDescription(settings = {}, fallback = "") {
+  return truncateText(
+    plainPostText(fallback || settings.footer?.introText || settings.siteConfig?.tabs?.[0]?.subtitle || "51春梦聚合图文与视频内容，提供最新地址、频道导航和内容更新。"),
+    160
+  );
+}
+
+function seoCanonical(origin = "", pathname = "/") {
+  const base = normalizeOrigin(origin);
+  const pathValue = String(pathname || "/");
+  if (!base) return pathValue;
+  return `${base}${pathValue.startsWith("/") ? pathValue : `/${pathValue}`}`;
+}
+
+function seoDefaultImage(req) {
+  return absolutePublicUrl(req, "/assets/logo.png");
+}
+
+function seoHeadTags({
+  title,
+  description,
+  canonical,
+  image,
+  type = "website",
+  siteName = "51春梦",
+  imageAlt = "",
+  extra = [],
+  jsonLd = null
+}) {
+  const safeTitle = title || siteName;
+  const safeDescription = description || "51春梦内容聚合与线路导航。";
+  const safeImage = image || "";
+  return [
+    `<meta name="description" content="${htmlEscape(safeDescription)}">`,
+    `<meta name="rating" content="adult">`,
+    canonical ? `<link rel="canonical" href="${htmlEscape(canonical)}">` : "",
+    `<meta property="og:type" content="${htmlEscape(type)}">`,
+    `<meta property="og:site_name" content="${htmlEscape(siteName)}">`,
+    `<meta property="og:title" content="${htmlEscape(safeTitle)}">`,
+    `<meta property="og:description" content="${htmlEscape(safeDescription)}">`,
+    canonical ? `<meta property="og:url" content="${htmlEscape(canonical)}">` : "",
+    safeImage ? `<meta property="og:image" content="${htmlEscape(safeImage)}">` : "",
+    safeImage && imageAlt ? `<meta property="og:image:alt" content="${htmlEscape(imageAlt)}">` : "",
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${htmlEscape(safeTitle)}">`,
+    `<meta name="twitter:description" content="${htmlEscape(safeDescription)}">`,
+    safeImage ? `<meta name="twitter:image" content="${htmlEscape(safeImage)}">` : "",
+    safeImage && imageAlt ? `<meta name="twitter:image:alt" content="${htmlEscape(imageAlt)}">` : "",
+    ...extra,
+    jsonLd ? jsonLdScript(jsonLd) : ""
+  ].filter(Boolean).join("\n");
+}
+
+function injectSeoHead(html, meta) {
+  const block = `  <!--POSTWAVE_SEO_HEAD_START-->\n${String(meta || "").split("\n").map((line) => `  ${line}`).join("\n")}\n  <!--POSTWAVE_SEO_HEAD_END-->`;
+  const pattern = /\s*<!--POSTWAVE_SEO_HEAD_START-->[\s\S]*?<!--POSTWAVE_SEO_HEAD_END-->/;
+  if (pattern.test(html)) return html.replace(pattern, `\n${block}`);
+  return html.replace("</head>", `${block}\n</head>`);
 }
 
 function publicPostForHome(post = {}, index = 0) {
@@ -3587,6 +3655,11 @@ app.get("/vendor/dplayer/DPlayer.min.js", (_req, res) => {
 app.get("/favicon.ico", (_req, res) => {
   res.type("image/png");
   res.sendFile(path.join(__dirname, "assets/favicon-51.png"));
+});
+app.get("/assets/webmaster-analytics.js", (_req, res) => {
+  res.type("application/javascript");
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(__dirname, "assets/webmaster-analytics.js"));
 });
 app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
 app.use("/uploads", express.static(uploadsDir, {
