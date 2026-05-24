@@ -1,0 +1,65 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_HOST: ${{ secrets.POSTWAVE_SSH_HOST }}
+          SSH_PORT: ${{ secrets.POSTWAVE_SSH_PORT }}
+          SSH_KEY: ${{ secrets.POSTWAVE_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/postwave_deploy
+          chmod 600 ~/.ssh/postwave_deploy
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync files
+        env:
+          SSH_HOST: ${{ secrets.POSTWAVE_SSH_HOST }}
+          SSH_PORT: ${{ secrets.POSTWAVE_SSH_PORT }}
+          SSH_USER: ${{ secrets.POSTWAVE_SSH_USER }}
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.env' \
+            --exclude '.env.*' \
+            --exclude '._*' \
+            --exclude 'data/' \
+            --exclude 'node_modules/' \
+            -e "ssh -i ~/.ssh/postwave_deploy -p $SSH_PORT -o StrictHostKeyChecking=yes" \
+            ./ "$SSH_USER@$SSH_HOST:/var/www/postwave/"
+
+      - name: Install dependencies and restart
+        env:
+          SSH_HOST: ${{ secrets.POSTWAVE_SSH_HOST }}
+          SSH_PORT: ${{ secrets.POSTWAVE_SSH_PORT }}
+          SSH_USER: ${{ secrets.POSTWAVE_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/postwave_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes "$SSH_USER@$SSH_HOST" <<'REMOTE'
+            set -euo pipefail
+            cd /var/www/postwave
+            chown -R postwave:postwave /var/www/postwave
+            sudo -u postwave npm ci --omit=dev
+            systemctl restart postwave.service
+            systemctl is-active --quiet postwave.service
+          REMOTE
