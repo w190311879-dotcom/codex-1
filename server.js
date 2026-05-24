@@ -1541,6 +1541,10 @@ function isStaticHtmlPath(pathname = "") {
   return /\.html$/i.test(pathname);
 }
 
+function isSeoFilePath(pathname = "") {
+  return pathname === "/robots.txt" || pathname === "/sitemap.xml";
+}
+
 function routeEntryHosts() {
   return uniqueList([...fixedRouteEntryHosts, ...(cachedRoutingSettings.entryHosts || [])]);
 }
@@ -1563,11 +1567,18 @@ function routeSelectorUrl() {
 }
 
 function isRouteSelectorPath(pathname = "") {
-  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
+  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || isSeoFilePath(pathname) || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
 }
 
 function isEntryHostDirectAssetPath(pathname = "") {
-  return pathname === "/favicon.ico" || pathname.startsWith("/assets/");
+  return pathname === "/favicon.ico" || isSeoFilePath(pathname) || pathname.startsWith("/assets/");
+}
+
+function isRestrictedInfrastructureHost(req) {
+  return configuredHostMatches(req, adminHost)
+    || configuredHostMatches(req, apiHost)
+    || configuredHostMatches(req, mediaHost)
+    || configuredHostMatches(req, uploadHost);
 }
 
 function enforceHostBoundary(req, res, next) {
@@ -1599,6 +1610,17 @@ function enforceHostBoundary(req, res, next) {
     }
     next();
     return;
+  }
+
+  if (isRestrictedInfrastructureHost(req)) {
+    if (req.path === "/robots.txt") {
+      next();
+      return;
+    }
+    if (req.path === "/sitemap.xml") {
+      res.status(404).send("Sitemap is not available on this host.");
+      return;
+    }
   }
 
   if (configuredHostMatches(req, mediaHost)) {
@@ -3135,6 +3157,142 @@ function detailSeoHead(req, post, description, mediaById = new Map()) {
   return { title, canonical, meta };
 }
 
+function xmlEscape(value = "") {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&apos;"
+  }[char]));
+}
+
+function uniqueOrigins(origins = []) {
+  return uniqueList(origins.map(normalizeOrigin).filter(Boolean));
+}
+
+function configuredLineOrigins() {
+  return uniqueOrigins(routeLineOrigins.length ? routeLineOrigins : publicSiteOrigins);
+}
+
+function requestHostOrigin(req) {
+  return normalizeOrigin(requestOrigin(req));
+}
+
+function isRouteEntryRequest(req) {
+  return hostInList(req, routeEntryHosts());
+}
+
+function isRouteSelectorRequest(req) {
+  return configuredHostMatches(req, routeSelectorHost);
+}
+
+function isLineHostRequest(req) {
+  const host = hostWithoutPort(requestHost(req));
+  return siteHosts.some((item) => hostWithoutPort(item) === host);
+}
+
+function sitemapOriginsForIndex(req) {
+  const lines = configuredLineOrigins();
+  if (lines.length) return lines;
+  const fallback = routeSelectorOrigin || requestHostOrigin(req);
+  return fallback ? [fallback] : [];
+}
+
+function sitemapUrlset(entries = []) {
+  const rows = entries.map((entry) => {
+    const parts = [
+      `    <loc>${xmlEscape(entry.loc)}</loc>`,
+      entry.lastmod ? `    <lastmod>${xmlEscape(entry.lastmod)}</lastmod>` : "",
+      entry.changefreq ? `    <changefreq>${xmlEscape(entry.changefreq)}</changefreq>` : "",
+      entry.priority ? `    <priority>${xmlEscape(entry.priority)}</priority>` : ""
+    ].filter(Boolean).join("\n");
+    return `  <url>\n${parts}\n  </url>`;
+  }).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</urlset>\n`;
+}
+
+function sitemapIndex(origins = []) {
+  const rows = origins.map((origin) => `  <sitemap>\n    <loc>${xmlEscape(`${normalizeOrigin(origin)}/sitemap.xml`)}</loc>\n  </sitemap>`).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</sitemapindex>\n`;
+}
+
+function siteMapOriginForRequest(req) {
+  if (isLocalRequest(req)) return requestHostOrigin(req);
+  if (isRouteSelectorRequest(req) && routeSelectorOrigin) return routeSelectorOrigin;
+  if (isLineHostRequest(req)) return requestHostOrigin(req) || canonicalSiteOrigin(req);
+  return requestHostOrigin(req) || canonicalSiteOrigin(req);
+}
+
+async function renderRobotsTxt(req, res, next) {
+  try {
+    await readSiteSettings();
+    const lines = ["User-agent: *"];
+    if (isRestrictedInfrastructureHost(req)) {
+      lines.push("Disallow: /");
+    } else {
+      lines.push("Allow: /");
+      if (isRouteEntryRequest(req)) {
+        for (const origin of sitemapOriginsForIndex(req)) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap.xml`);
+      } else {
+        const origin = siteMapOriginForRequest(req);
+        if (origin) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap.xml`);
+      }
+    }
+    res.type("text/plain");
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.send(`${lines.join("\n")}\n`);
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function renderSitemapXml(req, res, next) {
+  try {
+    await readSiteSettings();
+    res.type("application/xml");
+    res.setHeader("Cache-Control", "public, max-age=300");
+
+    if (isRestrictedInfrastructureHost(req)) {
+      res.status(404).send(sitemapUrlset([]));
+      return;
+    }
+
+    if (isRouteEntryRequest(req)) {
+      res.send(sitemapIndex(sitemapOriginsForIndex(req)));
+      return;
+    }
+
+    if (isRouteSelectorRequest(req)) {
+      const origin = siteMapOriginForRequest(req);
+      res.send(sitemapUrlset([{
+        loc: `${origin}/`,
+        changefreq: "daily",
+        priority: "0.7"
+      }]));
+      return;
+    }
+
+    const origin = siteMapOriginForRequest(req);
+    const rawPosts = await readPosts();
+    const posts = rawPosts.map(publicPostForHome).filter((post) => post.id);
+    const entries = [
+      { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
+      { loc: `${origin}/index.html`, changefreq: "hourly", priority: "0.9" },
+      { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
+      ...posts.slice(0, 45000).map((post) => ({
+        loc: `${origin}/detail.html?id=${encodeURIComponent(post.id)}`,
+        lastmod: parsePostDate(post.date),
+        changefreq: "daily",
+        priority: "0.8"
+      }))
+    ];
+    res.send(sitemapUrlset(entries));
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function renderIndexPage(_req, res, next) {
   try {
     const [rawPosts, settings, html] = await Promise.all([
@@ -3244,6 +3402,8 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
   res.sendFile(path.join(__dirname, "admin.html"));
 });
 
+app.get("/robots.txt", renderRobotsTxt);
+app.get("/sitemap.xml", renderSitemapXml);
 app.get("/route-select.html", sendHtmlPage("route-select.html"));
 app.get(["/", "/index.html"], renderIndexPage);
 app.get("/detail.html", renderDetailPage);
