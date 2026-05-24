@@ -3352,9 +3352,7 @@ function detailClientPost(post = {}, includeBody = false) {
     author: post.author || "alun",
     date: post.date || "",
     category: post.category || "",
-    categories: post.categories || [],
-    keywords: post.keywords || [],
-    tags: post.tags || []
+    categories: post.categories || []
   };
 }
 
