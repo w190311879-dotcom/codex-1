@@ -550,26 +550,48 @@
     const pager = document.querySelector("#pager");
     const emptyState = document.querySelector("#emptyState");
     const searchInput = document.querySelector("#searchInput");
+    function urlSlug(value, fallback = "post") {
+      const slug = String(value || "")
+        .normalize("NFKC")
+        .toLowerCase()
+        .replace(/[^0-9a-z\u3400-\u9fff]+/gi, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 90);
+      return slug || fallback;
+    }
+    function postUrl(post) {
+      return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
+    }
+    function categoryHref(name) {
+      return !name || name === "首页" ? "/" : `/category/${encodeURIComponent(name)}`;
+    }
+    function categoryFromLocation() {
+      const match = location.pathname.match(/^\/category\/(.+)$/);
+      if (match) {
+        try { return decodeURIComponent(match[1]); } catch (_error) { return match[1]; }
+      }
+      const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
+      return hashTab || "首页";
+    }
+    activeCategory = categoryFromLocation();
 
     function renderNav() {
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
       const visibleLimit = 14;
       const visibleTabs = tabs.slice(0, visibleLimit);
       const moreTabs = tabs.slice(visibleLimit);
-      const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
-      const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.name === hashTab));
+      const activeIndex = tabs.findIndex((tab) => tab.name === activeCategory);
       document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `
-        <a class="${index === activeIndex ? "active" : ""}" href="#" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>
+        <a class="${tab.name === activeCategory ? "active" : ""}" href="${categoryHref(tab.name)}" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>
       `).join("") + (moreTabs.length ? `
         <span class="more-wrap" id="moreWrap">
           <button class="nav-more ${activeIndex >= visibleLimit ? "active" : ""}" type="button" id="moreNav">更多</button>
           <span class="more-menu">
-            ${moreTabs.map((tab, index) => `<a class="${index + visibleLimit === activeIndex ? "active" : ""}" href="#" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>`).join("")}
+            ${moreTabs.map((tab) => `<a class="${tab.name === activeCategory ? "active" : ""}" href="${categoryHref(tab.name)}" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>`).join("")}
           </span>
         </span>
       ` : "");
-      const activeTab = tabs[activeIndex] || tabs[0] || defaultSiteConfig.tabs[0];
-      activeCategory = activeTab.name;
+      const activeTab = activeIndex >= 0 ? tabs[activeIndex] : { name: activeCategory, subtitle: `${activeCategory}内容聚合展示。` };
       document.querySelector("#pageTitle").textContent = activeTab.name;
       document.querySelector("#pageSubtitle").textContent = activeTab.subtitle || `${activeTab.name}内容聚合展示。`;
     }
@@ -666,7 +688,7 @@
       const pageItems = items.slice(start, start + perPage);
       const feedAds = activeCategory === "首页" ? loadAds().filter((ad) => ad.placement === "home-feed" && ad.image).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
       const rows = pageItems.map((post) => `
-        <a class="post-row" href="detail.html?id=${encodeURIComponent(post.id)}">
+        <a class="post-row" href="${postUrl(post)}">
           <img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}">
           <div class="post-content">
             <h2 class="post-title">${escapeHtml(post.title)}</h2>
@@ -695,7 +717,7 @@
 
     function renderRecommend() {
       document.querySelector("#recommendGrid").innerHTML = posts.slice(0, 4).map((post) => `
-        <a class="recommend-card" href="detail.html?id=${encodeURIComponent(post.id)}">
+        <a class="recommend-card" href="${postUrl(post)}">
           <img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}">
           <h3>${escapeHtml(post.title)}</h3>
         </a>
@@ -847,18 +869,20 @@
       const link = event.target.closest("a");
       if (link) {
         event.preventDefault();
-        document.querySelectorAll(".nav a, .nav-more").forEach((item) => item.classList.remove("active"));
-        if (link.closest(".more-menu")) document.querySelector("#moreNav")?.classList.add("active");
-        document.querySelector("#moreWrap")?.classList.remove("open");
-        link.classList.add("active");
         activeCategory = link.dataset.title;
-        history.replaceState(null, "", `#${encodeURIComponent(activeCategory)}`);
+        history.pushState(null, "", categoryHref(activeCategory));
+        document.querySelector("#moreWrap")?.classList.remove("open");
         currentPage = 1;
-        document.querySelector("#pageTitle").textContent = link.dataset.title;
-        document.querySelector("#pageSubtitle").textContent = link.dataset.subtitle;
+        renderNav();
         document.querySelector("#mainNav").classList.remove("open");
         renderPosts();
       }
+    });
+    window.addEventListener("popstate", () => {
+      activeCategory = categoryFromLocation();
+      currentPage = 1;
+      renderNav();
+      renderPosts();
     });
     renderNav();
     renderPosts();

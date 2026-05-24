@@ -1694,7 +1694,9 @@ function isAdminPagePath(pathname = "") {
 }
 
 function isPublicPagePath(pathname = "") {
-  return ["/", "/index.html", "/detail.html", "/app.html", "/qq.html"].includes(pathname);
+  return ["/", "/index.html", "/detail.html", "/app.html", "/qq.html"].includes(pathname)
+    || pathname.startsWith("/v/")
+    || pathname.startsWith("/category/");
 }
 
 function isStaticHtmlPath(pathname = "") {
@@ -3136,7 +3138,7 @@ function publicPostForHome(post = {}, index = 0) {
 function ssrPostRow(post) {
   const categories = post.categories && post.categories.length ? post.categories.join("、") : post.category;
   return `
-        <a class="post-row" href="detail.html?id=${encodeURIComponent(post.id)}">
+        <a class="post-row" href="${htmlEscape(detailPath(post))}">
           <img src="${htmlEscape(safePublicUrl(post.image))}" alt="${htmlEscape(post.title)}">
           <div class="post-content">
             <h2 class="post-title">${htmlEscape(post.title)}</h2>
@@ -3196,10 +3198,36 @@ function absolutePublicUrl(req, value = "") {
   return `${origin}/${url.replace(/^\.?\//, "")}`;
 }
 
+function urlSlug(value = "", fallback = "post") {
+  const slug = String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^0-9a-z\u3400-\u9fff]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90);
+  return slug || fallback;
+}
+
+function detailPath(post = {}) {
+  const id = encodeURIComponent(post.id || "");
+  const slug = encodeURIComponent(urlSlug(post.title || post.id || "post"));
+  return `/v/${id}/${slug}`;
+}
+
 function detailUrl(req, post) {
   const origin = canonicalSiteOrigin(req);
-  const id = encodeURIComponent(post.id || "");
-  return `${origin || ""}/detail.html?id=${id}`;
+  return `${origin || ""}${detailPath(post)}`;
+}
+
+function categoryPath(category = "") {
+  const name = String(category || "").trim();
+  if (!name || name === "首页") return "/";
+  return `/category/${encodeURIComponent(name)}`;
+}
+
+function categoryUrl(req, category = "") {
+  const origin = canonicalSiteOrigin(req);
+  return `${origin || ""}${categoryPath(category)}`;
 }
 
 function plainPostText(value = "") {
@@ -3330,11 +3358,14 @@ function detailClientPost(post = {}, includeBody = false) {
   };
 }
 
-function homeSeoHead(req, settings = {}, posts = []) {
+function homeSeoHead(req, settings = {}, posts = [], category = "首页") {
   const siteName = seoSiteName(settings);
-  const title = `${siteName} - 吃瓜爆料 + 成人视频，一站搞定`;
-  const description = seoDescription(settings);
-  const canonical = seoCanonical(canonicalSiteOrigin(req), "/");
+  const isHome = !category || category === "首页";
+  const tabs = settings.siteConfig?.tabs || defaultSiteSettings.siteConfig.tabs;
+  const activeTab = tabs.find((tab) => tab.name === category) || null;
+  const title = isHome ? `${siteName} - 吃瓜爆料 + 成人视频，一站搞定` : `${category} - ${siteName}`;
+  const description = seoDescription(settings, isHome ? "" : (activeTab?.subtitle || `${category}内容聚合展示。`));
+  const canonical = isHome ? seoCanonical(canonicalSiteOrigin(req), "/") : categoryUrl(req, category);
   const image = seoDefaultImage(req);
   const listItems = posts.slice(0, 26).map((post, index) => {
     const item = {
@@ -3604,7 +3635,7 @@ async function renderRobotsTxt(req, res, next) {
 
 async function renderSitemapXml(req, res, next) {
   try {
-    await readSiteSettings();
+    const settings = await readSiteSettings();
     res.type("application/xml");
     res.setHeader("Cache-Control", "public, max-age=300");
 
@@ -3631,12 +3662,20 @@ async function renderSitemapXml(req, res, next) {
     const origin = siteMapOriginForRequest(req);
     const rawPosts = await readPosts();
     const posts = rawPosts.map(publicPostForHome).filter((post) => post.id);
+    const categories = (settings.siteConfig?.tabs || [])
+      .map((tab) => String(tab.name || "").trim())
+      .filter((name) => name && name !== "首页");
     const entries = [
       { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
       { loc: `${origin}/index.html`, changefreq: "hourly", priority: "0.9" },
       { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
+      ...categories.map((category) => ({
+        loc: `${origin}${categoryPath(category)}`,
+        changefreq: "daily",
+        priority: "0.7"
+      })),
       ...posts.slice(0, 45000).map((post) => ({
-        loc: `${origin}/detail.html?id=${encodeURIComponent(post.id)}`,
+        loc: `${origin}${detailPath(post)}`,
         lastmod: parsePostDate(post.date),
         changefreq: "daily",
         priority: "0.8"
@@ -3657,26 +3696,37 @@ async function renderIndexPage(req, res, next) {
     ]);
     const perPage = 26;
     const posts = rawPosts.map(publicPostForHome);
-    const pagePosts = posts.slice(0, perPage);
-    const totalPages = Math.max(1, Math.ceil(posts.length / perPage));
-    const feedAds = (settings.ads || [])
+    const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
+    const requestedCategory = String(req.params.category || "").trim();
+    const activeCategory = requestedCategory || "首页";
+    const activeTab = tabs.find((tab) => tab.name === activeCategory) || (activeCategory === "首页" ? tabs[0] : null);
+    const filteredPosts = activeCategory === "首页"
+      ? posts
+      : posts.filter((post) => {
+          const categories = post.categories && post.categories.length ? post.categories : [post.category];
+          return categories.includes(activeCategory);
+        });
+    const pagePosts = filteredPosts.slice(0, perPage);
+    const totalPages = Math.max(1, Math.ceil(filteredPosts.length / perPage));
+    const feedAds = activeCategory === "首页" ? (settings.ads || [])
       .map(normalizeSsrAd)
       .filter((ad) => ad.placement === "home-feed" && ad.image)
-      .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1));
+      .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
     const rows = pagePosts.map(ssrPostRow);
     feedAds.forEach((ad, order) => {
       const slot = Math.max(1, Math.min(rows.length + 1, Number(ad.slot) || order + 1));
       rows.splice(slot - 1, 0, ssrFeedAdRow(ad));
     });
     const postHtml = rows.join("");
-    const pageTitle = settings.siteConfig?.tabs?.[0]?.name || "首页";
-    const pageSubtitle = settings.siteConfig?.tabs?.[0]?.subtitle || "精选图文与视频内容，按发布时间聚合展示。";
-    const seo = homeSeoHead(req, settings, posts);
+    const pageTitle = activeCategory;
+    const pageSubtitle = activeTab?.subtitle || `${activeCategory}内容聚合展示。`;
+    const seo = homeSeoHead(req, settings, filteredPosts, activeCategory);
     const ssrPayload = {
       posts: rawPosts,
       siteConfig: settings.siteConfig,
       footer: settings.footer,
-      ads: settings.ads
+      ads: settings.ads,
+      activeCategory
     };
     const rendered = injectSeoHead(html, seo.meta)
       .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
@@ -3710,21 +3760,49 @@ async function renderRouteSelectPage(req, res, next) {
   }
 }
 
+function postIndexById(posts = [], postId = "") {
+  const id = String(postId || "").trim();
+  if (!id) return -1;
+  return posts.findIndex((post, postIndex) => String(post.id) === id || `admin-${postIndex}` === id);
+}
+
+async function redirectLegacyDetailPage(req, res, next) {
+  const postId = String(req.query.id || "").trim();
+  if (!postId) {
+    renderDetailPage(req, res, next);
+    return;
+  }
+  try {
+    const posts = (await readPosts()).map(publicPostForHome);
+    const index = postIndexById(posts, postId);
+    if (index < 0) {
+      renderDetailPage(req, res, next);
+      return;
+    }
+    res.redirect(301, detailUrl(req, posts[index]));
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function renderDetailPage(req, res, next) {
   try {
-    const postId = String(req.query.id || "").trim();
+    const postId = String(req.params.id || req.query.id || "").trim();
     const [rawPosts, settings, html] = await Promise.all([
       readPosts(),
       readSiteSettings(),
       fs.readFile(path.join(__dirname, "detail.html"), "utf8")
     ]);
     const posts = rawPosts.map(publicPostForHome);
-    const index = postId
-      ? posts.findIndex((post, postIndex) => String(post.id) === postId || `admin-${postIndex}` === postId)
-      : 0;
+    const index = postId ? postIndexById(posts, postId) : 0;
     const current = posts[index];
     if (!current) {
       res.status(404).type("html").send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>内容不存在 - 51春梦</title></head><body>内容不存在</body></html>`);
+      return;
+    }
+
+    if (req.params.id && String(req.params.slug || "") !== urlSlug(current.title || current.id || "post")) {
+      res.redirect(301, detailUrl(req, current));
       return;
     }
 
@@ -3782,7 +3860,9 @@ app.get("/robots.txt", renderRobotsTxt);
 app.get("/sitemap.xml", renderSitemapXml);
 app.get("/route-select.html", renderRouteSelectPage);
 app.get(["/", "/index.html"], renderIndexPage);
-app.get("/detail.html", renderDetailPage);
+app.get("/category/:category", renderIndexPage);
+app.get("/v/:id/:slug?", renderDetailPage);
+app.get("/detail.html", redirectLegacyDetailPage);
 app.get("/app.html", sendHtmlPage("app.html"));
 app.get("/qq.html", sendHtmlPage("qq.html"));
 app.get("/admin-login.html", sendHtmlPage("admin-login.html"));

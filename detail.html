@@ -7,12 +7,12 @@
   <!--POSTWAVE_SEO_HEAD_START-->
   <meta name="description" content="51春梦内容详情页，聚合图文与视频内容。">
   <meta name="rating" content="adult">
-  <link rel="canonical" href="https://line1.51cmtv.com/detail.html">
+  <link rel="canonical" href="https://line1.51cmtv.com/v/post/51%E6%98%A5%E6%A2%A6%E5%86%85%E5%AE%B9%E8%AF%A6%E6%83%85">
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="51春梦">
   <meta property="og:title" content="51春梦内容详情">
   <meta property="og:description" content="51春梦内容详情页，聚合图文与视频内容。">
-  <meta property="og:url" content="https://line1.51cmtv.com/detail.html">
+  <meta property="og:url" content="https://line1.51cmtv.com/v/post/51%E6%98%A5%E6%A2%A6%E5%86%85%E5%AE%B9%E8%AF%A6%E6%83%85">
   <meta property="og:image" content="https://line1.51cmtv.com/assets/logo.png">
   <meta property="og:image:alt" content="51春梦 Logo">
   <meta name="twitter:card" content="summary_large_image">
@@ -20,7 +20,7 @@
   <meta name="twitter:description" content="51春梦内容详情页，聚合图文与视频内容。">
   <meta name="twitter:image" content="https://line1.51cmtv.com/assets/logo.png">
   <meta name="twitter:image:alt" content="51春梦 Logo">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"51春梦内容详情","description":"51春梦内容详情页，聚合图文与视频内容。","image":["https://line1.51cmtv.com/assets/logo.png"],"author":{"@type":"Organization","name":"51春梦"},"publisher":{"@type":"Organization","name":"51春梦","logo":{"@type":"ImageObject","url":"https://line1.51cmtv.com/assets/logo.png"}},"mainEntityOfPage":"https://line1.51cmtv.com/detail.html","inLanguage":"zh-CN","isFamilyFriendly":false}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"51春梦内容详情","description":"51春梦内容详情页，聚合图文与视频内容。","image":["https://line1.51cmtv.com/assets/logo.png"],"author":{"@type":"Organization","name":"51春梦"},"publisher":{"@type":"Organization","name":"51春梦","logo":{"@type":"ImageObject","url":"https://line1.51cmtv.com/assets/logo.png"}},"mainEntityOfPage":"https://line1.51cmtv.com/v/post/51%E6%98%A5%E6%A2%A6%E5%86%85%E5%AE%B9%E8%AF%A6%E6%83%85","inLanguage":"zh-CN","isFamilyFriendly":false}</script>
   <!--POSTWAVE_SEO_HEAD_END-->
   <link rel="icon" type="image/png" href="/assets/favicon-51.png">
   <link rel="apple-touch-icon" href="/assets/favicon-51.png">
@@ -480,7 +480,26 @@
       return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
     }
     let posts = combinedPosts();
-    const requestedPostId = new URLSearchParams(location.search).get("id") || "";
+    function urlSlug(value, fallback = "post") {
+      const slug = String(value || "")
+        .normalize("NFKC")
+        .toLowerCase()
+        .replace(/[^0-9a-z\u3400-\u9fff]+/gi, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 90);
+      return slug || fallback;
+    }
+    function postUrl(post) {
+      return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
+    }
+    function requestedIdFromLocation() {
+      const match = location.pathname.match(/^\/v\/([^/]+)/);
+      if (match) {
+        try { return decodeURIComponent(match[1]); } catch (_error) { return match[1]; }
+      }
+      return new URLSearchParams(location.search).get("id") || "";
+    }
+    const requestedPostId = requestedIdFromLocation();
     function missingPost() {
       return {
         id: "",
@@ -673,7 +692,7 @@
     }
     function guess() {
       const shuffled = [...posts].sort(() => Math.random() - .5).slice(0, 4);
-      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="detail.html?id=${encodeURIComponent(post.id)}"><img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}"><h3>${escapeHtml(post.title)}</h3></a>`).join("");
+      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="${postUrl(post)}"><img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}"><h3>${escapeHtml(post.title)}</h3></a>`).join("");
       window.lucide?.createIcons?.();
     }
     async function fetchApprovedComments() {
@@ -797,14 +816,14 @@
       const prevEl = document.querySelector("#prevPost");
       const nextEl = document.querySelector("#nextPost");
       if (prev) {
-        prevEl.href = `detail.html?id=${encodeURIComponent(prev.id)}`;
+        prevEl.href = postUrl(prev);
         prevEl.querySelector("span").textContent = prev.title;
       } else {
         prevEl.removeAttribute("href");
         prevEl.querySelector("span").textContent = "暂无";
       }
       if (next) {
-        nextEl.href = `detail.html?id=${encodeURIComponent(next.id)}`;
+        nextEl.href = postUrl(next);
         nextEl.querySelector("span").textContent = next.title;
       } else {
         nextEl.removeAttribute("href");
@@ -842,7 +861,7 @@
     document.querySelector("#searchInput").addEventListener("input", (event) => {
       const q = event.target.value.trim().replace(/#/g, "").toLowerCase();
       const results = q ? posts.filter((post) => postSearchText(post).includes(q)).slice(0, 8) : [];
-      document.querySelector("#searchResults").innerHTML = results.map((post) => `<a href="detail.html?id=${encodeURIComponent(post.id)}">${escapeHtml(post.title)}</a>`).join("");
+      document.querySelector("#searchResults").innerHTML = results.map((post) => `<a href="${postUrl(post)}">${escapeHtml(post.title)}</a>`).join("");
     });
     const authLayer = document.querySelector("#authLayer");
     function frontCommentName() {
