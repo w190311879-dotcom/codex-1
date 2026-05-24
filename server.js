@@ -3352,7 +3352,9 @@ function detailClientPost(post = {}, includeBody = false) {
     author: post.author || "alun",
     date: post.date || "",
     category: post.category || "",
-    categories: post.categories || []
+    categories: post.categories || [],
+    keywords: post.keywords || [],
+    tags: post.tags || []
   };
 }
 
@@ -3364,9 +3366,7 @@ function homeClientPost(post = {}) {
     author: post.author || "alun",
     date: post.date || "",
     category: post.category || "",
-    categories: post.categories || [],
-    keywords: post.keywords || [],
-    tags: post.tags || []
+    categories: post.categories || []
   };
 }
 
