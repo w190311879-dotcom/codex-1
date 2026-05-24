@@ -127,6 +127,29 @@
     .media-row small { display: block; margin-top: 4px; color: #64748b; font-size: 12px; font-weight: 800; line-height: 1.45; }
     body.admin-dark .media-controls { border-color: #253044; background: #111827; }
     body.admin-dark .media-filter, body.admin-dark .media-page-btn { color: #e5e7eb; border-color: #334155; background: #0f172a; }
+    .webmaster-panel { margin: 18px 24px; display: grid; gap: 14px; }
+    .webmaster-cards { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
+    .metric-card { min-height: 112px; display: grid; align-content: space-between; gap: 8px; padding: 16px; border: 1px solid #dbe4ef; border-radius: 8px; background: #fff; }
+    .metric-card span { color: #64748b; font-size: 13px; font-weight: 900; }
+    .metric-card strong { font-size: 34px; line-height: 1; letter-spacing: 0; }
+    .webmaster-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 14px; }
+    .webmaster-section { min-width: 0; padding: 16px; border: 1px solid #dbe4ef; border-radius: 8px; background: #fff; }
+    .webmaster-section h2 { margin: 0 0 12px; font-size: 20px; letter-spacing: 0; }
+    .stat-list, .visitor-list, .status-list { display: grid; gap: 8px; }
+    .stat-row, .visitor-row, .status-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #eef2f7; border-radius: 7px; background: #f8fafc; font-weight: 900; }
+    .visitor-row { grid-template-columns: 1fr auto; align-items: start; }
+    .visitor-row small, .stat-row small { display: block; margin-top: 4px; color: #64748b; font-weight: 800; line-height: 1.45; }
+    .status-row.ok strong { color: #047857; }
+    .status-row.bad strong { color: #b91c1c; }
+    .chart-bars { height: 150px; display: grid; grid-template-columns: repeat(24, 1fr); align-items: end; gap: 4px; padding-top: 8px; }
+    .chart-bar { min-height: 4px; border-radius: 5px 5px 0 0; background: #111827; }
+    .chart-labels { display: flex; justify-content: space-between; margin-top: 8px; color: #64748b; font-size: 12px; font-weight: 900; }
+    body.admin-dark .metric-card,
+    body.admin-dark .webmaster-section,
+    body.admin-dark .stat-row,
+    body.admin-dark .visitor-row,
+    body.admin-dark .status-row { color: #e5e7eb; border-color: #253044; background: #111827; }
+    body.admin-dark .chart-bar { background: #e5e7eb; }
     .comment-text { color: #475569; line-height: 1.6; }
     .progress { height: 10px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
     .progress span { display: block; width: 0%; height: 100%; border-radius: inherit; background: #111827; transition: width .2s ease; }
@@ -148,7 +171,7 @@
     .sidebar-collapsed .app { grid-template-columns: 0 1fr; }
     .sidebar-collapsed .sidebar { display: none; }
     @media (max-width: 1280px) { .left-form { flex-basis: 360px; width: 360px; } .editor { width: calc(100% - 374px); } }
-    @media (max-width: 1100px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .workspace { flex-direction: column; overflow: visible; } .left-form, .editor { width: 100%; flex-basis: auto; } .author-editor { grid-template-columns: 1fr; } }
+    @media (max-width: 1100px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .workspace { flex-direction: column; overflow: visible; } .left-form, .editor { width: 100%; flex-basis: auto; } .author-editor { grid-template-columns: 1fr; } .webmaster-cards, .webmaster-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -164,6 +187,7 @@
         <a class="side-link" href="#" data-view="videos"><i data-lucide="upload-cloud"></i>视频上传</a>
         <a class="side-link" href="#" data-view="media"><i data-lucide="clipboard-list"></i>媒体列表</a>
         <a class="side-link" href="#" data-view="recommend"><i data-lucide="flame"></i>推荐管理</a>
+        <a class="side-link" href="#" data-view="webmaster"><i data-lucide="activity"></i>站长工具</a>
         <div class="group-title">设置</div>
         <a class="side-link" href="#" data-view="appearance"><i data-lucide="palette"></i>外观</a>
         <a class="side-link" href="#" data-view="ads"><i data-lucide="badge-percent"></i>广告位</a>
@@ -266,6 +290,47 @@
         </div>
       </section>
       <section class="view hidden" id="recommendView"><div class="settings"><h2>推荐管理</h2><select class="field"><option>热门推荐：展示最新 4 条</option><option>热门推荐：展示后台置顶</option></select><button class="btn dark" id="saveRecommend">保存推荐规则</button></div></section>
+      <section class="view hidden" id="webmasterView">
+        <div class="webmaster-panel">
+          <div class="webmaster-cards">
+            <div class="metric-card"><span>当前在线</span><strong id="wmOnline">0</strong><small>最近 5 分钟活跃访客</small></div>
+            <div class="metric-card"><span>今日 PV</span><strong id="wmTodayPv">0</strong><small>按上海时间统计</small></div>
+            <div class="metric-card"><span>今日 UV</span><strong id="wmTodayUv">0</strong><small>去重访客数</small></div>
+            <div class="metric-card"><span>累计 PV</span><strong id="wmTotalPv">0</strong><small id="wmUpdatedAt">等待数据</small></div>
+          </div>
+          <div class="webmaster-grid">
+            <div class="webmaster-section">
+              <h2>24 小时趋势</h2>
+              <div class="chart-bars" id="wmTimeline"></div>
+              <div class="chart-labels"><span>24 小时前</span><span>现在</span></div>
+            </div>
+            <div class="webmaster-section">
+              <h2>线路状态</h2>
+              <div class="status-list" id="wmStatusList"></div>
+            </div>
+          </div>
+          <div class="webmaster-grid">
+            <div class="webmaster-section">
+              <h2>实时访客</h2>
+              <div class="visitor-list" id="wmOnlineList"></div>
+            </div>
+            <div class="webmaster-section">
+              <h2>访问来源</h2>
+              <div class="stat-list" id="wmSourceList"></div>
+            </div>
+          </div>
+          <div class="webmaster-grid">
+            <div class="webmaster-section">
+              <h2>域名与线路访问</h2>
+              <div class="stat-list" id="wmHostList"></div>
+            </div>
+            <div class="webmaster-section">
+              <h2>热门页面</h2>
+              <div class="stat-list" id="wmPathList"></div>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="view hidden" id="appearanceView">
         <div class="settings">
           <h2>外观与栏目</h2>
@@ -434,6 +499,7 @@
     let pendingBodyInsertionRange = null;
     let editingAuthorIndex = null;
     let mediaPollTimer = null;
+    let webmasterPollTimer = null;
     const defaultAuthors = [
       { id: "author-alun", name: "alun", account: "alun", status: "正常" },
       { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常" }
@@ -1006,6 +1072,8 @@
       document.querySelector("#viewTitle").textContent = label;
       renderTables();
       if (name === "comments") loadCommentsFromApi();
+      if (name === "webmaster") startWebmasterPolling();
+      else clearInterval(webmasterPollTimer);
     }
     document.querySelectorAll(".side-link").forEach((link) => {
       link.addEventListener("click", (event) => {
@@ -1392,6 +1460,71 @@
         ${Array.from({ length: totalPages }, (_, index) => `<button class="media-page-btn ${index + 1 === mediaPage ? "active" : ""}" data-media-page="${index + 1}">${index + 1}</button>`).join("")}
         <button class="media-page-btn" data-media-page="${mediaPage + 1}" ${mediaPage >= totalPages ? "disabled" : ""}>下一页</button>
       ` : "";
+    }
+    function compactNumber(value) {
+      return new Intl.NumberFormat("zh-CN").format(Number(value || 0));
+    }
+    function timeAgo(value) {
+      const time = new Date(value).getTime();
+      if (!Number.isFinite(time)) return "-";
+      const diff = Math.max(0, Date.now() - time);
+      if (diff < 60000) return "刚刚";
+      if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+      if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+      return new Date(time).toLocaleString("zh-CN", { hour12: false });
+    }
+    function renderStatList(selector, rows = [], empty = "暂无数据") {
+      const target = document.querySelector(selector);
+      target.innerHTML = rows.length ? rows.map((row) => `
+        <div class="stat-row">
+          <span>${escapeHtml(row.label)}<small>UV ${compactNumber(row.visitors || 0)}</small></span>
+          <strong>${compactNumber(row.count || 0)}</strong>
+        </div>
+      `).join("") : `<div class="stat-row"><span>${empty}</span><strong>0</strong></div>`;
+    }
+    function renderWebmasterDashboard(data = {}) {
+      const overview = data.overview || {};
+      document.querySelector("#wmOnline").textContent = compactNumber(overview.online);
+      document.querySelector("#wmTodayPv").textContent = compactNumber(overview.todayPv);
+      document.querySelector("#wmTodayUv").textContent = compactNumber(overview.todayUv);
+      document.querySelector("#wmTotalPv").textContent = compactNumber(overview.totalPv);
+      document.querySelector("#wmUpdatedAt").textContent = data.updatedAt ? `更新于 ${timeAgo(data.updatedAt)}` : "等待数据";
+      const timeline = Array.isArray(data.timeline) ? data.timeline : [];
+      const maxPv = Math.max(1, ...timeline.map((item) => Number(item.pv || 0)));
+      document.querySelector("#wmTimeline").innerHTML = timeline.length ? timeline.map((item) => {
+        const height = Math.max(4, Math.round((Number(item.pv || 0) / maxPv) * 140));
+        return `<span class="chart-bar" style="height:${height}px" title="${escapeHtml(item.label)} · PV ${compactNumber(item.pv)} · UV ${compactNumber(item.uv)}"></span>`;
+      }).join("") : `<span class="chart-bar" style="height:4px"></span>`;
+      document.querySelector("#wmStatusList").innerHTML = (data.status || []).length ? data.status.map((item) => `
+        <div class="status-row ${item.ok ? "ok" : "bad"}">
+          <span>${escapeHtml(item.label)}<small>${escapeHtml(item.url)} · ${compactNumber(item.responseMs)}ms</small></span>
+          <strong>${item.ok ? "正常" : "异常"} ${item.status || ""}</strong>
+        </div>
+      `).join("") : `<div class="status-row"><span>暂无线路配置</span><strong>-</strong></div>`;
+      document.querySelector("#wmOnlineList").innerHTML = (data.online || []).length ? data.online.map((item) => `
+        <div class="visitor-row">
+          <span>${escapeHtml(item.title || item.path || "未知页面")}<small>${escapeHtml(item.host || "-")} · ${escapeHtml(item.source || "-")} · ${escapeHtml(item.device || "-")} / ${escapeHtml(item.browser || "-")} · ${escapeHtml(item.country || "-")}</small></span>
+          <strong>${timeAgo(item.ts)}</strong>
+        </div>
+      `).join("") : `<div class="visitor-row"><span>最近 5 分钟暂无在线访客</span><strong>-</strong></div>`;
+      renderStatList("#wmSourceList", data.bySource || [], "暂无来源");
+      renderStatList("#wmHostList", data.byHost || [], "暂无域名数据");
+      renderStatList("#wmPathList", data.byPath || [], "暂无页面数据");
+    }
+    async function loadWebmasterStats() {
+      try {
+        const response = await fetch(apiPath("/api/admin/analytics"), apiOptions({ cache: "no-store" }));
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "站长数据加载失败");
+        renderWebmasterDashboard(data);
+      } catch (error) {
+        toast(error.message || "站长数据加载失败");
+      }
+    }
+    function startWebmasterPolling() {
+      clearInterval(webmasterPollTimer);
+      loadWebmasterStats();
+      webmasterPollTimer = setInterval(loadWebmasterStats, 15000);
     }
     function renderTables() {
       document.querySelector("#postsTable").innerHTML = postRows();

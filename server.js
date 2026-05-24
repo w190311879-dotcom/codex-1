@@ -43,6 +43,7 @@ const authorsFile = path.join(dataDir, "authors.json");
 const usersFile = path.join(dataDir, "users.json");
 const commentsFile = path.join(dataDir, "comments.json");
 const siteSettingsFile = path.join(dataDir, "site-settings.json");
+const analyticsFile = path.join(dataDir, "analytics.json");
 const uploadsDir = path.join(dataDir, "uploads");
 const tempUploadDir = path.join(dataDir, "tmp-uploads");
 const tempVideoDir = path.join(dataDir, "tmp-videos");
@@ -68,6 +69,10 @@ const hlsPortraitMaxWidth = 720;
 const hlsPortraitMaxHeight = 1280;
 const loginRateWindowMs = Math.max(60, Number(process.env.POSTWAVE_LOGIN_RATE_WINDOW_SECONDS || 900) || 900) * 1000;
 const loginRateMaxAttempts = Math.max(3, Number(process.env.POSTWAVE_LOGIN_RATE_MAX || 10) || 10);
+const analyticsRetentionDays = Math.max(1, Number(process.env.POSTWAVE_ANALYTICS_RETENTION_DAYS || 14) || 14);
+const analyticsMaxEvents = Math.max(1000, Number(process.env.POSTWAVE_ANALYTICS_MAX_EVENTS || 50000) || 50000);
+const analyticsOnlineWindowMs = Math.max(60, Number(process.env.POSTWAVE_ANALYTICS_ONLINE_SECONDS || 300) || 300) * 1000;
+const siteStatusCacheMs = Math.max(10, Number(process.env.POSTWAVE_SITE_STATUS_CACHE_SECONDS || 30) || 30) * 1000;
 const demoSeedEnabled = process.env.POSTWAVE_ENABLE_DEMO_SEED === undefined
   ? !isProduction
   : ["1", "true", "yes", "on"].includes(String(process.env.POSTWAVE_ENABLE_DEMO_SEED).toLowerCase());
@@ -152,6 +157,7 @@ const publicSiteOrigins = uniqueList([
 const publicAdminOrigin = (process.env.PUBLIC_ADMIN_ORIGIN || "").replace(/\/+$/, "");
 const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").replace(/\/+$/, "");
 const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl || "").replace(/\/+$/, "");
+const publicUploadOrigin = (process.env.PUBLIC_UPLOAD_ORIGIN || "").replace(/\/+$/, "");
 const routeSelectorOrigin = normalizeOrigin(process.env.ROUTE_SELECTOR_ORIGIN || "");
 const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51春梦";
 const routeSelectorSubtitle = process.env.ROUTE_SELECTOR_SUBTITLE || "看片吃瓜，把心动留给你。";
@@ -168,6 +174,7 @@ function originHost(value = "") {
 const adminHost = process.env.ADMIN_HOST || originHost(publicAdminOrigin);
 const apiHost = process.env.API_HOST || originHost(publicApiBaseUrl);
 const mediaHost = process.env.MEDIA_HOST || originHost(publicMediaBaseUrl);
+const uploadHost = process.env.UPLOAD_HOST || originHost(publicUploadOrigin);
 const routeSelectorHost = process.env.ROUTE_SELECTOR_HOST || originHost(routeSelectorOrigin);
 const fixedRouteEntryHosts = uniqueList(splitList(process.env.ROUTE_ENTRY_HOSTS || process.env.ENTRY_HOSTS).map(normalizeHost));
 const siteHosts = uniqueList([
@@ -182,7 +189,7 @@ const routeLines = (routeLineOrigins.length ? routeLineOrigins : publicSiteOrigi
 }));
 let cachedRoutingSettings = { entryHosts: [] };
 const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || "";
-const cspConnectSources = ["'self'", publicApiBaseUrl, publicMediaBaseUrl, publicAdminOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
+const cspConnectSources = ["'self'", publicApiBaseUrl, publicMediaBaseUrl, publicAdminOrigin, publicUploadOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
 const cspMediaSources = ["'self'", "blob:", "data:", publicMediaBaseUrl].filter(Boolean);
 const cspImageSources = ["'self'", "data:", "blob:", publicMediaBaseUrl, "https://images.unsplash.com"].filter(Boolean);
 const cspScriptSources = ["'self'", "'unsafe-inline'"];
@@ -325,6 +332,7 @@ const allowedOrigins = new Set([
   publicAdminOrigin,
   publicApiBaseUrl,
   publicMediaBaseUrl,
+  publicUploadOrigin,
   `http://localhost:${port}`,
   `http://127.0.0.1:${port}`
 ].filter(Boolean));
@@ -1220,6 +1228,290 @@ function configuredHostMatches(req, expectedHost) {
   return Boolean(expectedHost) && hostMatches(req, expectedHost);
 }
 
+let analyticsWriteChain = Promise.resolve();
+let siteStatusCache = { checkedAt: 0, data: [] };
+
+function shanghaiDayStart(time = Date.now()) {
+  const offset = 8 * 60 * 60 * 1000;
+  return Math.floor((time + offset) / 86400000) * 86400000 - offset;
+}
+
+function stableHash(value = "") {
+  return crypto.createHash("sha256").update(String(value || "")).digest("hex");
+}
+
+function sanitizeAnalyticsText(value = "", maxLength = 160) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function analyticsPath(value = "/") {
+  const raw = String(value || "/").trim();
+  try {
+    const parsed = new URL(raw, "https://local.invalid");
+    return `${parsed.pathname || "/"}${parsed.search || ""}`.slice(0, 240);
+  } catch {
+    return raw.startsWith("/") ? raw.slice(0, 240) : `/${raw}`.slice(0, 240);
+  }
+}
+
+function analyticsHost(value = "") {
+  return hostWithoutPort(normalizeHost(value || "")).slice(0, 120);
+}
+
+function detectDevice(userAgent = "", width = 0) {
+  const ua = String(userAgent || "").toLowerCase();
+  if (/ipad|tablet/.test(ua)) return "平板";
+  if (/mobile|iphone|android/.test(ua)) return "手机";
+  if (Number(width) && Number(width) < 820) return "手机";
+  return "电脑";
+}
+
+function detectBrowser(userAgent = "") {
+  const ua = String(userAgent || "");
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) return "Chrome";
+  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return "Safari";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/MicroMessenger\//.test(ua)) return "微信";
+  return "其他";
+}
+
+function detectOs(userAgent = "") {
+  const ua = String(userAgent || "").toLowerCase();
+  if (ua.includes("iphone") || ua.includes("ipad") || ua.includes("ios")) return "iOS";
+  if (ua.includes("android")) return "Android";
+  if (ua.includes("mac os")) return "macOS";
+  if (ua.includes("windows")) return "Windows";
+  return "其他";
+}
+
+function sourceFromReferrer(referrer = "", currentHost = "") {
+  const value = String(referrer || "").trim();
+  if (!value) return "直接访问";
+  try {
+    const refHost = hostWithoutPort(new URL(value).host);
+    const host = hostWithoutPort(currentHost);
+    if (refHost && host && (refHost === host || refHost.endsWith(`.${host}`) || host.endsWith(`.${refHost}`))) return "站内跳转";
+    if (/google\./i.test(refHost)) return "Google";
+    if (/bing\./i.test(refHost)) return "Bing";
+    if (/baidu\./i.test(refHost)) return "百度";
+    if (/yandex\./i.test(refHost)) return "Yandex";
+    if (/t\.me|telegram/i.test(refHost)) return "Telegram";
+    if (/x\.com|twitter\.com/i.test(refHost)) return "X";
+    return refHost || "外部来源";
+  } catch {
+    return "外部来源";
+  }
+}
+
+async function readAnalyticsStore() {
+  try {
+    const store = JSON.parse(await fs.readFile(analyticsFile, "utf8"));
+    return { events: Array.isArray(store.events) ? store.events : [] };
+  } catch {
+    return { events: [] };
+  }
+}
+
+async function writeAnalyticsStore(store) {
+  await fs.mkdir(path.dirname(analyticsFile), { recursive: true });
+  await fs.writeFile(analyticsFile, JSON.stringify(store, null, 2));
+}
+
+async function ensureAnalyticsStore() {
+  await fs.mkdir(dataDir, { recursive: true });
+  try {
+    await fs.access(analyticsFile);
+  } catch {
+    await writeAnalyticsStore({ events: [] });
+  }
+}
+
+function normalizeAnalyticsEvent(req, input = {}) {
+  const now = Date.now();
+  const userAgent = String(req.headers["user-agent"] || "");
+  const screen = input.screen && typeof input.screen === "object" ? input.screen : {};
+  const host = analyticsHost(input.host || requestHost(req));
+  const clientId = sanitizeAnalyticsText(input.clientId, 128);
+  const visitorBasis = clientId || `${clientIp(req)}:${userAgent}`;
+  const event = sanitizeAnalyticsText(input.event || "pageview", 32) || "pageview";
+  const pathValue = analyticsPath(input.path || req.originalUrl || req.path || "/");
+  const referrer = sanitizeAnalyticsText(input.referrer || req.headers.referer || "", 400);
+  return {
+    id: crypto.randomUUID(),
+    ts: now,
+    event: ["pageview", "heartbeat", "redirect"].includes(event) ? event : "pageview",
+    host,
+    path: pathValue,
+    title: sanitizeAnalyticsText(input.title || "", 140),
+    referrer,
+    source: sourceFromReferrer(referrer, host),
+    visitorId: stableHash(`${visitorBasis}:${host}`).slice(0, 20),
+    sessionId: stableHash(`${visitorBasis}:${shanghaiDayStart(now)}:${host}`).slice(0, 20),
+    country: sanitizeAnalyticsText(req.headers["cf-ipcountry"] || input.country || "未知", 40) || "未知",
+    device: detectDevice(userAgent, Number(screen.width || 0)),
+    browser: detectBrowser(userAgent),
+    os: detectOs(userAgent),
+    language: sanitizeAnalyticsText(input.language || req.headers["accept-language"] || "", 60),
+    viewport: {
+      width: Number(screen.width || 0) || 0,
+      height: Number(screen.height || 0) || 0
+    },
+    pageType: sanitizeAnalyticsText(input.pageType || "", 40),
+    postId: sanitizeAnalyticsText(input.postId || "", 80)
+  };
+}
+
+function recordAnalyticsEvent(req, input = {}) {
+  const event = normalizeAnalyticsEvent(req, input);
+  analyticsWriteChain = analyticsWriteChain
+    .then(async () => {
+      const now = Date.now();
+      const cutoff = now - analyticsRetentionDays * 86400000;
+      const store = await readAnalyticsStore();
+      const events = store.events.filter((item) => Number(item.ts || 0) >= cutoff);
+      events.push(event);
+      const trimmed = events.slice(-analyticsMaxEvents);
+      await writeAnalyticsStore({ events: trimmed });
+    })
+    .catch((error) => console.error("analytics write failed", error));
+  return analyticsWriteChain;
+}
+
+function topAnalyticsGroups(items = [], key, limit = 8) {
+  const map = new Map();
+  const uniques = new Map();
+  for (const item of items) {
+    const label = sanitizeAnalyticsText(typeof key === "function" ? key(item) : item[key], 120) || "未知";
+    map.set(label, (map.get(label) || 0) + 1);
+    if (!uniques.has(label)) uniques.set(label, new Set());
+    if (item.visitorId) uniques.get(label).add(item.visitorId);
+  }
+  return [...map.entries()]
+    .map(([label, count]) => ({ label, count, visitors: uniques.get(label)?.size || 0 }))
+    .sort((left, right) => right.count - left.count)
+    .slice(0, limit);
+}
+
+function analyticsTimeline(pageViews = [], now = Date.now()) {
+  const hourMs = 60 * 60 * 1000;
+  const start = Math.floor((now - 23 * hourMs) / hourMs) * hourMs;
+  return Array.from({ length: 24 }, (_, index) => {
+    const from = start + index * hourMs;
+    const to = from + hourMs;
+    const rows = pageViews.filter((item) => item.ts >= from && item.ts < to);
+    return {
+      ts: from,
+      label: new Date(from).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Shanghai" }),
+      pv: rows.length,
+      uv: new Set(rows.map((item) => item.visitorId).filter(Boolean)).size
+    };
+  });
+}
+
+function analyticsTargets() {
+  const targets = [];
+  for (const host of routeEntryHosts()) {
+    targets.push({ label: `入口 ${host}`, url: `https://${host}/` });
+  }
+  if (routeSelectorOrigin) targets.push({ label: `导航 ${originHost(routeSelectorOrigin)}`, url: `${routeSelectorOrigin}/` });
+  for (const line of routeLines) {
+    if (line.origin) targets.push({ label: line.label, url: `${line.origin}/` });
+  }
+  if (publicApiBaseUrl) targets.push({ label: `API ${originHost(publicApiBaseUrl)}`, url: `${publicApiBaseUrl}/api/health` });
+  if (publicAdminOrigin) targets.push({ label: `后台 ${originHost(publicAdminOrigin)}`, url: `${publicAdminOrigin}/admin-login.html` });
+  const seen = new Set();
+  return targets.filter((target) => {
+    if (!target.url || seen.has(target.url)) return false;
+    seen.add(target.url);
+    return true;
+  }).slice(0, 10);
+}
+
+async function checkStatusTarget(target) {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(target.url, {
+      method: "HEAD",
+      redirect: "manual",
+      signal: controller.signal
+    });
+    return {
+      ...target,
+      ok: response.status >= 200 && response.status < 400,
+      status: response.status,
+      responseMs: Date.now() - startedAt,
+      checkedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    return {
+      ...target,
+      ok: false,
+      status: 0,
+      responseMs: Date.now() - startedAt,
+      error: error.name === "AbortError" ? "timeout" : "request failed",
+      checkedAt: new Date().toISOString()
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function siteStatusSnapshot() {
+  const now = Date.now();
+  if (siteStatusCache.data.length && now - siteStatusCache.checkedAt < siteStatusCacheMs) return siteStatusCache.data;
+  const data = await Promise.all(analyticsTargets().map(checkStatusTarget));
+  siteStatusCache = { checkedAt: now, data };
+  return data;
+}
+
+async function analyticsSummary() {
+  const now = Date.now();
+  const todayStart = shanghaiDayStart(now);
+  const store = await readAnalyticsStore();
+  const events = store.events.filter((item) => Number(item.ts || 0) > 0);
+  const pageViews = events.filter((item) => ["pageview", "redirect"].includes(item.event));
+  const todayViews = pageViews.filter((item) => item.ts >= todayStart);
+  const recentEvents = events.filter((item) => item.ts >= now - analyticsOnlineWindowMs);
+  const onlineByVisitor = new Map();
+  for (const item of recentEvents) {
+    const current = onlineByVisitor.get(item.visitorId);
+    if (!current || item.ts > current.ts) onlineByVisitor.set(item.visitorId, item);
+  }
+  const recentByVisitor = new Map();
+  for (const item of [...events].sort((left, right) => right.ts - left.ts)) {
+    if (!item.visitorId || recentByVisitor.has(item.visitorId)) continue;
+    recentByVisitor.set(item.visitorId, item);
+    if (recentByVisitor.size >= 24) break;
+  }
+  return {
+    ok: true,
+    updatedAt: new Date(now).toISOString(),
+    retentionDays: analyticsRetentionDays,
+    onlineWindowSeconds: Math.round(analyticsOnlineWindowMs / 1000),
+    overview: {
+      online: onlineByVisitor.size,
+      todayPv: todayViews.length,
+      todayUv: new Set(todayViews.map((item) => item.visitorId).filter(Boolean)).size,
+      totalPv: pageViews.length,
+      events: events.length
+    },
+    byHost: topAnalyticsGroups(todayViews, "host", 10),
+    bySource: topAnalyticsGroups(todayViews, "source", 10),
+    byPath: topAnalyticsGroups(todayViews, (item) => item.title || item.path, 10),
+    byDevice: topAnalyticsGroups(todayViews, "device", 6),
+    byCountry: topAnalyticsGroups(todayViews, "country", 8),
+    timeline: analyticsTimeline(pageViews, now),
+    online: [...onlineByVisitor.values()]
+      .sort((left, right) => right.ts - left.ts)
+      .slice(0, 20),
+    recent: [...recentByVisitor.values()],
+    status: await siteStatusSnapshot()
+  };
+}
+
 function hasConfiguredSplitHosts() {
   return Boolean(
     publicSiteOrigins.length ||
@@ -1229,9 +1521,11 @@ function hasConfiguredSplitHosts() {
     publicAdminOrigin ||
     publicApiBaseUrl ||
     publicMediaBaseUrl ||
+    publicUploadOrigin ||
     adminHost ||
     apiHost ||
-    mediaHost
+    mediaHost ||
+    uploadHost
   );
 }
 
@@ -1287,6 +1581,13 @@ function enforceHostBoundary(req, res, next) {
       next();
       return;
     }
+    void recordAnalyticsEvent(req, {
+      event: "redirect",
+      host: requestHost(req),
+      path: req.originalUrl || req.path || "/",
+      title: "入口跳转",
+      referrer: req.headers.referer || ""
+    });
     res.redirect(302, routeSelectorUrl());
     return;
   }
@@ -1312,6 +1613,15 @@ function enforceHostBoundary(req, res, next) {
   if (configuredHostMatches(req, apiHost)) {
     if (req.path !== "/" && !req.path.startsWith("/api/") && req.path !== "/api" && req.path !== "/config.js") {
       res.status(404).send("API host only serves API routes.");
+      return;
+    }
+    next();
+    return;
+  }
+
+  if (configuredHostMatches(req, uploadHost)) {
+    if (!req.path.startsWith("/api/media/video/chunk/")) {
+      res.status(404).send("Upload host only serves video chunk upload routes.");
       return;
     }
     next();
@@ -1360,6 +1670,7 @@ async function findAdmin(account, password) {
 }
 
 async function initPostgres() {
+  await ensureAnalyticsStore();
   pool = new pg.Pool({ connectionString: databaseUrl });
   await runMigrations(pool);
   await ensureSiteSettingsSeeded();
@@ -1402,6 +1713,7 @@ async function initFileStorage() {
   } catch {
     await fs.writeFile(mediaRecordsFile, "[]");
   }
+  await ensureAnalyticsStore();
   await ensureAuthorsSeeded();
 }
 
@@ -2101,6 +2413,24 @@ app.get("/api/public/email-autoreply", async (_req, res, next) => {
   }
 });
 
+app.post("/api/public/analytics/track", async (req, res, next) => {
+  try {
+    await recordAnalyticsEvent(req, req.body && typeof req.body === "object" ? req.body : {});
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/admin/analytics", requireAdminApi, async (_req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await analyticsSummary());
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/api/session", (req, res) => {
   const session = readSession(req, sessionCookieName, "admin");
   res.json({ authenticated: Boolean(session), user: session ? { account: session.account, name: session.name } : null });
@@ -2364,7 +2694,10 @@ app.post("/api/media/video/chunk/init", requireAdminApi, async (req, res, next) 
     const mimeType = String(req.body?.mimeType || "application/octet-stream").trim();
     const size = Number(req.body?.size || 0);
     const maxVideoBytes = videoUploadLimitMb * 1024 * 1024;
-    const chunkSize = videoChunkBytes;
+    const requestedChunkSize = Number(req.body?.chunkSize || 0);
+    const chunkSize = Number.isFinite(requestedChunkSize) && requestedChunkSize > 0
+      ? Math.max(1024 * 1024, Math.min(videoChunkBytes, Math.floor(requestedChunkSize)))
+      : videoChunkBytes;
     if (!isAllowedVideoFile(originalName, mimeType)) throw new Error("只允许上传 MP4、MOV、WEBM、MKV 视频");
     if (!Number.isFinite(size) || size <= 0) throw new Error("视频文件大小无效");
     if (size > maxVideoBytes) throw new Error(`视频文件超过 ${videoUploadLimitMb}MB 限制`);
@@ -2387,6 +2720,31 @@ app.post("/api/media/video/chunk/init", requireAdminApi, async (req, res, next) 
     };
     await writeVideoChunkMeta(meta);
     res.json({ ok: true, uploadId, chunkSize, totalChunks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/media/video/chunk/:uploadId/status", requireAdminApi, async (req, res, next) => {
+  try {
+    const meta = await readVideoChunkMeta(req.params.uploadId);
+    const received = Array.from(new Set((meta.received || []).map(Number)))
+      .filter((item) => Number.isInteger(item) && item >= 0 && item < meta.totalChunks)
+      .sort((a, b) => a - b);
+    const receivedSet = new Set(received);
+    const missing = [];
+    for (let index = 0; index < meta.totalChunks; index += 1) {
+      if (!receivedSet.has(index)) missing.push(index);
+    }
+    res.json({
+      ok: true,
+      uploadId: meta.uploadId,
+      chunkSize: meta.chunkSize,
+      totalChunks: meta.totalChunks,
+      received,
+      missing,
+      complete: missing.length === 0
+    });
   } catch (error) {
     next(error);
   }
@@ -2500,6 +2858,10 @@ function ssrJsonScript(data) {
   return `<script>window.POSTWAVE_SSR_DATA=${JSON.stringify(data).replace(/</g, "\\u003c")};</script>`;
 }
 
+function ssrDetailJsonScript(data) {
+  return `<script>window.POSTWAVE_SSR_DETAIL=${JSON.stringify(data).replace(/</g, "\\u003c")};</script>`;
+}
+
 function publicPostForHome(post = {}, index = 0) {
   const categories = Array.isArray(post.categories) && post.categories.length
     ? post.categories
@@ -2561,6 +2923,218 @@ function ssrPager(totalPages, currentPage = 1) {
       `;
 }
 
+function requestOrigin(req) {
+  const host = requestHost(req);
+  return host ? `${requestProtocol(req)}://${host}` : "";
+}
+
+function canonicalSiteOrigin(req) {
+  if (isLocalRequest(req)) return requestOrigin(req);
+  return publicSiteOrigins[0] || routeLineOrigins[0] || requestOrigin(req);
+}
+
+function absolutePublicUrl(req, value = "") {
+  const url = String(value || "").trim();
+  if (!url || /^data:/i.test(url)) return "";
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("//")) return `${requestProtocol(req)}:${url}`;
+  const origin = canonicalSiteOrigin(req);
+  if (!origin) return url;
+  if (url.startsWith("/")) return `${origin}${url}`;
+  return `${origin}/${url.replace(/^\.?\//, "")}`;
+}
+
+function detailUrl(req, post) {
+  const origin = canonicalSiteOrigin(req);
+  const id = encodeURIComponent(post.id || "");
+  return `${origin || ""}/detail.html?id=${id}`;
+}
+
+function plainPostText(value = "") {
+  return String(value || "")
+    .replace(/\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\]/g, " ")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateText(value = "", maxLength = 160) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function detailDescription(post) {
+  return truncateText(plainPostText(post.body) || post.title || "51春梦内容详情。", 160);
+}
+
+function parsePostDate(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = raw
+    .replace(/年|\/|\./g, "-")
+    .replace(/月/g, "-")
+    .replace(/日/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (!match) return "";
+  const [, year, month, day, hour = "0", minute = "0", second = "0"] = match;
+  const pad = (item) => String(item).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}T${pad(hour)}:${pad(minute)}:${pad(second)}+08:00`;
+}
+
+function isoDuration(seconds = 0) {
+  const total = Math.floor(Number(seconds) || 0);
+  if (!total) return "";
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return `PT${hours ? `${hours}H` : ""}${minutes ? `${minutes}M` : ""}${secs || (!hours && !minutes) ? `${secs}S` : ""}`;
+}
+
+function extractPostVideoIds(post = {}) {
+  const ids = new Set();
+  const add = (value) => {
+    const id = String(value || "").trim();
+    if (id) ids.add(id);
+  };
+  add(post.video);
+  if (Array.isArray(post.videos)) post.videos.forEach(add);
+  for (const match of String(post.body || "").matchAll(/\[视频(?::([^\]]+))?\]/g)) add(match[1]);
+  return Array.from(ids);
+}
+
+async function mediaMapForVideoIds(videoIds = []) {
+  const entries = await Promise.all(videoIds.map(async (id) => {
+    try {
+      const [media] = await readMediaRecords({ id, publicOnly: true });
+      return [id, media || null];
+    } catch {
+      return [id, null];
+    }
+  }));
+  return new Map(entries);
+}
+
+function ssrDetailContent(post, mediaById = new Map()) {
+  const body = String(post.body || "");
+  const renderText = (text) => {
+    const cleaned = String(text || "").replace(/^\n+|\n+$/g, "");
+    return cleaned.trim() ? `<div class="body">${htmlEscape(cleaned)}</div>` : "";
+  };
+  if (!body.includes("[图片") && !body.includes("[视频")) return renderText(body || "暂无内容。");
+  return body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g).map((part) => {
+    if (!part) return "";
+    if (part.startsWith("[图片")) {
+      const match = part.match(/\[图片(?::(\d+))?\]/);
+      const imgIndex = match && match[1] ? Number(match[1]) : 0;
+      const img = (post.bodyImages || [])[imgIndex] || "";
+      if (!img) return "";
+      return `<div class="media image-media"><img src="${htmlEscape(safePublicUrl(img))}" alt="${htmlEscape(post.title)}" loading="lazy" decoding="async"></div>`;
+    }
+    if (part.startsWith("[视频")) {
+      const match = part.match(/\[视频(?::([^\]]+))?\]/);
+      const videoId = match && match[1] ? String(match[1]).trim() : "";
+      if (!videoId) return "";
+      const media = mediaById.get(videoId);
+      const ratioClass = media?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
+      return `<div class="media video-media ${ratioClass}"><div class="hls-player" data-media-video="${htmlEscape(videoId)}"></div></div>`;
+    }
+    return renderText(part);
+  }).join("");
+}
+
+function ssrTags(post) {
+  const tags = normalizeArray(post.tags).map((tag) => String(tag).replace(/^#+/, "")).filter(Boolean);
+  return `<div class="tags" id="tags">${tags.map((tag) => `<span class="tag">${htmlEscape(tag)}</span>`).join("")}</div>`;
+}
+
+function ssrPrevNext(req, posts, index) {
+  const prev = index >= 0 && posts.length > 1 ? posts[(index - 1 + posts.length) % posts.length] : null;
+  const next = index >= 0 && posts.length > 1 ? posts[(index + 1) % posts.length] : null;
+  const link = (id, label, rel, post) => {
+    if (!post) return `<a class="pn" id="${id}">${label}<span>暂无</span></a>`;
+    return `<a class="pn" id="${id}" href="${htmlEscape(detailUrl(req, post))}" rel="${rel}">${label}<span>${htmlEscape(post.title)}</span></a>`;
+  };
+  return `<nav class="prev-next">${link("prevPost", "上一篇", "prev", prev)}${link("nextPost", "下一篇", "next", next)}</nav>`;
+}
+
+function detailClientPost(post = {}, includeBody = false) {
+  return {
+    id: post.id,
+    title: post.title,
+    cover: post.cover || post.image || "",
+    body: includeBody ? post.body || "" : "",
+    bodyImages: post.bodyImages || [],
+    video: post.video || "",
+    videos: Array.isArray(post.videos) ? post.videos : [],
+    author: post.author || "alun",
+    date: post.date || "",
+    category: post.category || "",
+    categories: post.categories || [],
+    keywords: post.keywords || [],
+    tags: post.tags || []
+  };
+}
+
+function detailSeoHead(req, post, description, mediaById = new Map()) {
+  const canonical = detailUrl(req, post);
+  const image = absolutePublicUrl(req, post.image || post.cover || post.bodyImages?.[0] || "");
+  const title = `${post.title} - 51春梦`;
+  const published = parsePostDate(post.date);
+  const images = [post.image || post.cover, ...(post.bodyImages || [])]
+    .map((url) => absolutePublicUrl(req, url))
+    .filter(Boolean)
+    .slice(0, 8);
+  const article = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.title,
+    description,
+    image: images,
+    author: { "@type": "Person", name: post.author || "51春梦" },
+    datePublished: published || undefined,
+    dateModified: published || undefined,
+    keywords: normalizeArray(post.keywords).join(", "),
+    articleSection: post.categories?.length ? post.categories.join(", ") : post.category,
+    mainEntityOfPage: canonical
+  };
+  const videos = extractPostVideoIds(post).map((id) => {
+    const media = mediaById.get(id);
+    const thumbnail = absolutePublicUrl(req, media?.posterUrl || post.image || post.cover || "");
+    return {
+      "@context": "https://schema.org",
+      "@type": "VideoObject",
+      name: post.title,
+      description,
+      thumbnailUrl: thumbnail ? [thumbnail] : undefined,
+      uploadDate: published || undefined,
+      duration: isoDuration(media?.duration),
+      contentUrl: absolutePublicUrl(req, media?.url || ""),
+      embedUrl: canonical
+    };
+  });
+  const graph = [article, ...videos].map((item) => Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined && value !== "" && !(Array.isArray(value) && !value.length))));
+  const jsonLd = graph.length === 1 ? graph[0] : { "@context": "https://schema.org", "@graph": graph.map(({ "@context": _context, ...item }) => item) };
+  const meta = [
+    `<meta name="description" content="${htmlEscape(description)}">`,
+    `<meta name="rating" content="adult">`,
+    `<link rel="canonical" href="${htmlEscape(canonical)}">`,
+    `<meta property="og:type" content="article">`,
+    `<meta property="og:title" content="${htmlEscape(post.title)}">`,
+    `<meta property="og:description" content="${htmlEscape(description)}">`,
+    `<meta property="og:url" content="${htmlEscape(canonical)}">`,
+    image ? `<meta property="og:image" content="${htmlEscape(image)}">` : "",
+    `<meta name="twitter:card" content="summary_large_image">`,
+    `<meta name="twitter:title" content="${htmlEscape(post.title)}">`,
+    `<meta name="twitter:description" content="${htmlEscape(description)}">`,
+    image ? `<meta name="twitter:image" content="${htmlEscape(image)}">` : "",
+    `<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+  ].filter(Boolean).join("\n  ");
+  return { title, canonical, meta };
+}
+
 async function renderIndexPage(_req, res, next) {
   try {
     const [rawPosts, settings, html] = await Promise.all([
@@ -2603,6 +3177,61 @@ async function renderIndexPage(_req, res, next) {
   }
 }
 
+async function renderDetailPage(req, res, next) {
+  try {
+    const postId = String(req.query.id || "").trim();
+    const [rawPosts, settings, html] = await Promise.all([
+      readPosts(),
+      readSiteSettings(),
+      fs.readFile(path.join(__dirname, "detail.html"), "utf8")
+    ]);
+    const posts = rawPosts.map(publicPostForHome);
+    const index = postId
+      ? posts.findIndex((post, postIndex) => String(post.id) === postId || `admin-${postIndex}` === postId)
+      : 0;
+    const current = posts[index];
+    if (!current) {
+      res.status(404).type("html").send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>内容不存在 - 51春梦</title></head><body>内容不存在</body></html>`);
+      return;
+    }
+
+    const videoIds = extractPostVideoIds(current);
+    const mediaById = await mediaMapForVideoIds(videoIds);
+    const description = detailDescription(current);
+    const seo = detailSeoHead(req, current, description, mediaById);
+    const contentHtml = ssrDetailContent(current, mediaById);
+    const categories = current.categories && current.categories.length ? current.categories.join("、") : current.category;
+    const clientPosts = posts.map((post) => detailClientPost(post, String(post.id) === String(current.id)));
+    const media = Array.from(mediaById.values()).filter(Boolean);
+    const ssrPayload = {
+      posts: clientPosts,
+      siteConfig: settings.siteConfig,
+      footer: settings.footer,
+      ads: settings.ads,
+      adConfig: settings.adConfig,
+      notice: settings.notice,
+      media
+    };
+
+    const rendered = html
+      .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
+      .replace("</head>", `  ${seo.meta}\n  ${ssrDetailJsonScript(ssrPayload)}\n</head>`)
+      .replace('<span id="crumbTitle">帖子详情</span>', `<span id="crumbTitle">${htmlEscape(current.title)}</span>`)
+      .replace('<h1 id="title">帖子详情</h1>', `<h1 id="title">${htmlEscape(current.title)}</h1>`)
+      .replace('<span id="author"></span>', `<span id="author">${htmlEscape(current.author || "alun")}</span>`)
+      .replace('<span id="date"></span>', `<span id="date">${htmlEscape(current.date || "")}</span>`)
+      .replace('<span id="category"></span>', `<span id="category">${htmlEscape(categories || "内容")}</span>`)
+      .replace('<div id="contentFlow"></div>', `<div id="contentFlow">${contentHtml}</div>`)
+      .replace('<div class="tags" id="tags"></div>', ssrTags(current))
+      .replace('<span id="officialNotice"></span>', `<span id="officialNotice">${htmlEscape(settings.notice || "")}</span>`)
+      .replace('<nav class="prev-next"><a class="pn" id="prevPost">上一篇<span></span></a><a class="pn" id="nextPost">下一篇<span></span></a></nav>', ssrPrevNext(req, posts, index));
+
+    res.type("html").send(rendered);
+  } catch (error) {
+    next(error);
+  }
+}
+
 app.use((req, res, next) => {
   if (hostMatches(req, mediaHost) && !req.path.startsWith("/uploads/") && req.path !== "/config.js") {
     res.status(404).send("Media host only serves uploaded files.");
@@ -2617,7 +3246,7 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
 
 app.get("/route-select.html", sendHtmlPage("route-select.html"));
 app.get(["/", "/index.html"], renderIndexPage);
-app.get("/detail.html", sendHtmlPage("detail.html"));
+app.get("/detail.html", renderDetailPage);
 app.get("/app.html", sendHtmlPage("app.html"));
 app.get("/qq.html", sendHtmlPage("qq.html"));
 app.get("/admin-login.html", sendHtmlPage("admin-login.html"));

@@ -7,6 +7,7 @@
   <link rel="icon" type="image/png" href="/assets/favicon-51.png">
   <link rel="apple-touch-icon" href="/assets/favicon-51.png">
   <script src="/config.js"></script>
+  <script defer src="/assets/webmaster-analytics.js"></script>
   <script>
     try {
       document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
@@ -258,6 +259,7 @@
   </div>
   <script>
     const appConfig = window.POSTWAVE_CONFIG || {};
+    const ssrDetail = window.POSTWAVE_SSR_DETAIL || {};
     function apiPath(path) {
       const base = String(appConfig.apiBaseUrl || "").replace(/\/+$/, "");
       return base ? `${base}${path}` : path;
@@ -265,7 +267,8 @@
     function apiOptions(options = {}) {
       return { credentials: "include", ...options };
     }
-    const demoSeedEnabled = appConfig.demoSeedEnabled !== false;
+    const hasSsrPosts = Array.isArray(ssrDetail.posts) && ssrDetail.posts.length > 0;
+    const demoSeedEnabled = appConfig.demoSeedEnabled !== false && !hasSsrPosts;
     const localPostFallbackEnabled = appConfig.localPostFallbackEnabled === true;
     const defaultSiteConfig = {
       siteName: "51春梦",
@@ -312,8 +315,8 @@
         { label: "2257合规声明", href: "#compliance" }
       ]
     };
-    let siteConfig = defaultSiteConfig;
-    let footerConfig = defaultFooterConfig;
+    let siteConfig = ssrDetail.siteConfig || defaultSiteConfig;
+    let footerConfig = normalizeFooterConfig(ssrDetail.footer || defaultFooterConfig);
     function escapeHtml(value) {
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[char]));
     }
@@ -447,11 +450,12 @@
     const categoryNames = (siteConfig.tabs || defaultSiteConfig.tabs).filter((tab) => tab.name !== "首页").map((tab) => tab.name);
     const seedPosts = titles.map((title, index) => ({ id:`seed-${index}`, title, image:images[index % images.length], author:"瓜哥", date:"2026 年 05 月 13 日", category:categoryNames[index % Math.max(1, categoryNames.length)] || "视频分类", keywords:["内容","展示","推荐"], tags:["今日推荐","内容展示","精选"], body:"这里会按照后台编辑器上传和排版的顺序展示文案、图片、视频。正文区域只显示实际文字内容，媒体文件按插入顺序展示。" }));
     const mediaById = new Map();
-    let mediaLibrary = [];
+    let mediaLibrary = Array.isArray(ssrDetail.media) ? ssrDetail.media : [];
     function mapAdminPosts(source) {
       return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
     }
-    const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
+    const ssrPostSource = Array.isArray(ssrDetail.posts) ? ssrDetail.posts : [];
+    const localAdminPostSource = ssrPostSource.length ? ssrPostSource : (localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : []);
     let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
     let adminPosts = mapAdminPosts(adminPostSource);
     function combinedPosts() {
@@ -528,9 +532,9 @@
     function loadAds() {
       return Array.isArray(ads) ? ads.map(normalizeAd) : [];
     }
-    let ads = null;
-    let config = { station: 10, latest: 10, friend: 10 };
-    let notice = "欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。";
+    let ads = Array.isArray(ssrDetail.ads) ? ssrDetail.ads.map(normalizeAd) : null;
+    let config = ssrDetail.adConfig || { station: 10, latest: 10, friend: 10 };
+    let notice = typeof ssrDetail.notice === "string" ? ssrDetail.notice : "欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。";
     const fallbackSquare = Array.from({ length: 30 }, (_, i) => ({ title:`广告 ${i + 1}`, image:images[i % images.length], link:"app.html" }));
     async function adImageUrl(ad) {
       if (!ad) return "";
