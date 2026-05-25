@@ -131,6 +131,21 @@
       color: var(--line);
       text-decoration-thickness: 2px;
     }
+    .legal-links {
+      width: min(560px, 100%);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px 14px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .legal-links a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .legal-links a:hover { color: var(--line); }
   </style>
 </head>
 <body>
@@ -144,6 +159,15 @@
       发送任意消息到邮箱，自动获取最新地址<br>
       <a id="mail" href="mailto:51sp1@proton.me">51sp1@proton.me</a>
     </section>
+    <nav class="legal-links" aria-label="合规链接">
+      <a href="/terms.html">用户协议</a>
+      <a href="/privacy.html">隐私政策</a>
+      <a href="/dmca.html">DMCA</a>
+      <a href="/2257.html">2257声明</a>
+      <a href="/content-policy.html">内容政策</a>
+      <a href="/report.html">投诉下架</a>
+      <a href="/age.html">年龄确认</a>
+    </nav>
   </main>
   <script>
     const config = window.POSTWAVE_CONFIG || {};

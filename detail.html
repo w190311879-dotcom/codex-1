@@ -329,10 +329,13 @@
         { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
       ],
       legalLinks: [
-        { label: "用户协议", href: "#terms" },
-        { label: "隐私政策", href: "#privacy" },
-        { label: "DMCA", href: "#dmca" },
-        { label: "2257合规声明", href: "#compliance" }
+        { label: "用户协议", href: "/terms.html" },
+        { label: "隐私政策", href: "/privacy.html" },
+        { label: "DMCA", href: "/dmca.html" },
+        { label: "2257合规声明", href: "/2257.html" },
+        { label: "内容政策", href: "/content-policy.html" },
+        { label: "投诉下架", href: "/report.html" },
+        { label: "年龄确认", href: "/age.html" }
       ]
     };
     let siteConfig = ssrDetail.siteConfig || defaultSiteConfig;
@@ -342,7 +345,7 @@
     }
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
-      if (/^(https?:|data:image\/|\/|app\.html|admin-login\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
+      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
     }
     function imageAttrs({ eager = false, width = 800, height = 1067 } = {}) {
@@ -356,9 +359,12 @@
       return attrs.join(" ");
     }
     function normalizeLink(link = {}, fallback = {}) {
+      const label = String(link.label || fallback.label || "").trim();
+      const fallbackHref = String(fallback.href || "").trim();
+      const rawHref = String(link.href || fallbackHref || "#").trim() || "#";
       return {
-        label: String(link.label || fallback.label || "").trim(),
-        href: String(link.href || fallback.href || "#").trim() || "#",
+        label,
+        href: rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim() ? fallbackHref : rawHref,
         icon: String(link.icon || fallback.icon || "").trim(),
         action: String(link.action || fallback.action || "").trim()
       };
@@ -367,6 +373,14 @@
       const source = Array.isArray(links) ? links : fallback;
       const normalized = source.map((link, index) => normalizeLink(link, fallback[index] || {})).filter((link) => link.label);
       return normalized.length ? normalized : fallback.map((link) => normalizeLink(link));
+    }
+    function includeFallbackLinks(links, fallback) {
+      const next = [...links];
+      const existing = new Set(next.map((link) => link.label));
+      fallback.forEach((link) => {
+        if (!existing.has(link.label)) next.push(normalizeLink(link));
+      });
+      return next;
     }
     function normalizeFooterConfig(input = {}) {
       return {
@@ -380,7 +394,7 @@
           x: normalizeLink(input.topLinks?.x, defaultFooterConfig.topLinks.x)
         },
         socialLinks: normalizeLinks(input.socialLinks, defaultFooterConfig.socialLinks),
-        legalLinks: normalizeLinks(input.legalLinks, defaultFooterConfig.legalLinks)
+        legalLinks: includeFallbackLinks(normalizeLinks(input.legalLinks, defaultFooterConfig.legalLinks), defaultFooterConfig.legalLinks)
       };
     }
     function isExternalUrl(url) {
@@ -566,7 +580,7 @@
     }
     function normalizeAd(ad) {
       const possibleUrl = String(ad.url || "");
-      const urlIsImage = /^(data:image|blob:)|\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(possibleUrl);
+      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
       return {
         ...ad,
         title: ad.title || "",

@@ -291,10 +291,13 @@ const defaultSiteSettings = {
       { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
     ],
     legalLinks: [
-      { label: "用户协议", href: "#terms" },
-      { label: "隐私政策", href: "#privacy" },
-      { label: "DMCA", href: "#dmca" },
-      { label: "2257合规声明", href: "#compliance" }
+      { label: "用户协议", href: "/terms.html" },
+      { label: "隐私政策", href: "/privacy.html" },
+      { label: "DMCA", href: "/dmca.html" },
+      { label: "2257合规声明", href: "/2257.html" },
+      { label: "内容政策", href: "/content-policy.html" },
+      { label: "投诉下架", href: "/report.html" },
+      { label: "年龄确认", href: "/age.html" }
     ]
   },
   notice: "欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
@@ -412,17 +415,33 @@ function normalizeSiteSettings(input = {}) {
   const emailAutoReply = input.emailAutoReply || {};
   const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
   const incomingFooter = input.footer || {};
-  const normalizeLink = (link, fallback = {}) => ({
-    label: String(link?.label || fallback.label || "").trim(),
-    href: String(link?.href || fallback.href || "#").trim() || "#",
-    icon: String(link?.icon || fallback.icon || "").trim(),
-    action: String(link?.action || fallback.action || "").trim()
-  });
+  const normalizeLink = (link, fallback = {}) => {
+    const label = String(link?.label || fallback.label || "").trim();
+    const fallbackHref = String(fallback.href || "").trim();
+    const rawHref = String(link?.href || fallbackHref || "#").trim() || "#";
+    const href = rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim()
+      ? fallbackHref
+      : rawHref;
+    return {
+      label,
+      href,
+      icon: String(link?.icon || fallback.icon || "").trim(),
+      action: String(link?.action || fallback.action || "").trim()
+    };
+  };
   const normalizeLinks = (links, fallbackLinks) => {
     const source = Array.isArray(links) ? links : fallbackLinks;
     const fallback = Array.isArray(fallbackLinks) ? fallbackLinks : [];
     const normalized = source.map((link, index) => normalizeLink(link, fallback[index])).filter((link) => link.label);
     return normalized.length ? normalized : fallback.map((link) => normalizeLink(link));
+  };
+  const includeFallbackLinks = (links, fallbackLinks) => {
+    const next = [...links];
+    const existing = new Set(next.map((link) => link.label));
+    fallbackLinks.forEach((link) => {
+      if (!existing.has(link.label)) next.push(normalizeLink(link));
+    });
+    return next;
   };
   const normalizeTopLink = (key) => normalizeLink(incomingFooter.topLinks?.[key], defaultSiteSettings.footer.topLinks[key]);
   return {
@@ -457,7 +476,7 @@ function normalizeSiteSettings(input = {}) {
         x: normalizeTopLink("x")
       },
       socialLinks: normalizeLinks(incomingFooter.socialLinks, defaultSiteSettings.footer.socialLinks),
-      legalLinks: normalizeLinks(incomingFooter.legalLinks, defaultSiteSettings.footer.legalLinks)
+      legalLinks: includeFallbackLinks(normalizeLinks(incomingFooter.legalLinks, defaultSiteSettings.footer.legalLinks), defaultSiteSettings.footer.legalLinks)
     },
     notice: String(input.notice ?? defaultSiteSettings.notice)
   };
@@ -1728,8 +1747,18 @@ function routeSelectorUrl() {
   return "/route-select.html";
 }
 
+const compliancePagePaths = [
+  "/terms.html",
+  "/privacy.html",
+  "/dmca.html",
+  "/2257.html",
+  "/content-policy.html",
+  "/report.html",
+  "/age.html"
+];
+
 function isRouteSelectorPath(pathname = "") {
-  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || isSeoFilePath(pathname) || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
+  return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || compliancePagePaths.includes(pathname) || isSeoFilePath(pathname) || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
 }
 
 function isRestrictedInfrastructureHost(req) {
@@ -3031,7 +3060,7 @@ function htmlEscape(value = "") {
 
 function safePublicUrl(value = "", fallback = "") {
   const url = String(value || "").trim();
-  if (/^(https?:|data:image\/|\/|app\.html|admin-login\.html|admin\.html|index\.html|detail\.html|qq\.html|mailto:|#)/i.test(url)) return url;
+  if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
   return fallback;
 }
 
@@ -3166,7 +3195,7 @@ function ssrPostRow(post, eager = false) {
 
 function normalizeSsrAd(ad = {}) {
   const possibleUrl = String(ad.url || "");
-  const urlIsImage = /^(data:image|blob:)|\.(png|jpe?g|gif|webp|svg)(\?|#|$)/i.test(possibleUrl);
+  const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
   return {
     ...ad,
     title: ad.title || "",
@@ -3683,11 +3712,14 @@ async function renderSitemapXml(req, res, next) {
 
     if (isRouteSelectorRequest(req)) {
       const origin = siteMapOriginForRequest(req);
-      res.send(sitemapUrlset([{
-        loc: `${origin}/`,
-        changefreq: "daily",
-        priority: "0.7"
-      }]));
+      res.send(sitemapUrlset([
+        { loc: `${origin}/`, changefreq: "daily", priority: "0.7" },
+        ...compliancePagePaths.map((pagePath) => ({
+          loc: `${origin}${pagePath}`,
+          changefreq: "monthly",
+          priority: "0.3"
+        }))
+      ]));
       return;
     }
 
@@ -3701,6 +3733,11 @@ async function renderSitemapXml(req, res, next) {
       { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
       { loc: `${origin}/index.html`, changefreq: "hourly", priority: "0.9" },
       { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
+      ...compliancePagePaths.map((pagePath) => ({
+        loc: `${origin}${pagePath}`,
+        changefreq: "monthly",
+        priority: "0.3"
+      })),
       ...categories.map((category) => ({
         loc: `${origin}${categoryPath(category)}`,
         changefreq: "daily",
@@ -3903,6 +3940,9 @@ app.get("/detail.html", redirectLegacyDetailPage);
 app.get("/app.html", sendHtmlPage("app.html"));
 app.get("/qq.html", sendHtmlPage("qq.html"));
 app.get("/admin-login.html", sendHtmlPage("admin-login.html"));
+compliancePagePaths.forEach((pagePath) => {
+  app.get(pagePath, sendHtmlPage(pagePath.slice(1)));
+});
 app.get("/vendor/lucide/lucide.min.js", (_req, res) => {
   res.type("application/javascript");
   res.sendFile(path.join(__dirname, "vendor/lucide/lucide.min.js"));
