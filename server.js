@@ -1732,10 +1732,6 @@ function isRouteSelectorPath(pathname = "") {
   return pathname === "/" || pathname === "/route-select.html" || pathname === "/config.js" || pathname === "/favicon.ico" || isSeoFilePath(pathname) || pathname.startsWith("/assets/") || pathname === "/vendor/lucide/lucide.min.js" || pathname === "/vendor/hls/hls.min.js" || pathname === "/vendor/dplayer/DPlayer.min.js";
 }
 
-function isEntryHostDirectAssetPath(pathname = "") {
-  return pathname === "/favicon.ico" || isSeoFilePath(pathname) || pathname.startsWith("/assets/");
-}
-
 function isRestrictedInfrastructureHost(req) {
   return configuredHostMatches(req, adminHost)
     || configuredHostMatches(req, apiHost)
@@ -1750,7 +1746,7 @@ function enforceHostBoundary(req, res, next) {
   }
 
   if (hostInList(req, routeEntryHosts())) {
-    if (isEntryHostDirectAssetPath(req.path)) {
+    if (isRouteSelectorPath(req.path)) {
       next();
       return;
     }
@@ -3001,7 +2997,7 @@ app.post("/api/media/video/transcode", requireAdminApi, videoUpload.single("file
 });
 
 app.get("/", (req, res, next) => {
-  if (hostMatches(req, routeSelectorHost)) {
+  if (hostMatches(req, routeSelectorHost) || isRouteEntryRequest(req)) {
     renderRouteSelectPage(req, res, next);
     return;
   }
@@ -3449,6 +3445,7 @@ function homeSeoHead(req, settings = {}, posts = [], category = "首页") {
 }
 
 function routeSelectorCanonicalOrigin(req) {
+  if (!isLocalRequest(req) && isRouteEntryRequest(req)) return requestHostOrigin(req) || routeSelectorOrigin;
   if (!isLocalRequest(req) && routeSelectorOrigin) return routeSelectorOrigin;
   return requestHostOrigin(req) || routeSelectorOrigin || canonicalSiteOrigin(req);
 }
