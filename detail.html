@@ -35,8 +35,6 @@
       document.documentElement.classList.toggle("light", localStorage.getItem("postwave_theme") === "light");
     } catch (error) {}
   </script>
-  <script src="/vendor/hls/hls.min.js"></script>
-  <script src="/vendor/dplayer/DPlayer.min.js"></script>
   <script defer src="/vendor/lucide/lucide.min.js" onload="window.lucide?.createIcons?.()"></script>
   <style>
     :root { --bg:#0b0f0f; --card:#15191d; --line:#293038; --text:#f5f7f4; --muted:#a5adb5; --green:#28d4b0; --pink:#ef477d; --radius:8px; }
@@ -732,6 +730,32 @@
     function isHlsMedia(item, url) {
       return item?.playbackType === "hls" || /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
     }
+    const videoScriptPromises = new Map();
+    let videoObserver = null;
+    function loadScriptOnce(src, globalName = "") {
+      if (globalName && window[globalName]) return Promise.resolve();
+      if (videoScriptPromises.has(src)) return videoScriptPromises.get(src);
+      const promise = new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing) {
+          existing.addEventListener("load", () => resolve(), { once: true });
+          existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = src;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(script);
+      });
+      videoScriptPromises.set(src, promise);
+      return promise;
+    }
+    async function ensureVideoPlayerScripts(hls) {
+      if (hls && !window.Hls) await loadScriptOnce("/vendor/hls/hls.min.js", "Hls");
+      if (!window.DPlayer) await loadScriptOnce("/vendor/dplayer/DPlayer.min.js", "DPlayer");
+    }
     function attachVideoFallback(container, url, posterUrl, hls) {
       const video = document.createElement("video");
       video.controls = true;
@@ -763,6 +787,9 @@
         const posterUrl = item?.posterUrl || "";
         const hls = isHlsMedia(item, url);
         container.innerHTML = "";
+        try {
+          await ensureVideoPlayerScripts(hls);
+        } catch (_scriptError) {}
         if (window.DPlayer) {
           new window.DPlayer({
             container,
@@ -781,7 +808,36 @@
         container.closest(".media")?.remove();
       }
     }
+    function startVideoMount(container) {
+      if (!container || container.dataset.videoMountState) return;
+      container.dataset.videoMountState = "loading";
+      mountVideoPlayer(container, container.dataset.mediaVideo);
+    }
+    function scheduleVideoPlayers(root) {
+      if (videoObserver) {
+        videoObserver.disconnect();
+        videoObserver = null;
+      }
+      const players = Array.from(root.querySelectorAll("[data-media-video]"));
+      if (!players.length) return;
+      if (!("IntersectionObserver" in window)) {
+        players.forEach(startVideoMount);
+        return;
+      }
+      videoObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          videoObserver?.unobserve(entry.target);
+          startVideoMount(entry.target);
+        });
+      }, { rootMargin: "480px 0px", threshold: 0.01 });
+      players.forEach((playerEl) => videoObserver.observe(playerEl));
+    }
     function renderContentFlow() {
+      if (videoObserver) {
+        videoObserver.disconnect();
+        videoObserver = null;
+      }
       const flow = document.querySelector("#contentFlow");
       const body = current.body || "";
       if (!body.includes("[图片") && !body.includes("[视频")) {
@@ -815,7 +871,7 @@
           flow.appendChild(div);
         }
       });
-      flow.querySelectorAll("[data-media-video]").forEach((playerEl) => mountVideoPlayer(playerEl, playerEl.dataset.mediaVideo));
+      scheduleVideoPlayers(flow);
     }
     function cleanTag(tag) { return String(tag).replace(/^#+/, ""); }
     async function renderDetailPage() {
