@@ -79,7 +79,8 @@ const demoSeedEnabled = process.env.POSTWAVE_ENABLE_DEMO_SEED === undefined
   : ["1", "true", "yes", "on"].includes(String(process.env.POSTWAVE_ENABLE_DEMO_SEED).toLowerCase());
 const ffmpegBin = process.env.FFMPEG_PATH || "ffmpeg";
 const ffprobeBin = process.env.FFPROBE_PATH || "ffprobe";
-const allowedImageMimes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]);
+const allowedImageMimes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+const allowedImageUploadMessage = "只允许上传 JPG、PNG、WEBP、GIF 图片";
 const allowedVideoMimes = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "application/octet-stream"]);
 const imageUpload = multer({
   storage: multer.diskStorage({
@@ -93,7 +94,7 @@ const imageUpload = multer({
   }),
   limits: { fileSize: imageUploadLimitMb * 1024 * 1024 },
   fileFilter(_req, file, callback) {
-    callback(allowedImageMimes.has(file.mimetype) ? null : new Error("只允许上传 JPG、PNG、WEBP、GIF、SVG 图片"), allowedImageMimes.has(file.mimetype));
+    callback(allowedImageMimes.has(file.mimetype) ? null : new Error(allowedImageUploadMessage), allowedImageMimes.has(file.mimetype));
   }
 });
 const videoUpload = multer({
@@ -557,7 +558,6 @@ function extensionFromMime(mime = "") {
     "image/png": ".png",
     "image/gif": ".gif",
     "image/webp": ".webp",
-    "image/svg+xml": ".svg",
     "video/mp4": ".mp4",
     "video/webm": ".webm",
     "video/quicktime": ".mov",
@@ -834,7 +834,7 @@ async function uploadProcessedHls(outputDir, originalFile, metadata = {}, mediaI
 
 async function uploadMediaFile(file, kind) {
   if (!file) throw new Error("没有收到上传文件");
-  if (!allowedImageMimes.has(file.mimetype)) throw new Error("只允许上传图片/GIF 文件");
+  if (!allowedImageMimes.has(file.mimetype)) throw new Error(allowedImageUploadMessage);
   const storagePath = createMediaStoragePath(file, kind);
   const url = useBunnyStorage
     ? (file.path ? await uploadPathToBunny(file.path, file.mimetype, storagePath) : await uploadFileToBunny(file, storagePath))
@@ -3924,14 +3924,39 @@ app.get("/assets/webmaster-analytics.js", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(__dirname, "assets/webmaster-analytics.js"));
 });
+
+function uploadedMediaCsp() {
+  return [
+    "default-src 'none'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "script-src 'none'",
+    "style-src 'none'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'"
+  ].join("; ");
+}
+
+function safeDownloadName(filePath = "") {
+  return path.basename(filePath).replace(/["\\\r\n]/g, "_") || "download";
+}
+
 app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "7d" }));
 app.use("/uploads", express.static(uploadsDir, {
   maxAge: "7d",
   setHeaders(res, filePath) {
     const ext = path.extname(filePath).toLowerCase();
+    res.setHeader("Content-Security-Policy", uploadedMediaCsp());
     if (ext === ".m3u8") res.type("application/vnd.apple.mpegurl");
     if (ext === ".ts") res.type("video/mp2t");
     if (ext === ".bin") res.type("application/octet-stream");
+    if (ext === ".svg") {
+      res.type("application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${safeDownloadName(filePath)}"`);
+      res.setHeader("Content-Security-Policy", `${uploadedMediaCsp()}; sandbox`);
+    }
   }
 }));
 

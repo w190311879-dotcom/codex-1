@@ -222,7 +222,7 @@
         <div class="workspace">
           <form class="left-form">
             <input class="field" id="postTitle" placeholder="请输入标题">
-            <label class="cover" id="coverBox"><span id="coverText">点击上传封面</span><input id="coverInput" type="file" accept="image/*" hidden></label>
+            <label class="cover" id="coverBox"><span id="coverText">点击上传封面</span><input id="coverInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
             <div class="category-picker" id="postCategory"></div>
             <select class="field" id="postAuthor"></select>
             <input class="field" id="keywordInput" placeholder="关键词，例如 推荐 热门">
@@ -239,7 +239,7 @@
               <button data-command="bold" title="加粗">B</button><button data-command="italic" title="斜体"><em>I</em></button><button data-command="underline" title="下划线"><u>U</u></button><button data-command="strikeThrough" title="删除线">S</button>
               <button data-insert="无序列表" title="无序列表"><i data-lucide="list"></i></button><button data-insert="有序列表" title="有序列表"><i data-lucide="list-ordered"></i></button><button data-insert="左对齐" title="左对齐"><i data-lucide="align-left"></i></button>
               <button data-insert="链接" title="链接"><i data-lucide="link"></i></button><button id="insertImageBtn" type="button" title="插入图片"><i data-lucide="image"></i></button><button id="insertVideoBtn" type="button" title="插入视频"><i data-lucide="video"></i></button><button id="previewBtn" type="button" title="预览"><i data-lucide="eye"></i></button>
-              <input id="inlineImageInput" type="file" accept="image/*,.gif" multiple hidden>
+              <input id="inlineImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
             </div>
             <textarea id="bodyText" placeholder="请输入正文"></textarea>
             <div class="inserted-preview">
@@ -376,7 +376,7 @@
           <div class="logo-config">
             <div class="logo-preview" id="logoPreview"><img src="/assets/logo.png" alt="固定 Logo"></div>
             <div style="color:#64748b;font-weight:900;line-height:1.7">前台 Logo 已固定使用项目内 <code>/assets/logo.png</code>，不再从后台配置读取。</div>
-            <input id="logoImageInput" type="file" accept="image/*,.gif" hidden>
+            <input id="logoImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
           </div>
           <input class="field" id="commentLogoInput" value="51暗网" placeholder="评论列表左侧标识文字">
           <select class="field" id="themeSelect"><option>深色荧光绿主题</option><option>浅色主题</option></select>
@@ -407,7 +407,7 @@
               <option value="latest-square">最新上架方形广告</option>
               <option value="friend-square">瓜友推荐方形广告</option>
             </select>
-            <label class="btn" style="display:grid;place-items:center">上传图片/GIF<input id="adImageInput" type="file" accept="image/*,.gif" hidden></label>
+            <label class="btn" style="display:grid;place-items:center">上传图片/GIF<input id="adImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
           </div>
           <div class="ad-upload-preview" id="adImagePreview"><img id="adPreviewImg" alt="广告预览"><span id="adImageName">支持 GIF、PNG、JPG、WebP</span></div>
           <div class="ad-config-row">
