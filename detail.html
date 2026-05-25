@@ -385,6 +385,15 @@
       const normalized = source.map((link, index) => normalizeLink(link, fallback[index] || {})).filter((link) => link.label);
       return normalized.length ? normalized : fallback.map((link) => normalizeLink(link));
     }
+    function normalizeSocialLinks(links, fallback, topLinks = {}) {
+      return normalizeLinks(links, fallback).map((link) => {
+        const label = String(link.label || "").trim().toLowerCase();
+        const href = String(link.href || "").trim();
+        if (label === "x" && /^https:\/\/x\.com\/example\/?$/i.test(href) && topLinks.x?.href) return { ...link, href: topLinks.x.href };
+        if (label.includes("telegram") && /^https:\/\/t\.me\/example_group\/?$/i.test(href) && topLinks.telegram?.href) return { ...link, href: topLinks.telegram.href };
+        return link;
+      });
+    }
     function includeFallbackLinks(links, fallback) {
       const next = [...links];
       const existing = new Set(next.map((link) => link.label));
@@ -394,17 +403,18 @@
       return next;
     }
     function normalizeFooterConfig(input = {}) {
+      const topLinks = {
+        app: normalizeLink(input.topLinks?.app, defaultFooterConfig.topLinks.app),
+        group: normalizeLink(input.topLinks?.group, defaultFooterConfig.topLinks.group),
+        telegram: normalizeLink(input.topLinks?.telegram, defaultFooterConfig.topLinks.telegram),
+        x: normalizeLink(input.topLinks?.x, defaultFooterConfig.topLinks.x)
+      };
       return {
         introText: String(input.introText ?? defaultFooterConfig.introText),
         quickLinks: normalizeLinks(input.quickLinks, defaultFooterConfig.quickLinks),
         footerLinks: normalizeLinks(input.footerLinks, defaultFooterConfig.footerLinks),
-        topLinks: {
-          app: normalizeLink(input.topLinks?.app, defaultFooterConfig.topLinks.app),
-          group: normalizeLink(input.topLinks?.group, defaultFooterConfig.topLinks.group),
-          telegram: normalizeLink(input.topLinks?.telegram, defaultFooterConfig.topLinks.telegram),
-          x: normalizeLink(input.topLinks?.x, defaultFooterConfig.topLinks.x)
-        },
-        socialLinks: normalizeLinks(input.socialLinks, defaultFooterConfig.socialLinks),
+        topLinks,
+        socialLinks: normalizeSocialLinks(input.socialLinks, defaultFooterConfig.socialLinks, topLinks),
         legalLinks: includeFallbackLinks(normalizeLinks(input.legalLinks, defaultFooterConfig.legalLinks), defaultFooterConfig.legalLinks)
       };
     }

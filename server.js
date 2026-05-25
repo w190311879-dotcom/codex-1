@@ -443,6 +443,13 @@ function normalizeSiteSettings(input = {}) {
     const normalized = source.map((link, index) => normalizeLink(link, fallback[index])).filter((link) => link.label);
     return normalized.length ? normalized : fallback.map((link) => normalizeLink(link));
   };
+  const normalizeSocialLinks = (links, fallbackLinks, topLinks = {}) => normalizeLinks(links, fallbackLinks).map((link) => {
+    const label = String(link.label || "").trim().toLowerCase();
+    const href = String(link.href || "").trim();
+    if (label === "x" && /^https:\/\/x\.com\/example\/?$/i.test(href) && topLinks.x?.href) return { ...link, href: topLinks.x.href };
+    if (label.includes("telegram") && /^https:\/\/t\.me\/example_group\/?$/i.test(href) && topLinks.telegram?.href) return { ...link, href: topLinks.telegram.href };
+    return link;
+  });
   const includeFallbackLinks = (links, fallbackLinks) => {
     const next = [...links];
     const existing = new Set(next.map((link) => link.label));
@@ -452,6 +459,12 @@ function normalizeSiteSettings(input = {}) {
     return next;
   };
   const normalizeTopLink = (key) => normalizeLink(incomingFooter.topLinks?.[key], defaultSiteSettings.footer.topLinks[key]);
+  const footerTopLinks = {
+    app: normalizeTopLink("app"),
+    group: normalizeTopLink("group"),
+    telegram: normalizeTopLink("telegram"),
+    x: normalizeTopLink("x")
+  };
   return {
     siteConfig: {
       siteName: String(incomingConfig.siteName || defaultSiteSettings.siteConfig.siteName).trim() || defaultSiteSettings.siteConfig.siteName,
@@ -477,13 +490,8 @@ function normalizeSiteSettings(input = {}) {
       introText: String(incomingFooter.introText ?? defaultSiteSettings.footer.introText),
       quickLinks: normalizeLinks(incomingFooter.quickLinks, defaultSiteSettings.footer.quickLinks),
       footerLinks: normalizeLinks(incomingFooter.footerLinks, defaultSiteSettings.footer.footerLinks),
-      topLinks: {
-        app: normalizeTopLink("app"),
-        group: normalizeTopLink("group"),
-        telegram: normalizeTopLink("telegram"),
-        x: normalizeTopLink("x")
-      },
-      socialLinks: normalizeLinks(incomingFooter.socialLinks, defaultSiteSettings.footer.socialLinks),
+      topLinks: footerTopLinks,
+      socialLinks: normalizeSocialLinks(incomingFooter.socialLinks, defaultSiteSettings.footer.socialLinks, footerTopLinks),
       legalLinks: includeFallbackLinks(normalizeLinks(incomingFooter.legalLinks, defaultSiteSettings.footer.legalLinks), defaultSiteSettings.footer.legalLinks)
     },
     notice: String(input.notice ?? defaultSiteSettings.notice)
