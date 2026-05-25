@@ -3135,11 +3135,22 @@ function publicPostForHome(post = {}, index = 0) {
   };
 }
 
-function ssrPostRow(post) {
+function ssrImageAttrs({ eager = false, width = 1200, height = 675 } = {}) {
+  const attrs = [
+    `width="${Number(width) || 1200}"`,
+    `height="${Number(height) || 675}"`,
+    `loading="${eager ? "eager" : "lazy"}"`,
+    `decoding="async"`
+  ];
+  if (eager) attrs.push(`fetchpriority="high"`);
+  return attrs.join(" ");
+}
+
+function ssrPostRow(post, eager = false) {
   const categories = post.categories && post.categories.length ? post.categories.join("、") : post.category;
   return `
         <a class="post-row" href="${htmlEscape(detailPath(post))}">
-          <img src="${htmlEscape(safePublicUrl(post.image))}" alt="${htmlEscape(post.title)}">
+          <img src="${htmlEscape(safePublicUrl(post.image))}" alt="${htmlEscape(post.title)}" ${ssrImageAttrs({ eager })}>
           <div class="post-content">
             <h2 class="post-title">${htmlEscape(post.title)}</h2>
             <p class="post-meta"><span>${htmlEscape(post.author || "alun")}</span><span>·</span><span>${htmlEscape(post.date || "")}</span><span>·</span><span>${htmlEscape(categories || "内容")}</span></p>
@@ -3162,9 +3173,9 @@ function normalizeSsrAd(ad = {}) {
   };
 }
 
-function ssrFeedAdRow(ad) {
+function ssrFeedAdRow(ad, eager = false) {
   if (!ad.image) return "";
-  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}"><img src="${htmlEscape(safePublicUrl(ad.image))}" alt="${htmlEscape(ad.title || "广告")}"><div class="post-content" aria-hidden="true"></div></a>`;
+  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}"><img src="${htmlEscape(safePublicUrl(ad.image))}" alt="${htmlEscape(ad.title || "广告")}" ${ssrImageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>`;
 }
 
 function ssrPager(totalPages, currentPage = 1) {
@@ -3304,6 +3315,7 @@ function ssrDetailContent(post, mediaById = new Map()) {
     return cleaned.trim() ? `<div class="body">${htmlEscape(cleaned)}</div>` : "";
   };
   if (!body.includes("[图片") && !body.includes("[视频")) return renderText(body || "暂无内容。");
+  let imageCount = 0;
   return body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g).map((part) => {
     if (!part) return "";
     if (part.startsWith("[图片")) {
@@ -3311,7 +3323,9 @@ function ssrDetailContent(post, mediaById = new Map()) {
       const imgIndex = match && match[1] ? Number(match[1]) : 0;
       const img = (post.bodyImages || [])[imgIndex] || "";
       if (!img) return "";
-      return `<div class="media image-media"><img src="${htmlEscape(safePublicUrl(img))}" alt="${htmlEscape(post.title)}" loading="lazy" decoding="async"></div>`;
+      const eager = imageCount === 0;
+      imageCount += 1;
+      return `<div class="media image-media"><img src="${htmlEscape(safePublicUrl(img))}" alt="${htmlEscape(post.title)}" ${ssrImageAttrs({ eager, width: 800, height: 1067 })}></div>`;
     }
     if (part.startsWith("[视频")) {
       const match = part.match(/\[视频(?::([^\]]+))?\]/);
@@ -3724,12 +3738,14 @@ async function renderIndexPage(req, res, next) {
       .map(normalizeSsrAd)
       .filter((ad) => ad.placement === "home-feed" && ad.image)
       .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
-    const rows = pagePosts.map(ssrPostRow);
+    const rows = pagePosts.map((post) => ({ kind: "post", post }));
     feedAds.forEach((ad, order) => {
       const slot = Math.max(1, Math.min(rows.length + 1, Number(ad.slot) || order + 1));
-      rows.splice(slot - 1, 0, ssrFeedAdRow(ad));
+      rows.splice(slot - 1, 0, { kind: "ad", ad });
     });
-    const postHtml = rows.join("");
+    const postHtml = rows.map((row, index) => (
+      row.kind === "ad" ? ssrFeedAdRow(row.ad, index === 0) : ssrPostRow(row.post, index === 0)
+    )).join("");
     const pageTitle = activeCategory;
     const pageSubtitle = activeTab?.subtitle || `${activeCategory}内容聚合展示。`;
     const seo = homeSeoHead(req, settings, filteredPosts, activeCategory);
