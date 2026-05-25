@@ -63,6 +63,9 @@
     .actions { display:flex; align-items:center; gap:9px; }
     .icon-btn { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--line); border-radius:8px; color:var(--muted); background:#12161a; cursor:pointer; }
     :root.light .icon-btn { background:#fff; }
+    .svg-icon { width:22px; height:22px; display:inline-block; flex:0 0 auto; background:currentColor; -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; -webkit-mask-position:center; mask-position:center; -webkit-mask-size:contain; mask-size:contain; }
+    .svg-icon-x { -webkit-mask-image:url("/assets/icon-x.svg"); mask-image:url("/assets/icon-x.svg"); }
+    .svg-icon-telegram { -webkit-mask-image:url("/assets/icon-telegram.svg"); mask-image:url("/assets/icon-telegram.svg"); }
     .search-panel { display:none; max-width:760px; margin:18px auto 0; }
     .search-panel.active { display:block; }
     .search-box { height:50px; display:flex; align-items:center; gap:10px; padding:0 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--muted); }
@@ -209,8 +212,8 @@
         <button class="icon-btn mobile-hide" id="searchToggle" aria-label="搜索" title="搜索"><i data-lucide="search"></i></button>
         <a class="icon-btn mobile-hide" id="topAppLink" href="app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
         <a class="icon-btn mobile-hide" id="topGroupLink" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
-        <a class="icon-btn" id="topTelegramLink" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><i data-lucide="send"></i></a>
-        <a class="icon-btn" id="topXLink" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X">X</a>
+        <a class="icon-btn" id="topTelegramLink" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><span class="svg-icon svg-icon-telegram" aria-hidden="true"></span></a>
+        <a class="icon-btn" id="topXLink" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X"><span class="svg-icon svg-icon-x" aria-hidden="true"></span></a>
         <button class="icon-btn mobile-hide" id="themeToggle" aria-label="日间夜间模式" title="日间夜间模式"><i data-lucide="sun-moon"></i></button>
         <button class="icon-btn" id="authOpen" aria-label="登录注册" title="登录/注册"><i data-lucide="user-round"></i></button>
       </div>
@@ -325,8 +328,8 @@
         x: { href: "https://x.com/example" }
       },
       socialLinks: [
-        { label: "X", href: "https://x.com/example", icon: "text:x" },
-        { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
+        { label: "X", href: "https://x.com/example", icon: "asset:x" },
+        { label: "Telegram", href: "https://t.me/example_group", icon: "asset:telegram" }
       ],
       legalLinks: [
         { label: "用户协议", href: "/terms.html" },
@@ -358,6 +361,14 @@
       if (eager) attrs.push(`fetchpriority="high"`);
       return attrs.join(" ");
     }
+    function normalizeIconName(icon = "", label = "") {
+      const value = String(icon || "").trim();
+      const lowerValue = value.toLowerCase();
+      const lowerLabel = String(label || "").trim().toLowerCase();
+      if (lowerValue === "asset:x" || lowerValue === "text:x" || (lowerValue === "x" && lowerLabel === "x")) return "asset:x";
+      if (lowerValue === "asset:telegram" || lowerValue === "telegram" || (lowerValue === "send" && lowerLabel.includes("telegram"))) return "asset:telegram";
+      return value;
+    }
     function normalizeLink(link = {}, fallback = {}) {
       const label = String(link.label || fallback.label || "").trim();
       const fallbackHref = String(fallback.href || "").trim();
@@ -365,7 +376,7 @@
       return {
         label,
         href: rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim() ? fallbackHref : rawHref,
-        icon: String(link.icon || fallback.icon || "").trim(),
+        icon: normalizeIconName(link.icon || fallback.icon || "", label),
         action: String(link.action || fallback.action || "").trim()
       };
     }
@@ -408,8 +419,11 @@
       return attrs.join(" ");
     }
     function iconMarkup(icon, label = "") {
-      if (String(icon || "").startsWith("text:")) return escapeHtml(String(icon).slice(5) || label);
-      return icon ? `<i data-lucide="${escapeHtml(icon)}"></i>` : "";
+      const normalizedIcon = normalizeIconName(icon, label);
+      if (normalizedIcon === "asset:x") return `<span class="svg-icon svg-icon-x" aria-hidden="true"></span>`;
+      if (normalizedIcon === "asset:telegram") return `<span class="svg-icon svg-icon-telegram" aria-hidden="true"></span>`;
+      if (String(normalizedIcon || "").startsWith("text:")) return escapeHtml(String(normalizedIcon).slice(5) || label);
+      return normalizedIcon ? `<i data-lucide="${escapeHtml(normalizedIcon)}"></i>` : "";
     }
     function applyTopLink(selector, link, fallbackHref) {
       const el = document.querySelector(selector);

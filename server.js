@@ -287,8 +287,8 @@ const defaultSiteSettings = {
       x: { href: "https://x.com/example" }
     },
     socialLinks: [
-      { label: "X", href: "https://x.com/example", icon: "text:x" },
-      { label: "Telegram", href: "https://t.me/example_group", icon: "send" }
+      { label: "X", href: "https://x.com/example", icon: "asset:x" },
+      { label: "Telegram", href: "https://t.me/example_group", icon: "asset:telegram" }
     ],
     legalLinks: [
       { label: "用户协议", href: "/terms.html" },
@@ -415,6 +415,14 @@ function normalizeSiteSettings(input = {}) {
   const emailAutoReply = input.emailAutoReply || {};
   const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
   const incomingFooter = input.footer || {};
+  const normalizeIconName = (icon = "", label = "") => {
+    const value = String(icon || "").trim();
+    const lowerValue = value.toLowerCase();
+    const lowerLabel = String(label || "").trim().toLowerCase();
+    if (lowerValue === "asset:x" || lowerValue === "text:x" || (lowerValue === "x" && lowerLabel === "x")) return "asset:x";
+    if (lowerValue === "asset:telegram" || lowerValue === "telegram" || (lowerValue === "send" && lowerLabel.includes("telegram"))) return "asset:telegram";
+    return value;
+  };
   const normalizeLink = (link, fallback = {}) => {
     const label = String(link?.label || fallback.label || "").trim();
     const fallbackHref = String(fallback.href || "").trim();
@@ -425,7 +433,7 @@ function normalizeSiteSettings(input = {}) {
     return {
       label,
       href,
-      icon: String(link?.icon || fallback.icon || "").trim(),
+      icon: normalizeIconName(link?.icon || fallback.icon || "", label),
       action: String(link?.action || fallback.action || "").trim()
     };
   };
