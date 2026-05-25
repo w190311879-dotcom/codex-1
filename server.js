@@ -1743,7 +1743,9 @@ function isSeoFilePath(pathname = "") {
 }
 
 function routeEntryHosts() {
-  return uniqueList([...fixedRouteEntryHosts, ...(cachedRoutingSettings.entryHosts || [])]);
+  const primaryHost = hostWithoutPort(originHost(publicSiteOrigins[0] || publicSiteOrigin));
+  return uniqueList([...fixedRouteEntryHosts, ...(cachedRoutingSettings.entryHosts || [])])
+    .filter((host) => !primaryHost || hostWithoutPort(host) !== primaryHost);
 }
 
 function extractEmailAddress(value = "") {
@@ -3245,7 +3247,7 @@ function requestOrigin(req) {
 
 function canonicalSiteOrigin(req) {
   if (isLocalRequest(req)) return requestOrigin(req);
-  return publicSiteOrigins[0] || routeLineOrigins[0] || requestOrigin(req);
+  return publicSiteOrigins[0] || requestOrigin(req) || routeLineOrigins[0] || "";
 }
 
 function absolutePublicUrl(req, value = "") {
@@ -3394,6 +3396,52 @@ function ssrTags(post) {
   return `<div class="tags" id="tags">${tags.map((tag) => `<span class="tag">${htmlEscape(tag)}</span>`).join("")}</div>`;
 }
 
+function primaryPostCategory(post = {}) {
+  const categories = Array.isArray(post.categories) && post.categories.length
+    ? post.categories
+    : normalizeArray(post.category);
+  return String(categories.find(Boolean) || "").trim();
+}
+
+function detailBreadcrumbJsonLd(req, post = {}, canonical = "") {
+  const origin = canonicalSiteOrigin(req);
+  const category = primaryPostCategory(post);
+  const items = [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "首页",
+      item: seoCanonical(origin, "/")
+    }
+  ];
+  if (category && category !== "首页") {
+    items.push({
+      "@type": "ListItem",
+      position: items.length + 1,
+      name: category,
+      item: categoryUrl(req, category)
+    });
+  }
+  items.push({
+    "@type": "ListItem",
+    position: items.length + 1,
+    name: truncateText(post.title || "帖子详情", 110),
+    item: canonical || detailUrl(req, post)
+  });
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items
+  };
+}
+
+function ssrDetailBreadcrumb(post = {}) {
+  const category = primaryPostCategory(post);
+  const categoryLabel = category || "内容";
+  const categoryHref = category && category !== "首页" ? categoryPath(category) : "/";
+  return `<nav class="breadcrumb"><a href="/">首页</a> &gt; <a href="${htmlEscape(categoryHref)}">${htmlEscape(categoryLabel)}</a> &gt; <span id="crumbTitle">${htmlEscape(post.title || "帖子详情")}</span></nav>`;
+}
+
 function ssrPrevNext(req, posts, index) {
   const prev = index >= 0 && posts.length > 1 ? posts[(index - 1 + posts.length) % posts.length] : null;
   const next = index >= 0 && posts.length > 1 ? posts[(index + 1) % posts.length] : null;
@@ -3540,6 +3588,7 @@ function routeSelectorSeoHead(req, settings = {}) {
       type: "website",
       siteName,
       imageAlt: `${siteName} 分享封面`,
+      extra: [`<meta name="robots" content="noindex,follow">`],
       jsonLd
     })
   };
@@ -3599,13 +3648,14 @@ function detailSeoHead(req, post, description, mediaById = new Map(), settings =
       isFamilyFriendly: false
     };
   });
-  const graph = [article, ...videos].map((item) => Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined && value !== "" && !(Array.isArray(value) && !value.length))));
+  const breadcrumb = detailBreadcrumbJsonLd(req, post, canonical);
+  const graph = [breadcrumb, article, ...videos].map((item) => Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined && value !== "" && !(Array.isArray(value) && !value.length))));
   const jsonLd = graph.length === 1 ? graph[0] : { "@context": "https://schema.org", "@graph": graph.map(({ "@context": _context, ...item }) => item) };
   const meta = seoHeadTags({
     title,
     description,
     canonical,
-    image: fallbackImage || contentImage,
+    image: contentImage || fallbackImage,
     type: "article",
     siteName,
     imageAlt: `${siteName} 分享封面`,
@@ -3630,14 +3680,6 @@ function xmlEscape(value = "") {
   }[char]));
 }
 
-function uniqueOrigins(origins = []) {
-  return uniqueList(origins.map(normalizeOrigin).filter(Boolean));
-}
-
-function configuredLineOrigins() {
-  return uniqueOrigins(routeLineOrigins.length ? routeLineOrigins : publicSiteOrigins);
-}
-
 function requestHostOrigin(req) {
   return normalizeOrigin(requestOrigin(req));
 }
@@ -3655,11 +3697,10 @@ function isLineHostRequest(req) {
   return siteHosts.some((item) => hostWithoutPort(item) === host);
 }
 
-function sitemapOriginsForIndex(req) {
-  const lines = configuredLineOrigins();
-  if (lines.length) return lines;
-  const fallback = routeSelectorOrigin || requestHostOrigin(req);
-  return fallback ? [fallback] : [];
+function isPrimarySiteRequest(req) {
+  if (isLocalRequest(req)) return true;
+  const primaryHost = hostWithoutPort(originHost(canonicalSiteOrigin(req)));
+  return Boolean(primaryHost) && hostWithoutPort(requestHost(req)) === primaryHost;
 }
 
 function sitemapUrlset(entries = []) {
@@ -3675,16 +3716,8 @@ function sitemapUrlset(entries = []) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</urlset>\n`;
 }
 
-function sitemapIndex(origins = []) {
-  const rows = origins.map((origin) => `  <sitemap>\n    <loc>${xmlEscape(`${normalizeOrigin(origin)}/sitemap.xml`)}</loc>\n  </sitemap>`).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</sitemapindex>\n`;
-}
-
 function siteMapOriginForRequest(req) {
-  if (isLocalRequest(req)) return requestHostOrigin(req);
-  if (isRouteSelectorRequest(req) && routeSelectorOrigin) return routeSelectorOrigin;
-  if (isLineHostRequest(req)) return requestHostOrigin(req) || canonicalSiteOrigin(req);
-  return requestHostOrigin(req) || canonicalSiteOrigin(req);
+  return canonicalSiteOrigin(req);
 }
 
 async function renderRobotsTxt(req, res, next) {
@@ -3695,9 +3728,7 @@ async function renderRobotsTxt(req, res, next) {
       lines.push("Disallow: /");
     } else {
       lines.push("Allow: /");
-      if (isRouteEntryRequest(req)) {
-        for (const origin of sitemapOriginsForIndex(req)) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap.xml`);
-      } else {
+      if (!isRouteSelectorRequest(req)) {
         const origin = siteMapOriginForRequest(req);
         if (origin) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap.xml`);
       }
@@ -3721,21 +3752,8 @@ async function renderSitemapXml(req, res, next) {
       return;
     }
 
-    if (isRouteEntryRequest(req)) {
-      res.send(sitemapIndex(sitemapOriginsForIndex(req)));
-      return;
-    }
-
-    if (isRouteSelectorRequest(req)) {
-      const origin = siteMapOriginForRequest(req);
-      res.send(sitemapUrlset([
-        { loc: `${origin}/`, changefreq: "daily", priority: "0.7" },
-        ...compliancePagePaths.map((pagePath) => ({
-          loc: `${origin}${pagePath}`,
-          changefreq: "monthly",
-          priority: "0.3"
-        }))
-      ]));
+    if (!isPrimarySiteRequest(req)) {
+      res.status(404).send(sitemapUrlset([]));
       return;
     }
 
@@ -3747,7 +3765,6 @@ async function renderSitemapXml(req, res, next) {
       .filter((name) => name && name !== "首页");
     const entries = [
       { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
-      { loc: `${origin}/index.html`, changefreq: "hourly", priority: "0.9" },
       { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
       ...compliancePagePaths.map((pagePath) => ({
         loc: `${origin}${pagePath}`,
@@ -3917,6 +3934,7 @@ async function renderDetailPage(req, res, next) {
     const rendered = injectSeoHead(html, seo.meta)
       .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
       .replace("</head>", `${ssrDetailJsonScript(ssrPayload)}\n</head>`)
+      .replace('<nav class="breadcrumb"><a href="index.html">首页</a> &gt; <a href="index.html">内容</a> &gt; <span id="crumbTitle">帖子详情</span></nav>', ssrDetailBreadcrumb(current))
       .replace('<span id="crumbTitle">帖子详情</span>', `<span id="crumbTitle">${htmlEscape(current.title)}</span>`)
       .replace('<h1 id="title">帖子详情</h1>', `<h1 id="title">${htmlEscape(current.title)}</h1>`)
       .replace('<span id="author"></span>', `<span id="author">${htmlEscape(current.author || "alun")}</span>`)
