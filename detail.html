@@ -26,8 +26,8 @@
   <meta name="twitter:image:alt" content="51春梦 分享封面">
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"51春梦内容详情","description":"51春梦内容详情页，聚合图文与视频内容。","image":["https://line1.51cmtv.com/assets/og-image.jpg"],"author":{"@type":"Organization","name":"51春梦"},"publisher":{"@type":"Organization","name":"51春梦","logo":{"@type":"ImageObject","url":"https://line1.51cmtv.com/assets/logo.png"}},"mainEntityOfPage":"https://line1.51cmtv.com/v/post/51%E6%98%A5%E6%A2%A6%E5%86%85%E5%AE%B9%E8%AF%A6%E6%83%85","inLanguage":"zh-CN","isFamilyFriendly":false}</script>
   <!--POSTWAVE_SEO_HEAD_END-->
-  <link rel="icon" type="image/png" href="/assets/favicon-51.png">
-  <link rel="apple-touch-icon" href="/assets/favicon-51.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
   <script src="/config.js"></script>
   <script defer src="/assets/webmaster-analytics.js?v=20260524-metrics"></script>
   <script>
@@ -520,14 +520,17 @@
     const mediaById = new Map();
     let mediaLibrary = Array.isArray(ssrDetail.media) ? ssrDetail.media : [];
     function mapAdminPosts(source) {
-      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。" }));
+      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。", status:post.status || "已发布" }));
     }
     const ssrPostSource = Array.isArray(ssrDetail.posts) ? ssrDetail.posts : [];
     const localAdminPostSource = ssrPostSource.length ? ssrPostSource : (localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : []);
     let adminPostSource = Array.isArray(localAdminPostSource) ? localAdminPostSource : [];
     let adminPosts = mapAdminPosts(adminPostSource);
+    function isPublishedPost(post) {
+      return String(post.status || "已发布").trim() === "已发布";
+    }
     function combinedPosts() {
-      return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
+      return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])].filter(isPublishedPost);
     }
     let posts = combinedPosts();
     function urlSlug(value, fallback = "post") {

@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>51cm 后台</title>
-  <link rel="icon" type="image/png" href="/assets/favicon-51.png">
-  <link rel="apple-touch-icon" href="/assets/favicon-51.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
   <script src="/vendor/hls/hls.min.js"></script>
   <script defer src="/vendor/lucide/lucide.min.js" onload="window.lucide?.createIcons?.()"></script>
   <style>
@@ -881,7 +881,7 @@
     }
     async function fetchApiPosts() {
       try {
-        const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
+        const response = await fetch(apiPath("/api/admin/posts"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
         return Array.isArray(data.posts) ? data.posts : [];
@@ -2179,10 +2179,16 @@
       }
       if (del) {
         const index = Number(del.dataset.deletePost);
-        storedPosts.splice(index, 1);
+        const post = storedPosts[index];
+        if (!post) return;
+        storedPosts[index] = {
+          ...post,
+          status: "已删除",
+          deletedAt: new Date().toISOString()
+        };
         save("postwave_posts", storedPosts);
         renderTables();
-        toast("帖子已删除");
+        toast("帖子已标记删除，公开页将返回 410");
       }
       if (move) {
         const index = Number(move.dataset.movePost);

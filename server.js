@@ -390,6 +390,29 @@ function normalizePost(post = {}, index = 0) {
   };
 }
 
+const publishedPostStatus = "已发布";
+const gonePostStatusPattern = /(已?删除|已?下架|投诉|违规|移除|封禁|deleted|removed|gone|takedown|dmca|complaint)/i;
+
+function postStatus(post = {}) {
+  return String(post.status || publishedPostStatus).trim();
+}
+
+function isPublishedPost(post = {}) {
+  return postStatus(post) === publishedPostStatus;
+}
+
+function isGonePost(post = {}) {
+  const status = postStatus(post);
+  return !isPublishedPost(post) && gonePostStatusPattern.test(status);
+}
+
+function publicPostsFrom(rawPosts = []) {
+  return (Array.isArray(rawPosts) ? rawPosts : [])
+    .filter(isPublishedPost)
+    .map(publicPostForHome)
+    .filter((post) => post.id);
+}
+
 function normalizeSiteSettings(input = {}) {
   const incomingConfig = input.siteConfig || input.config || {};
   const tabs = normalizeArray(incomingConfig.tabs)
@@ -1731,6 +1754,7 @@ function isAdminPagePath(pathname = "") {
 function isPublicPagePath(pathname = "") {
   return ["/", "/index.html", "/detail.html", "/app.html", "/qq.html"].includes(pathname)
     || pathname.startsWith("/v/")
+    || pathname.startsWith("/page/")
     || pathname.startsWith("/category/");
 }
 
@@ -1739,7 +1763,12 @@ function isStaticHtmlPath(pathname = "") {
 }
 
 function isSeoFilePath(pathname = "") {
-  return pathname === "/robots.txt" || pathname === "/sitemap.xml";
+  return pathname === "/robots.txt"
+    || pathname === "/sitemap.xml"
+    || pathname === "/sitemap-index.xml"
+    || pathname === "/sitemap-pages.xml"
+    || pathname === "/sitemap-categories.xml"
+    || /^\/sitemap-posts-\d+\.xml$/.test(pathname);
 }
 
 function routeEntryHosts() {
@@ -1786,9 +1815,24 @@ function isRestrictedInfrastructureHost(req) {
     || configuredHostMatches(req, uploadHost);
 }
 
+function primarySiteHost() {
+  return hostWithoutPort(originHost(publicSiteOrigins[0] || publicSiteOrigin));
+}
+
+function isWwwPrimaryHost(req) {
+  const primaryHost = primarySiteHost();
+  return Boolean(primaryHost) && hostWithoutPort(requestHost(req)) === `www.${primaryHost}`;
+}
+
 function enforceHostBoundary(req, res, next) {
   if (!hasConfiguredSplitHosts() || isLocalRequest(req)) {
     next();
+    return;
+  }
+
+  if (isWwwPrimaryHost(req)) {
+    const target = `${canonicalSiteOrigin(req)}${req.originalUrl || req.url || "/"}`;
+    res.redirect(301, target);
     return;
   }
 
@@ -2735,10 +2779,20 @@ app.post("/api/user/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/posts", async (_req, res, next) => {
+app.get("/api/admin/posts", requireAdminApi, async (_req, res, next) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     res.json({ posts: await readPosts() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/posts", async (_req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const posts = await readPosts();
+    res.json({ posts: posts.filter(isPublishedPost) });
   } catch (error) {
     next(error);
   }
@@ -3183,6 +3237,7 @@ function publicPostForHome(post = {}, index = 0) {
     categories,
     tags: normalizeArray(post.tags),
     keywords: normalizeArray(post.keywords),
+    status: postStatus(post),
     body: post.body || ""
   };
 }
@@ -3230,11 +3285,23 @@ function ssrFeedAdRow(ad, eager = false) {
   return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}"><img src="${htmlEscape(safePublicUrl(ad.image))}" alt="${htmlEscape(ad.title || "广告")}" ${ssrImageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>`;
 }
 
-function ssrPager(totalPages, currentPage = 1) {
+function ssrPager(totalPages, currentPage = 1, category = "首页") {
+  const link = (page, label, attrs = "") => {
+    const active = page === currentPage;
+    const classes = `page-btn${active ? " active" : ""}`;
+    const aria = active ? ` aria-current="page"` : "";
+    return `<a class="${classes}" href="${htmlEscape(listingPath(category, page))}" data-page="${page}"${aria}${attrs}>${label}</a>`;
+  };
+  const prev = currentPage > 1
+    ? link(currentPage - 1, "上一页", " data-prev")
+    : `<span class="page-btn disabled" aria-disabled="true">上一页</span>`;
+  const next = currentPage < totalPages
+    ? link(currentPage + 1, "下一页", " data-next")
+    : `<span class="page-btn disabled" aria-disabled="true">下一页</span>`;
   return `
-        <button class="page-btn" data-prev ${currentPage === 1 ? "disabled" : ""}>上一页</button>
-        ${Array.from({ length: totalPages }, (_, i) => `<button class="page-btn ${i + 1 === currentPage ? "active" : ""}" data-page="${i + 1}">${i + 1}</button>`).join("")}
-        <button class="page-btn" data-next ${currentPage === totalPages ? "disabled" : ""}>下一页</button>
+        ${prev}
+        ${Array.from({ length: totalPages }, (_, i) => link(i + 1, i + 1)).join("")}
+        ${next}
         <input class="page-jump" id="pageJumpInput" type="number" min="1" max="${totalPages}" value="${currentPage}" aria-label="跳转页码">
         <button class="page-btn" data-jump>跳转</button>
       `;
@@ -3291,6 +3358,27 @@ function categoryPath(category = "") {
 function categoryUrl(req, category = "") {
   const origin = canonicalSiteOrigin(req);
   return `${origin || ""}${categoryPath(category)}`;
+}
+
+function normalizePageNumber(value = 1) {
+  const page = Number.parseInt(String(value || "1"), 10);
+  return Number.isFinite(page) && page > 0 ? page : 1;
+}
+
+function pagePath(page = 1) {
+  const currentPage = normalizePageNumber(page);
+  return currentPage > 1 ? `/page/${currentPage}` : "/";
+}
+
+function listingPath(category = "首页", page = 1) {
+  const currentPage = normalizePageNumber(page);
+  if (!category || category === "首页") return pagePath(currentPage);
+  return `${categoryPath(category)}${currentPage > 1 ? `/page/${currentPage}` : ""}`;
+}
+
+function listingUrl(req, category = "首页", page = 1) {
+  const origin = canonicalSiteOrigin(req);
+  return `${origin || ""}${listingPath(category, page)}`;
 }
 
 function plainPostText(value = "") {
@@ -3482,26 +3570,25 @@ function homeClientPost(post = {}) {
   };
 }
 
-function homeSeoHead(req, settings = {}, posts = [], category = "首页") {
+function homeSeoHead(req, settings = {}, posts = [], category = "首页", currentPage = 1, totalPages = 1) {
   const siteName = seoSiteName(settings);
   const isHome = !category || category === "首页";
   const tabs = settings.siteConfig?.tabs || defaultSiteSettings.siteConfig.tabs;
   const activeTab = tabs.find((tab) => tab.name === category) || null;
-  const title = isHome ? `${siteName} - 吃瓜爆料 + 成人视频，一站搞定` : `${category} - ${siteName}`;
+  const pageSuffix = currentPage > 1 ? ` - 第${currentPage}页` : "";
+  const title = `${isHome ? `${siteName} - 吃瓜爆料 + 成人视频，一站搞定` : `${category} - ${siteName}`}${pageSuffix}`;
   const description = seoDescription(settings, isHome ? "" : (activeTab?.subtitle || `${category}内容聚合展示。`));
-  const canonical = isHome ? seoCanonical(canonicalSiteOrigin(req), "/") : categoryUrl(req, category);
+  const canonical = listingUrl(req, category, currentPage);
   const image = seoDefaultImage(req);
-  const listItems = posts.slice(0, 26).map((post, index) => {
-    const item = {
-      "@type": "ListItem",
-      position: index + 1,
-      url: detailUrl(req, post),
-      name: post.title
-    };
-    const postImage = absolutePublicUrl(req, post.image || post.cover || "");
-    if (postImage) item.image = postImage;
-    return item;
-  });
+  const listItems = posts.slice(0, 8).map((post, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    url: detailUrl(req, post)
+  }));
+  const paginationLinks = [
+    currentPage > 1 ? `<link rel="prev" href="${htmlEscape(listingUrl(req, category, currentPage - 1))}">` : "",
+    currentPage < totalPages ? `<link rel="next" href="${htmlEscape(listingUrl(req, category, currentPage + 1))}">` : ""
+  ].filter(Boolean);
   const jsonLd = {
     "@context": "https://schema.org",
     "@graph": [
@@ -3539,6 +3626,7 @@ function homeSeoHead(req, settings = {}, posts = [], category = "首页") {
       type: "website",
       siteName,
       imageAlt: `${siteName} 分享封面`,
+      extra: paginationLinks,
       jsonLd
     })
   };
@@ -3716,8 +3804,60 @@ function sitemapUrlset(entries = []) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</urlset>\n`;
 }
 
+function sitemapIndexXml(entries = []) {
+  const rows = entries.map((entry) => {
+    const parts = [
+      `    <loc>${xmlEscape(entry.loc)}</loc>`,
+      entry.lastmod ? `    <lastmod>${xmlEscape(entry.lastmod)}</lastmod>` : ""
+    ].filter(Boolean).join("\n");
+    return `  <sitemap>\n${parts}\n  </sitemap>`;
+  }).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</sitemapindex>\n`;
+}
+
 function siteMapOriginForRequest(req) {
-  return canonicalSiteOrigin(req);
+  return normalizeOrigin(canonicalSiteOrigin(req));
+}
+
+const sitemapPostChunkSize = 45000;
+const publicListingPageSize = 26;
+
+function sitemapPageCount(items = [], pageSize = publicListingPageSize) {
+  return Math.max(1, Math.ceil(items.length / pageSize));
+}
+
+function sitemapCategoryNames(settings = {}) {
+  return (settings.siteConfig?.tabs || [])
+    .map((tab) => String(tab.name || "").trim())
+    .filter((name) => name && name !== "首页");
+}
+
+function postMatchesCategory(post = {}, category = "") {
+  const categories = post.categories && post.categories.length ? post.categories : [post.category];
+  return categories.includes(category);
+}
+
+function defaultContentCategory(tabs = []) {
+  return (Array.isArray(tabs) ? tabs : [])
+    .map((tab) => String(tab?.name || "").trim())
+    .find((name) => name && name !== "首页") || "首页";
+}
+
+async function sitemapContext(req) {
+  const [settings, rawPosts] = await Promise.all([
+    readSiteSettings(),
+    readPosts()
+  ]);
+  return {
+    settings,
+    origin: siteMapOriginForRequest(req),
+    posts: publicPostsFrom(rawPosts),
+    categories: sitemapCategoryNames(settings)
+  };
+}
+
+function sitemapUnavailable(req) {
+  return isRestrictedInfrastructureHost(req) || !isPrimarySiteRequest(req);
 }
 
 async function renderRobotsTxt(req, res, next) {
@@ -3730,7 +3870,7 @@ async function renderRobotsTxt(req, res, next) {
       lines.push("Allow: /");
       if (!isRouteSelectorRequest(req)) {
         const origin = siteMapOriginForRequest(req);
-        if (origin) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap.xml`);
+        if (origin) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap-index.xml`);
       }
     }
     res.type("text/plain");
@@ -3741,52 +3881,143 @@ async function renderRobotsTxt(req, res, next) {
   }
 }
 
-async function renderSitemapXml(req, res, next) {
+async function renderSitemapIndexXml(req, res, next) {
   try {
-    const settings = await readSiteSettings();
     res.type("application/xml");
     res.setHeader("Cache-Control", "public, max-age=300");
 
-    if (isRestrictedInfrastructureHost(req)) {
+    if (sitemapUnavailable(req)) {
+      res.status(404).send(sitemapIndexXml([]));
+      return;
+    }
+
+    const { origin, posts, settings } = await sitemapContext(req);
+    const postSitemapCount = Math.max(1, Math.ceil(posts.length / sitemapPostChunkSize));
+    const entries = [
+      { loc: `${origin}/sitemap-pages.xml` },
+      { loc: `${origin}/sitemap-categories.xml` },
+      ...Array.from({ length: postSitemapCount }, (_, index) => ({ loc: `${origin}/sitemap-posts-${index + 1}.xml` }))
+    ];
+    res.send(sitemapIndexXml(entries));
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function renderSitemapPagesXml(req, res, next) {
+  try {
+    res.type("application/xml");
+    res.setHeader("Cache-Control", "public, max-age=300");
+
+    if (sitemapUnavailable(req)) {
       res.status(404).send(sitemapUrlset([]));
       return;
     }
 
-    if (!isPrimarySiteRequest(req)) {
-      res.status(404).send(sitemapUrlset([]));
-      return;
-    }
-
-    const origin = siteMapOriginForRequest(req);
-    const rawPosts = await readPosts();
-    const posts = rawPosts.map(publicPostForHome).filter((post) => post.id);
-    const categories = (settings.siteConfig?.tabs || [])
-      .map((tab) => String(tab.name || "").trim())
-      .filter((name) => name && name !== "首页");
+    const { origin, posts, settings } = await sitemapContext(req);
+    const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
+    const defaultCategory = defaultContentCategory(tabs);
+    const listingPosts = defaultCategory === "首页" ? posts : posts.filter((post) => postMatchesCategory(post, defaultCategory));
+    const totalPages = sitemapPageCount(listingPosts);
     const entries = [
       { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
+      ...Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => ({
+        loc: `${origin}${pagePath(index + 2)}`,
+        changefreq: "hourly",
+        priority: "0.9"
+      })),
       { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
       ...compliancePagePaths.map((pagePath) => ({
         loc: `${origin}${pagePath}`,
         changefreq: "monthly",
         priority: "0.3"
-      })),
-      ...categories.map((category) => ({
-        loc: `${origin}${categoryPath(category)}`,
-        changefreq: "daily",
-        priority: "0.7"
-      })),
-      ...posts.slice(0, 45000).map((post) => ({
-        loc: `${origin}${detailPath(post)}`,
-        lastmod: parsePostDate(post.date),
-        changefreq: "daily",
-        priority: "0.8"
       }))
     ];
     res.send(sitemapUrlset(entries));
   } catch (error) {
     next(error);
   }
+}
+
+async function renderSitemapCategoriesXml(req, res, next) {
+  try {
+    res.type("application/xml");
+    res.setHeader("Cache-Control", "public, max-age=300");
+
+    if (sitemapUnavailable(req)) {
+      res.status(404).send(sitemapUrlset([]));
+      return;
+    }
+
+    const { origin, posts, categories } = await sitemapContext(req);
+    const entries = categories.flatMap((category) => {
+      const categoryPosts = posts.filter((post) => postMatchesCategory(post, category));
+      const totalPages = sitemapPageCount(categoryPosts);
+      return Array.from({ length: totalPages }, (_, index) => ({
+        loc: `${origin}${listingPath(category, index + 1)}`,
+        changefreq: "daily",
+        priority: index === 0 ? "0.7" : "0.6"
+      }));
+    });
+    res.send(sitemapUrlset(entries));
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function renderSitemapPostsXml(req, res, next) {
+  try {
+    res.type("application/xml");
+    res.setHeader("Cache-Control", "public, max-age=300");
+
+    if (sitemapUnavailable(req)) {
+      res.status(404).send(sitemapUrlset([]));
+      return;
+    }
+
+    const page = normalizePageNumber(req.params.page || req.params[0] || 1);
+    const { origin, posts } = await sitemapContext(req);
+    const totalPages = Math.max(1, Math.ceil(posts.length / sitemapPostChunkSize));
+    if (page > totalPages) {
+      res.status(404).send(sitemapUrlset([]));
+      return;
+    }
+
+    const pagePosts = posts.slice((page - 1) * sitemapPostChunkSize, page * sitemapPostChunkSize);
+    const entries = pagePosts.map((post) => ({
+      loc: `${origin}${detailPath(post)}`,
+      lastmod: parsePostDate(post.date),
+      changefreq: "daily",
+      priority: "0.8"
+    }));
+    res.send(sitemapUrlset(entries));
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function renderSitemapXml(req, res, next) {
+  return renderSitemapIndexXml(req, res, next);
+}
+
+function noindexHtml({ title = "内容不存在", heading = "内容不存在", message = "" } = {}) {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,follow"><title>${htmlEscape(title)} - 51春梦</title></head><body><main style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:12vh auto;padding:0 24px;line-height:1.7"><h1>${htmlEscape(heading)}</h1><p>${htmlEscape(message || heading)}</p><p><a href="/">返回首页</a></p></main></body></html>`;
+}
+
+function sendNotFoundPage(res) {
+  res.status(404).type("html").send(noindexHtml({
+    title: "内容不存在",
+    heading: "内容不存在",
+    message: "该内容不存在或暂未公开。"
+  }));
+}
+
+function sendGonePage(res) {
+  res.status(410).type("html").send(noindexHtml({
+    title: "内容已删除",
+    heading: "内容已删除",
+    message: "该内容已删除、下架或因投诉处理，不再公开展示。"
+  }));
 }
 
 async function renderIndexPage(req, res, next) {
@@ -3796,21 +4027,33 @@ async function renderIndexPage(req, res, next) {
       readSiteSettings(),
       fs.readFile(path.join(__dirname, "index.html"), "utf8")
     ]);
-    const perPage = 26;
-    const posts = rawPosts.map(publicPostForHome);
+    const perPage = publicListingPageSize;
+    const posts = publicPostsFrom(rawPosts);
     const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
     const requestedCategory = String(req.params.category || "").trim();
-    const activeCategory = requestedCategory || "首页";
-    const activeTab = tabs.find((tab) => tab.name === activeCategory) || (activeCategory === "首页" ? tabs[0] : null);
+    const defaultCategory = defaultContentCategory(tabs);
+    const activeCategory = requestedCategory || defaultCategory;
+    const pagerCategory = requestedCategory ? activeCategory : "首页";
+    const hasPageParam = Object.prototype.hasOwnProperty.call(req.params, "page");
+    const currentPage = normalizePageNumber(req.params.page || 1);
+    if (hasPageParam && currentPage <= 1) {
+      res.redirect(301, listingPath(pagerCategory, 1));
+      return;
+    }
+    const activeTab = tabs.find((tab) => tab.name === activeCategory) || null;
     const filteredPosts = activeCategory === "首页"
       ? posts
       : posts.filter((post) => {
-          const categories = post.categories && post.categories.length ? post.categories : [post.category];
-          return categories.includes(activeCategory);
+          return postMatchesCategory(post, activeCategory);
         });
-    const pagePosts = filteredPosts.slice(0, perPage);
     const totalPages = Math.max(1, Math.ceil(filteredPosts.length / perPage));
-    const feedAds = activeCategory === "首页" ? (settings.ads || [])
+    if (currentPage > totalPages) {
+      sendNotFoundPage(res);
+      return;
+    }
+    const start = (currentPage - 1) * perPage;
+    const pagePosts = filteredPosts.slice(start, start + perPage);
+    const feedAds = !requestedCategory ? (settings.ads || [])
       .map(normalizeSsrAd)
       .filter((ad) => ad.placement === "home-feed" && ad.image)
       .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
@@ -3824,7 +4067,7 @@ async function renderIndexPage(req, res, next) {
     )).join("");
     const pageTitle = activeCategory;
     const pageSubtitle = activeTab?.subtitle || `${activeCategory}内容聚合展示。`;
-    const seo = homeSeoHead(req, settings, filteredPosts, activeCategory);
+    const seo = homeSeoHead(req, settings, pagePosts, pagerCategory, currentPage, totalPages);
     const ssrPayload = {
       posts: pagePosts.map(homeClientPost),
       postsPartial: true,
@@ -3833,7 +4076,8 @@ async function renderIndexPage(req, res, next) {
       siteConfig: settings.siteConfig,
       footer: settings.footer,
       ads: settings.ads,
-      activeCategory
+      activeCategory,
+      currentPage
     };
     const rendered = injectSeoHead(html, seo.meta)
       .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
@@ -3842,7 +4086,7 @@ async function renderIndexPage(req, res, next) {
       .replace('<p class="page-subtitle" id="pageSubtitle">精选图文与视频内容，按发布时间聚合展示。</p>', `<p class="page-subtitle" id="pageSubtitle">${htmlEscape(pageSubtitle)}</p>`)
       .replace('<section class="content-list" id="postList" aria-label="内容列表"></section>', `<section class="content-list" id="postList" aria-label="内容列表">${postHtml}</section>`)
       .replace('<div class="empty" id="emptyState">没有找到匹配内容</div>', `<div class="empty" id="emptyState" style="${pagePosts.length ? "display:none" : "display:block"}">没有找到匹配内容</div>`)
-      .replace('<nav class="pager" id="pager" aria-label="分页"></nav>', `<nav class="pager" id="pager" aria-label="分页">${ssrPager(totalPages, 1)}</nav>`);
+      .replace('<nav class="pager" id="pager" aria-label="分页"></nav>', `<nav class="pager" id="pager" aria-label="分页">${ssrPager(totalPages, currentPage, pagerCategory)}</nav>`);
     res.type("html").send(rendered);
   } catch (error) {
     next(error);
@@ -3880,13 +4124,22 @@ async function redirectLegacyDetailPage(req, res, next) {
     return;
   }
   try {
-    const posts = (await readPosts()).map(publicPostForHome);
-    const index = postIndexById(posts, postId);
+    const allPosts = (await readPosts()).map(publicPostForHome).filter((post) => post.id);
+    const index = postIndexById(allPosts, postId);
     if (index < 0) {
-      renderDetailPage(req, res, next);
+      sendNotFoundPage(res);
       return;
     }
-    res.redirect(301, detailUrl(req, posts[index]));
+    const post = allPosts[index];
+    if (isGonePost(post)) {
+      sendGonePage(res);
+      return;
+    }
+    if (!isPublishedPost(post)) {
+      sendNotFoundPage(res);
+      return;
+    }
+    res.redirect(301, detailUrl(req, post));
   } catch (error) {
     next(error);
   }
@@ -3900,11 +4153,25 @@ async function renderDetailPage(req, res, next) {
       readSiteSettings(),
       fs.readFile(path.join(__dirname, "detail.html"), "utf8")
     ]);
-    const posts = rawPosts.map(publicPostForHome);
-    const index = postId ? postIndexById(posts, postId) : 0;
-    const current = posts[index];
+    const allPosts = rawPosts.map(publicPostForHome).filter((post) => post.id);
+    const posts = publicPostsFrom(rawPosts);
+    const sourceIndex = postId ? postIndexById(allPosts, postId) : -1;
+    if (postId && sourceIndex < 0) {
+      sendNotFoundPage(res);
+      return;
+    }
+    if (postId && isGonePost(allPosts[sourceIndex])) {
+      sendGonePage(res);
+      return;
+    }
+    if (postId && !isPublishedPost(allPosts[sourceIndex])) {
+      sendNotFoundPage(res);
+      return;
+    }
+    const current = postId ? posts.find((post) => String(post.id) === String(allPosts[sourceIndex].id)) : posts[0];
+    const index = current ? posts.findIndex((post) => String(post.id) === String(current.id)) : -1;
     if (!current) {
-      res.status(404).type("html").send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>内容不存在 - 51春梦</title></head><body>内容不存在</body></html>`);
+      sendNotFoundPage(res);
       return;
     }
 
@@ -3965,9 +4232,14 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
 });
 
 app.get("/robots.txt", renderRobotsTxt);
-app.get("/sitemap.xml", renderSitemapXml);
+app.get(["/sitemap.xml", "/sitemap-index.xml"], renderSitemapXml);
+app.get("/sitemap-pages.xml", renderSitemapPagesXml);
+app.get("/sitemap-categories.xml", renderSitemapCategoriesXml);
+app.get(/^\/sitemap-posts-(\d+)\.xml$/, renderSitemapPostsXml);
 app.get("/route-select.html", renderRouteSelectPage);
 app.get(["/", "/index.html"], renderIndexPage);
+app.get("/page/:page", renderIndexPage);
+app.get("/category/:category/page/:page", renderIndexPage);
 app.get("/category/:category", renderIndexPage);
 app.get("/v/:id/:slug?", renderDetailPage);
 app.get("/detail.html", redirectLegacyDetailPage);
@@ -3991,7 +4263,8 @@ app.get("/vendor/dplayer/DPlayer.min.js", (_req, res) => {
 });
 app.get("/favicon.ico", (_req, res) => {
   res.type("image/png");
-  res.sendFile(path.join(__dirname, "assets/favicon-51.png"));
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.sendFile(path.join(__dirname, "assets/favicon-96.png"));
 });
 app.get("/assets/webmaster-analytics.js", (_req, res) => {
   res.type("application/javascript");

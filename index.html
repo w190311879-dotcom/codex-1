@@ -26,8 +26,8 @@
   <meta name="twitter:image:alt" content="51春梦 分享封面">
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"51春梦","url":"https://line1.51cmtv.com/","description":"51春梦聚合图文与视频内容，提供最新地址、频道导航和内容更新。","inLanguage":"zh-CN","image":"https://line1.51cmtv.com/assets/og-image.jpg","isFamilyFriendly":false}</script>
   <!--POSTWAVE_SEO_HEAD_END-->
-  <link rel="icon" type="image/png" href="/assets/favicon-51.png">
-  <link rel="apple-touch-icon" href="/assets/favicon-51.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon.ico">
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
   <script src="/config.js"></script>
   <script defer src="/assets/webmaster-analytics.js?v=20260524-metrics"></script>
   <script>
@@ -113,8 +113,9 @@
     .feed-ad::after { display: none; }
     .feed-ad .post-content { pointer-events: none; }
     .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 22px 0 36px; }
-    .page-btn { min-width: 42px; height: 42px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--card); cursor: pointer; font-weight: 900; }
+    .page-btn { min-width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--card); cursor: pointer; font-weight: 900; text-decoration: none; }
     .page-btn.active, .page-btn:hover { color: #07110a; border-color: var(--green); background: var(--green); }
+    .page-btn.disabled, .page-btn.disabled:hover { color: var(--muted); border-color: var(--line); background: var(--card); cursor: default; }
     .page-jump { width: 82px; height: 42px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--card); outline: 0; font-weight: 900; }
     .section-title { margin: 0 0 16px; font-size: 28px; letter-spacing: 0; }
     .recommend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
@@ -534,15 +535,19 @@
         categories: post.categories || (post.category ? String(post.category).split("、") : []),
         tags: post.tags || [],
         keywords: post.keywords || [],
-        body: post.body || "这篇内容来自后台发布系统。"
+        body: post.body || "这篇内容来自后台发布系统。",
+        status: post.status || "已发布"
       }));
     }
     const localAdminPostSource = localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : [];
     let adminPostSource = Array.isArray(ssrData.posts) ? ssrData.posts : (Array.isArray(localAdminPostSource) ? localAdminPostSource : []);
     let postsArePartial = Boolean(ssrData.postsPartial);
     let adminPosts = mapAdminPosts(adminPostSource);
+    function isPublishedPost(post) {
+      return String(post.status || "已发布").trim() === "已发布";
+    }
     function combinedPosts() {
-      return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])];
+      return [...adminPosts, ...(demoSeedEnabled ? seedPosts : [])].filter(isPublishedPost);
     }
     let posts = combinedPosts();
     const defaultAds = [
@@ -615,21 +620,37 @@
     function postUrl(post) {
       return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
     }
+    function navTabs() {
+      return siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
+    }
+    function defaultCategoryName() {
+      return (navTabs().find((tab) => tab.name && tab.name !== "首页") || { name: "首页" }).name;
+    }
     function categoryHref(name) {
-      return !name || name === "首页" ? "/" : `/category/${encodeURIComponent(name)}`;
+      return !name || name === "首页" || name === defaultCategoryName() ? "/" : `/category/${encodeURIComponent(name)}`;
+    }
+    function pageHref(name, page = 1) {
+      const current = Math.max(1, Number.parseInt(String(page || "1"), 10) || 1);
+      if (!name || name === "首页" || name === defaultCategoryName()) return current > 1 ? `/page/${current}` : "/";
+      return `${categoryHref(name)}${current > 1 ? `/page/${current}` : ""}`;
     }
     function categoryFromLocation() {
-      const match = location.pathname.match(/^\/category\/(.+)$/);
+      const match = location.pathname.match(/^\/category\/([^/]+)(?:\/page\/\d+)?\/?$/);
       if (match) {
         try { return decodeURIComponent(match[1]); } catch (_error) { return match[1]; }
       }
       const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
-      return hashTab || "首页";
+      return hashTab || defaultCategoryName();
+    }
+    function pageFromLocation() {
+      const match = location.pathname.match(/(?:^\/page\/|\/page\/)(\d+)\/?$/);
+      return match ? Math.max(1, Number.parseInt(match[1], 10) || 1) : 1;
     }
     activeCategory = categoryFromLocation();
+    currentPage = Number(ssrData.currentPage) || pageFromLocation();
 
     function renderNav() {
-      const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
+      const tabs = navTabs();
       const visibleLimit = 14;
       const visibleTabs = tabs.slice(0, visibleLimit);
       const moreTabs = tabs.slice(visibleLimit);
@@ -702,7 +723,7 @@
       adminPosts = mapAdminPosts(adminPostSource);
       posts = combinedPosts();
       if (localPostFallbackEnabled) localStorage.setItem("postwave_posts", apiText);
-      currentPage = 1;
+      currentPage = pageFromLocation();
       renderPosts();
       renderRecommend();
     }
@@ -740,7 +761,7 @@
       currentPage = Math.min(currentPage, totalPages);
       const start = (currentPage - 1) * perPage;
       const pageItems = items.slice(start, start + perPage);
-      const feedAds = activeCategory === "首页" ? loadAds().filter((ad) => ad.placement === "home-feed" && ad.image).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
+      const feedAds = (activeCategory === "首页" || activeCategory === defaultCategoryName()) ? loadAds().filter((ad) => ad.placement === "home-feed" && ad.image).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
       const rows = pageItems.map((post) => ({ kind: "post", post }));
       feedAds.forEach((ad, order) => {
         const slot = Math.max(1, Math.min(rows.length + 1, Number(ad.slot) || order + 1));
@@ -765,10 +786,14 @@
       }
       postList.innerHTML = rows.join("");
       emptyState.style.display = pageItems.length ? "none" : "block";
+      const pageLink = (page, label, attrs = "") => {
+        const active = page === currentPage;
+        return `<a class="page-btn${active ? " active" : ""}" href="${pageHref(activeCategory, page)}" data-page="${page}"${active ? " aria-current=\"page\"" : ""}${attrs}>${label}</a>`;
+      };
       pager.innerHTML = `
-        <button class="page-btn" data-prev ${currentPage === 1 ? "disabled" : ""}>上一页</button>
-        ${Array.from({ length: totalPages }, (_, i) => `<button class="page-btn ${i + 1 === currentPage ? "active" : ""}" data-page="${i + 1}">${i + 1}</button>`).join("")}
-        <button class="page-btn" data-next ${currentPage === totalPages ? "disabled" : ""}>下一页</button>
+        ${currentPage > 1 ? pageLink(currentPage - 1, "上一页", " data-prev") : `<span class="page-btn disabled" aria-disabled="true">上一页</span>`}
+        ${Array.from({ length: totalPages }, (_, i) => pageLink(i + 1, i + 1)).join("")}
+        ${currentPage < totalPages ? pageLink(currentPage + 1, "下一页", " data-next") : `<span class="page-btn disabled" aria-disabled="true">下一页</span>`}
         <input class="page-jump" id="pageJumpInput" type="number" min="1" max="${totalPages}" value="${currentPage}" aria-label="跳转页码">
         <button class="page-btn" data-jump>跳转</button>
       `;
@@ -869,17 +894,24 @@
     });
     searchInput.addEventListener("input", () => { currentPage = 1; renderPosts(); });
     pager.addEventListener("click", (event) => {
-      if (event.target.closest("[data-prev]")) currentPage = Math.max(1, currentPage - 1);
-      if (event.target.closest("[data-next]")) currentPage += 1;
+      const pageLink = event.target.closest("a[data-page]");
+      if (pageLink) {
+        event.preventDefault();
+        currentPage = Math.max(1, Number(pageLink.dataset.page) || 1);
+        history.pushState(null, "", pageHref(activeCategory, currentPage));
+        renderPosts();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
       if (event.target.closest("[data-jump]")) {
         const value = Number(document.querySelector("#pageJumpInput")?.value || currentPage);
-        currentPage = Math.max(1, value);
+        const totalPages = Math.max(1, Math.ceil(filteredPosts().length / perPage));
+        currentPage = Math.min(totalPages, Math.max(1, value));
+        history.pushState(null, "", pageHref(activeCategory, currentPage));
+        renderPosts();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
       }
-      const button = event.target.closest("[data-page]");
-      if (button) currentPage = Number(button.dataset.page);
-      if (!button && !event.target.closest("[data-prev]") && !event.target.closest("[data-next]") && !event.target.closest("[data-jump]")) return;
-      renderPosts();
-      window.scrollTo({ top: 0, behavior: "smooth" });
     });
     document.querySelector("#themeToggle").addEventListener("click", () => {
       const isLight = document.documentElement.classList.toggle("light");
@@ -940,7 +972,7 @@
     });
     window.addEventListener("popstate", () => {
       activeCategory = categoryFromLocation();
-      currentPage = 1;
+      currentPage = pageFromLocation();
       renderNav();
       renderPosts();
     });
