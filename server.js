@@ -3069,9 +3069,11 @@ function seoCanonical(origin = "", pathname = "/") {
   return `${base}${pathValue.startsWith("/") ? pathValue : `/${pathValue}`}`;
 }
 
+const defaultOgImagePath = "/assets/og-image.jpg";
+
 function seoDefaultImage(req, origin = "") {
-  if (origin) return seoCanonical(origin, "/assets/logo.png");
-  return absolutePublicUrl(req, "/assets/logo.png");
+  if (origin) return seoCanonical(origin, defaultOgImagePath);
+  return absolutePublicUrl(req, defaultOgImagePath);
 }
 
 function seoHeadTags({
@@ -3440,7 +3442,7 @@ function homeSeoHead(req, settings = {}, posts = [], category = "首页") {
       image,
       type: "website",
       siteName,
-      imageAlt: `${siteName} Logo`,
+      imageAlt: `${siteName} 分享封面`,
       jsonLd
     })
   };
@@ -3488,7 +3490,7 @@ function routeSelectorSeoHead(req, settings = {}) {
       image,
       type: "website",
       siteName,
-      imageAlt: `${siteName} Logo`,
+      imageAlt: `${siteName} 分享封面`,
       jsonLd
     })
   };
@@ -3496,9 +3498,9 @@ function routeSelectorSeoHead(req, settings = {}) {
 
 function detailSeoHead(req, post, description, mediaById = new Map(), settings = {}) {
   const canonical = detailUrl(req, post);
-  const image = absolutePublicUrl(req, post.image || post.cover || post.bodyImages?.[0] || "");
   const siteName = seoSiteName(settings);
   const fallbackImage = seoDefaultImage(req);
+  const contentImage = absolutePublicUrl(req, post.image || post.cover || post.bodyImages?.[0] || "");
   const title = `${post.title} - ${siteName}`;
   const published = parsePostDate(post.date);
   const images = [post.image || post.cover, ...(post.bodyImages || [])]
@@ -3554,10 +3556,10 @@ function detailSeoHead(req, post, description, mediaById = new Map(), settings =
     title,
     description,
     canonical,
-    image: image || fallbackImage,
+    image: fallbackImage || contentImage,
     type: "article",
     siteName,
-    imageAlt: post.title,
+    imageAlt: `${siteName} 分享封面`,
     extra: [
       published ? `<meta property="article:published_time" content="${htmlEscape(published)}">` : "",
       published ? `<meta property="article:modified_time" content="${htmlEscape(published)}">` : "",
