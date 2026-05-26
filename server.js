@@ -53,6 +53,7 @@ const mediaRecordsFile = path.join(dataDir, "media.json");
 const isProduction = process.env.NODE_ENV === "production";
 const defaultSessionSecret = "postwave-local-dev-secret";
 const sessionSecret = process.env.SESSION_SECRET || (isProduction ? "" : defaultSessionSecret);
+const analyticsReadToken = process.env.ANALYTICS_READ_TOKEN || "";
 const sessionCookieName = "postwave_session";
 const userSessionCookieName = "postwave_user_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
@@ -1195,6 +1196,25 @@ function requireAdminPage(req, res, next) {
     return;
   }
   req.admin = session;
+  next();
+}
+
+function readBearerToken(req) {
+  const header = String(req.headers.authorization || "");
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : String(req.headers["x-agent-token"] || "").trim();
+}
+
+function requireAnalyticsReadApi(req, res, next) {
+  if (!analyticsReadToken) {
+    res.status(503).json({ error: "Analytics read token is not configured" });
+    return;
+  }
+  const token = readBearerToken(req);
+  if (!token || !timingSafeStringEqual(token, analyticsReadToken)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
   next();
 }
 
@@ -2694,6 +2714,15 @@ app.post("/api/public/analytics/track", async (req, res, next) => {
 });
 
 app.get("/api/admin/analytics", requireAdminApi, async (_req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await analyticsSummary());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/agent/analytics", requireAnalyticsReadApi, async (_req, res, next) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     res.json(await analyticsSummary());
