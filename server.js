@@ -372,6 +372,7 @@ function normalizeArray(value) {
 function normalizePost(post = {}, index = 0) {
   const source = post && typeof post === "object" ? post : {};
   const categories = normalizeArray(source.categories || source.category);
+  const topBadge = String(source.topBadge || source.badge || "").trim();
   return {
     ...source,
     id: String(source.id || source.clientId || source.client_id || `post-${index}`),
@@ -387,6 +388,8 @@ function normalizePost(post = {}, index = 0) {
     status: source.status || "已发布",
     author: source.author || "",
     date: source.date || source.date_text || "",
+    pinned: isPinnedPost(source),
+    topBadge,
     sortOrder: Number.isFinite(Number(source.sortOrder ?? source.sort_order)) ? Number(source.sortOrder ?? source.sort_order) : index
   };
 }
@@ -402,6 +405,10 @@ function isPublishedPost(post = {}) {
   return postStatus(post) === publishedPostStatus;
 }
 
+function isPinnedPost(post = {}) {
+  return post.pinned === true || post.pinned === 1 || post.pinned === "1" || String(post.pinned || "").toLowerCase() === "true";
+}
+
 function isGonePost(post = {}) {
   const status = postStatus(post);
   return !isPublishedPost(post) && gonePostStatusPattern.test(status);
@@ -411,7 +418,8 @@ function publicPostsFrom(rawPosts = []) {
   return (Array.isArray(rawPosts) ? rawPosts : [])
     .filter(isPublishedPost)
     .map(publicPostForHome)
-    .filter((post) => post.id);
+    .filter((post) => post.id)
+    .sort((a, b) => Number(isPinnedPost(b)) - Number(isPinnedPost(a)));
 }
 
 function normalizeSiteSettings(input = {}) {
@@ -3300,8 +3308,22 @@ function publicPostForHome(post = {}, index = 0) {
     tags: normalizeArray(post.tags),
     keywords: normalizeArray(post.keywords),
     status: postStatus(post),
-    body: post.body || ""
+    body: post.body || "",
+    pinned: isPinnedPost(post),
+    topBadge: String(post.topBadge || post.badge || "").trim()
   };
+}
+
+const publicPostBadges = {
+  jpbl: { src: "/assets/badge-jpbl.png", label: "极品必撸" },
+  jbcg: { src: "/assets/badge-jbcg.png", label: "劲爆吃瓜" }
+};
+
+function ssrPostBadgeMarkup(post = {}) {
+  if (!isPinnedPost(post)) return "";
+  const badge = publicPostBadges[post.topBadge || post.badge];
+  if (!badge) return "";
+  return `<span class="post-badge"><img src="${htmlEscape(badge.src)}" alt="${htmlEscape(badge.label)}" width="266" height="91" loading="lazy" decoding="async"></span>`;
 }
 
 function ssrImageAttrs({ eager = false, width = 1200, height = 675 } = {}) {
@@ -3320,6 +3342,7 @@ function ssrPostRow(post, eager = false) {
   return `
         <a class="post-row" href="${htmlEscape(detailPath(post))}">
           <img src="${htmlEscape(safePublicUrl(post.image))}" alt="${htmlEscape(post.title)}" ${ssrImageAttrs({ eager })}>
+          ${ssrPostBadgeMarkup(post)}
           <div class="post-content">
             <h2 class="post-title">${htmlEscape(post.title)}</h2>
             <p class="post-meta"><span>${htmlEscape(post.author || "alun")}</span><span>·</span><span>${htmlEscape(post.date || "")}</span><span>·</span><span>${htmlEscape(categories || "内容")}</span></p>
@@ -3628,7 +3651,9 @@ function homeClientPost(post = {}) {
     author: post.author || "alun",
     date: post.date || "",
     category: post.category || "",
-    categories: post.categories || []
+    categories: post.categories || [],
+    pinned: isPinnedPost(post),
+    topBadge: post.topBadge || post.badge || ""
   };
 }
 

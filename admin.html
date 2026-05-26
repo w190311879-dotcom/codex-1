@@ -73,6 +73,9 @@
     .editor-foot { min-height: 72px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid #dbe4ef; }
     .switch-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; font-weight: 900; }
     .switch { display: inline-flex; align-items: center; gap: 8px; }
+    .pin-badge-select { width: 136px; min-height: 38px; }
+    .pin-badge-select:disabled { opacity: .55; cursor: not-allowed; }
+    .pin-label { display: inline-flex; margin-top: 6px; padding: 3px 8px; border-radius: 999px; color: #0f172a; background: #fde68a; font-size: 12px; font-style: normal; font-weight: 900; }
     .hidden { display: none; }
     .table, .settings, .ads { margin: 18px 24px; border: 1px solid #dbe4ef; border-radius: 8px; overflow: hidden; }
     .table-row { display: grid; grid-template-columns: 1fr 120px 140px 150px; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #eef2f7; align-items: center; }
@@ -250,7 +253,11 @@
               <strong id="charCount">0 字符</strong>
               <div class="switch-row">
                 <label class="switch"><input type="checkbox"> 图片描述</label>
-                <label class="switch"><input type="checkbox"> 置顶帖子</label>
+                <label class="switch"><input id="postPinned" type="checkbox"> 置顶帖子</label>
+                <select class="field pin-badge-select" id="postBadge" disabled>
+                  <option value="jpbl">极品必撸</option>
+                  <option value="jbcg">劲爆吃瓜</option>
+                </select>
                 <button class="btn dark" id="saveDraft" type="button">存草稿</button>
                 <button class="btn dark" id="publishPost" type="button">发布</button>
               </div>
@@ -542,6 +549,7 @@
       { id: "author-alun", name: "alun", account: "alun", status: "正常" },
       { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常" }
     ];
+    const postBadgeLabels = { jpbl: "极品必撸", jbcg: "劲爆吃瓜" };
     let authors = defaultAuthors.slice();
     localStorage.removeItem("postwave_authors");
     const defaultSiteConfig = {
@@ -793,6 +801,11 @@
     document.querySelector("#commentLogoInput").value = siteConfig.commentLogoText || "51暗网";
     document.querySelector("#logoPreview").innerHTML = `<img src="/assets/logo.png" alt="固定 Logo">`;
     document.querySelector("#replyTextInput").value = defaultEmailAutoReply.text;
+    function updatePinnedBadgeState() {
+      document.querySelector("#postBadge").disabled = !document.querySelector("#postPinned").checked;
+    }
+    document.querySelector("#postPinned").addEventListener("change", updatePinnedBadgeState);
+    updatePinnedBadgeState();
 
     function save(key, value) {
       if (["postwave_ads", "postwave_site_config", "postwave_ad_config", "postwave_notice"].includes(key)) {
@@ -1384,6 +1397,9 @@
       currentVideoData = "";
       currentBodyImages = [];
       editingPostIndex = null;
+      document.querySelector("#postPinned").checked = false;
+      document.querySelector("#postBadge").value = "jpbl";
+      updatePinnedBadgeState();
       document.querySelector("#tagInput").value = "";
       renderTagPreview();
       renderInsertedMediaPreview();
@@ -1399,6 +1415,8 @@
       const fallbackCategory = categoryTabs()[0]?.name || "视频分类";
       const selectedAuthor = document.querySelector("#postAuthor").value || localStorage.getItem("postwave_current_author") || authors[0]?.name || "alun";
       const existingPost = editingPostIndex !== null ? storedPosts[editingPostIndex] : null;
+      const pinned = document.querySelector("#postPinned").checked;
+      const topBadge = pinned ? document.querySelector("#postBadge").value : "";
       return {
         id: existingPost?.id || createPostId(),
         title: document.querySelector("#postTitle").value || "未命名帖子",
@@ -1412,7 +1430,9 @@
         tags: parseTags().length ? parseTags() : ["后台标签"],
         status,
         date: new Date().toLocaleString(),
-        author: selectedAuthor
+        author: selectedAuthor,
+        pinned,
+        topBadge
       };
     }
     document.querySelector("#saveDraft").addEventListener("click", () => {
@@ -1441,7 +1461,7 @@
       const rows = storedPosts.length ? storedPosts : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
       return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
         <div class="table-row posts-row">
-          <strong>${escapeHtml(item.title)}</strong>
+          <strong>${escapeHtml(item.title)}${item.pinned ? `<br><em class="pin-label">置顶 · ${escapeHtml(postBadgeLabels[item.topBadge] || "角标")}</em>` : ""}</strong>
           <span>${escapeHtml(item.status)}</span>
           <span>${escapeHtml(item.author)}</span>
           <span>${escapeHtml(item.date)}</span>
@@ -2165,6 +2185,9 @@
         currentCoverData = post.cover || "";
         currentBodyImages = post.bodyImages || (post.bodyImage ? [post.bodyImage] : []);
         currentVideoData = post.video || "";
+        document.querySelector("#postPinned").checked = Boolean(post.pinned);
+        document.querySelector("#postBadge").value = post.topBadge || "jpbl";
+        updatePinnedBadgeState();
         document.querySelector("#tagInput").value = (post.tags || []).map((tag) => String(tag).replace(/^#+/, "")).join(" ");
         renderTagPreview();
         renderAuthorSelect(post.author || "");
