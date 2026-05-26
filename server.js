@@ -2024,19 +2024,34 @@ async function readPosts() {
   }
 }
 
-async function replacePosts(posts) {
-  const nextPosts = Array.isArray(posts) ? posts.map(normalizePost) : [];
+async function upsertPosts(posts) {
+  const incomingPosts = Array.isArray(posts) ? posts.map(normalizePost) : [];
   if (pool) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("DELETE FROM posts");
-      for (const [index, post] of nextPosts.entries()) {
+      for (const [index, post] of incomingPosts.entries()) {
         const clientId = String(post.id || `post-${index}`);
         await client.query(
           `INSERT INTO posts
             (client_id, title, body, cover_url, video_url, body_images, category, categories, keywords, tags, status, author, date_text, sort_order, payload, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15::jsonb,NOW())`,
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15::jsonb,NOW())
+           ON CONFLICT (client_id) DO UPDATE SET
+             title = EXCLUDED.title,
+             body = EXCLUDED.body,
+             cover_url = EXCLUDED.cover_url,
+             video_url = EXCLUDED.video_url,
+             body_images = EXCLUDED.body_images,
+             category = EXCLUDED.category,
+             categories = EXCLUDED.categories,
+             keywords = EXCLUDED.keywords,
+             tags = EXCLUDED.tags,
+             status = EXCLUDED.status,
+             author = EXCLUDED.author,
+             date_text = EXCLUDED.date_text,
+             sort_order = EXCLUDED.sort_order,
+             payload = EXCLUDED.payload,
+             updated_at = NOW()`,
           [
             clientId,
             post.title,
@@ -2063,8 +2078,17 @@ async function replacePosts(posts) {
     } finally {
       client.release();
     }
-    return nextPosts;
+    return readPosts();
   }
+  const currentPosts = await readPosts();
+  const merged = new Map(currentPosts.map((post, index) => [String(post.id || `post-${index}`), post]));
+  for (const [index, post] of incomingPosts.entries()) {
+    const clientId = String(post.id || `post-${index}`);
+    merged.set(clientId, { ...(merged.get(clientId) || {}), ...post, id: clientId, sortOrder: index });
+  }
+  const nextPosts = Array.from(merged.values())
+    .map(normalizePost)
+    .sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
   await fs.writeFile(postsFile, JSON.stringify(nextPosts, null, 2));
   return nextPosts;
 }
@@ -2827,10 +2851,19 @@ app.get("/api/posts", async (_req, res, next) => {
   }
 });
 
+app.post("/api/posts", requireAdminApi, async (req, res, next) => {
+  try {
+    const post = req.body?.post || req.body;
+    res.json({ ok: true, posts: await upsertPosts([post]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.put("/api/posts", requireAdminApi, async (req, res, next) => {
   try {
     const posts = Array.isArray(req.body) ? req.body : req.body?.posts;
-    res.json({ ok: true, posts: await replacePosts(posts) });
+    res.json({ ok: true, posts: await upsertPosts(posts) });
   } catch (error) {
     next(error);
   }
