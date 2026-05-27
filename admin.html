@@ -550,6 +550,14 @@
       { id: "author-editor1", name: "编辑一号", account: "editor1", status: "正常" }
     ];
     const postBadgeLabels = { jpbl: "极品必撸", jbcg: "劲爆吃瓜" };
+    function isPinnedPost(post) {
+      const value = post?.pinned;
+      return value === true || value === 1 || value === "1" || String(value || "").toLowerCase() === "true";
+    }
+    function sortPinnedPostsFirstInPlace(posts = storedPosts) {
+      posts.sort((a, b) => Number(isPinnedPost(b)) - Number(isPinnedPost(a)));
+      return posts;
+    }
     let authors = defaultAuthors.slice();
     localStorage.removeItem("postwave_authors");
     const defaultSiteConfig = {
@@ -922,6 +930,7 @@
         return;
       }
       if (!apiPosts.length) return;
+      sortPinnedPostsFirstInPlace(apiPosts);
       const apiText = JSON.stringify(apiPosts);
       if (apiText === JSON.stringify(storedPosts)) return;
       storedPosts.splice(0, storedPosts.length, ...apiPosts);
@@ -1448,6 +1457,7 @@
       } else {
         storedPosts.unshift(post);
       }
+      sortPinnedPostsFirstInPlace();
       save("postwave_posts", storedPosts);
       renderTables();
       resetPublishForm(false);
@@ -1458,6 +1468,7 @@
       return `<div class="table-row header"><span>标题</span><span>状态</span><span>作者</span><span>时间</span></div>` + rows.map((item) => `<div class="table-row"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.status)}</span><span>${escapeHtml(item.author)}</span><span>${escapeHtml(item.date)}</span></div>`).join("");
     }
     function postRows() {
+      sortPinnedPostsFirstInPlace();
       const rows = storedPosts.length ? storedPosts : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
       return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
         <div class="table-row posts-row">
@@ -1761,6 +1772,7 @@
       document.querySelector("#feedOrderPanel").classList.toggle("active", currentAdSection === "home-feed");
     }
     function buildHomeFeedStream() {
+      sortPinnedPostsFirstInPlace();
       const stream = storedPosts.map((post, index) => ({ type: "post", index, title: post.title || "未命名帖子" }));
       const feedAds = ads
         .map((ad, index) => ({ type: "ad", index, title: ad.title || "首页内容流广告", ad }))
@@ -1777,6 +1789,7 @@
         .filter((item) => item.type === "post")
         .map((item) => storedPosts[item.index])
         .filter(Boolean);
+      sortPinnedPostsFirstInPlace(nextPosts);
       storedPosts.splice(0, storedPosts.length, ...nextPosts);
       stream.forEach((item, position) => {
         if (item.type === "ad" && ads[item.index]) ads[item.index].slot = position + 1;
@@ -2209,6 +2222,7 @@
           status: "已删除",
           deletedAt: new Date().toISOString()
         };
+        sortPinnedPostsFirstInPlace();
         save("postwave_posts", storedPosts);
         renderTables();
         toast("帖子已标记删除，公开页将返回 410");
@@ -2219,6 +2233,7 @@
         const target = index + dir;
         if (target < 0 || target >= storedPosts.length) return;
         [storedPosts[index], storedPosts[target]] = [storedPosts[target], storedPosts[index]];
+        sortPinnedPostsFirstInPlace();
         save("postwave_posts", storedPosts);
         renderTables();
         toast("帖子排序已更新");
