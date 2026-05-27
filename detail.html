@@ -103,6 +103,8 @@
     .ad-item { min-height:92px; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px; border:1px solid rgba(40,212,176,.45); border-radius:8px; background:linear-gradient(90deg, rgba(17,28,20,.96), rgba(22,24,28,.92)); }
     .ad-item.has-ad-image { width:100%; min-height:0; aspect-ratio:1300 / 180; padding:0; display:block; border-color:transparent; background:transparent; }
     .ad-item.has-ad-image img { width:100%; height:100%; object-fit:cover; display:block; }
+    .ad-item.has-ad-code { width:100%; min-height:0; aspect-ratio:1300 / 180; padding:0; display:block; border-color:transparent; background:transparent; }
+    .ad-code-frame { width:100%; height:100%; border:0; display:block; background:transparent; }
     .ad-item > * { position:relative; z-index:1; }
     :root.light .ad-item { background:#fff; }
     :root.light .ad-item.has-ad-image { background:transparent; border-color:transparent; }
@@ -587,6 +589,7 @@
       const title = String(ad.title || "");
       const aliases = {
         "home-banner": ["home-banner", "home", "首页广告"],
+        "global-js": ["global-js", "global-script", "site-js", "全站js", "全站JS", "全站JS广告", "全站弹窗广告", "全站JS/弹窗广告"],
         "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
         "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
         "detail-text": ["detail-text", "text-ad", "post-title-text-ad", "帖子标题文字广告", "标题文字广告", "纯文字广告"],
@@ -608,12 +611,15 @@
     function normalizeAd(ad) {
       const possibleUrl = String(ad.url || "");
       const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+      const code = ad.code || ad.adCode || ad.html || "";
       return {
         ...ad,
         title: ad.title || "",
         desc: ad.desc || "",
         link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        code,
+        adType: ad.adType || ad.mode || ad.kind || (code ? "code" : "image"),
         imageKey: ad.imageKey || ad.assetKey || "",
         slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
         placement: normalizeAdPlacement(ad)
@@ -630,6 +636,43 @@
       if (!ad) return "";
       if (ad.image) return ad.image;
       return "";
+    }
+    function isCodeAd(ad) {
+      return String(ad?.adType || ad?.mode || ad?.kind || "").toLowerCase() === "code" || Boolean(ad?.code || ad?.adCode || ad?.html);
+    }
+    function adCodeFrame(ad, className = "") {
+      const code = String(ad?.code || ad?.adCode || ad?.html || "");
+      if (!code.trim()) return "";
+      const srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;min-height:100%;background:transparent;overflow:hidden}body{display:grid;place-items:center}img,iframe,video,embed,object{max-width:100%;max-height:100%}a{color:inherit}</style></head><body>${code}</body></html>`;
+      return `<iframe class="ad-code-frame ${escapeHtml(className)}" title="${escapeHtml(ad?.title || "广告")}" srcdoc="${escapeHtml(srcdoc)}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" referrerpolicy="no-referrer-when-downgrade" loading="lazy"></iframe>`;
+    }
+    const executedGlobalJsAds = new Set();
+    function executeGlobalAdCode(ad) {
+      const code = String(ad?.code || ad?.adCode || ad?.html || "").trim();
+      if (!code) return;
+      const key = `${ad?.placement || "global-js"}|${ad?.slot || 0}|${ad?.title || ""}|${code}`;
+      if (executedGlobalJsAds.has(key)) return;
+      executedGlobalJsAds.add(key);
+      const mount = document.querySelector("#globalJsAdMount") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "globalJsAdMount" }));
+      mount.hidden = true;
+      const template = document.createElement("template");
+      template.innerHTML = code;
+      Array.from(template.content.childNodes).forEach((node) => {
+        if (node.nodeName.toLowerCase() === "script") {
+          const script = document.createElement("script");
+          Array.from(node.attributes || []).forEach((attr) => script.setAttribute(attr.name, attr.value));
+          script.textContent = node.textContent || "";
+          document.body.appendChild(script);
+        } else {
+          mount.appendChild(node);
+        }
+      });
+    }
+    function renderGlobalJsAds(sourceAds = loadAds()) {
+      sourceAds
+        .filter((ad) => ad.placement === "global-js" && isCodeAd(ad))
+        .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1))
+        .forEach(executeGlobalAdCode);
     }
     async function mediaUrl(item) {
       if (!item) return "";
@@ -713,11 +756,12 @@
       return rows.join("");
     }
     async function bannerMarkup(ad) {
+      if (isCodeAd(ad)) return `<div class="ad-item has-ad-code">${adCodeFrame(ad, "banner-code-frame")}</div>`;
       const img = await adImageUrl(ad);
       return img ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ width: 1300, height: 180 })}></a>` : "";
     }
     async function renderBannerPlacement(name, target, fallback) {
-      const source = byPlacement(name).filter((ad) => ad.image).sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
+      const source = byPlacement(name).filter((ad) => ad.image || isCodeAd(ad)).sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
       const rows = await Promise.all((source.length ? source : fallback).map(bannerMarkup));
       document.querySelector(target).innerHTML = rows.join("");
     }
@@ -738,6 +782,7 @@
       renderTextAds();
     }
     async function renderDetailAds() {
+      renderGlobalJsAds();
       await bannerAds();
       document.querySelector("#stationAds").innerHTML = await fillAds("station-square", Number(config.station) || 10);
       document.querySelector("#latestAds").innerHTML = await fillAds("latest-square", Number(config.latest) || 10);

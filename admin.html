@@ -87,7 +87,7 @@
     .ad-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
     .ad-tab { height: 40px; padding: 0 16px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
     .ad-tab.active { color: #fff; border-color: #18181b; background: #18181b; }
-    .ad-editor { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+    .ad-editor { display: grid; grid-template-columns: 1fr 1fr 170px auto; gap: 10px; }
     .ad-upload-row { display: grid; grid-template-columns: 1fr 160px 220px 160px; gap: 10px; }
     .ad-config-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .ad-list { display: grid; gap: 8px; }
@@ -96,6 +96,9 @@
     .ad-upload-preview { display: none; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; padding: 10px; border: 1px solid #dbe4ef; border-radius: 7px; background: #f8fafc; color: #64748b; font-weight: 800; }
     .ad-upload-preview.active { display: grid; }
     .ad-upload-preview img { width: 180px; height: 78px; object-fit: contain; border-radius: 6px; background: #0f172a; }
+    .ad-code-input { display: none; width: 100%; min-height: 150px; padding: 14px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .ad-code-input.active { display: block; }
+    .ad-code-preview { display: inline-block; max-width: 560px; margin-top: 8px; padding: 8px; border: 1px solid #dbe4ef; border-radius: 6px; background: #f8fafc; color: #556071; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .feed-order-panel { display: none; gap: 10px; padding: 14px; border: 1px solid #dbe4ef; border-radius: 8px; background: #f8fafc; }
     .feed-order-panel.active { display: grid; }
     .feed-order-panel h3 { margin: 0; font-size: 18px; letter-spacing: 0; }
@@ -399,13 +402,14 @@
           <div class="ad-tabs" id="adTabs">
             <button class="ad-tab active" data-ad-section="home-banner" type="button">首页广告</button>
             <button class="ad-tab" data-ad-section="home-popup" type="button">首页弹窗广告</button>
+            <button class="ad-tab" data-ad-section="global-js" type="button">全站JS/弹窗广告</button>
             <button class="ad-tab" data-ad-section="home-feed" type="button">首页内容流广告</button>
             <button class="ad-tab" data-ad-section="detail-top" type="button">帖子标题下广告</button>
             <button class="ad-tab" data-ad-section="detail-text" type="button">标题文字广告</button>
             <button class="ad-tab" data-ad-section="detail-banner" type="button">帖子内广告</button>
             <button class="ad-tab" data-ad-section="square" type="button">方形广告</button>
           </div>
-          <div class="ad-editor"><input class="field" id="adTitle" placeholder="广告标题"><input class="field" id="adDesc" placeholder="广告描述"><button class="btn dark" id="addAd">添加广告</button></div>
+          <div class="ad-editor"><input class="field" id="adTitle" placeholder="广告标题"><input class="field" id="adDesc" placeholder="广告描述"><select class="field" id="adMode"><option value="image">图片/GIF广告</option><option value="code">接入代码广告</option></select><button class="btn dark" id="addAd">添加广告</button></div>
           <div class="ad-upload-row">
             <input class="field" id="adLink" placeholder="广告链接，例如 app.html">
             <input class="field" id="adSlot" type="number" min="1" value="1" placeholder="插入位置">
@@ -416,6 +420,7 @@
             </select>
             <label class="btn" style="display:grid;place-items:center">上传图片/GIF<input id="adImageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
           </div>
+          <textarea class="field ad-code-input" id="adCodeInput" spellcheck="false" placeholder="粘贴广告主提供的完整 HTML / iframe / script 接入代码"></textarea>
           <div class="ad-upload-preview" id="adImagePreview"><img id="adPreviewImg" alt="广告预览"><span id="adImageName">支持 GIF、PNG、JPG、WebP</span></div>
           <div class="ad-config-row">
             <input class="field" id="stationCount" type="number" min="1" max="30" value="10" placeholder="站长推荐数量">
@@ -620,6 +625,7 @@
       const aliases = {
         "home-banner": ["home-banner", "home", "首页广告"],
         "home-popup": ["home-popup", "popup", "modal-ad", "首页弹窗广告", "弹窗广告", "首页弹窗"],
+        "global-js": ["global-js", "global-script", "site-js", "全站js", "全站JS", "全站JS广告", "全站弹窗广告", "全站JS/弹窗广告"],
         "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
         "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
         "detail-text": ["detail-text", "text-ad", "post-title-text-ad", "帖子标题文字广告", "标题文字广告", "纯文字广告"],
@@ -647,6 +653,8 @@
         desc: ad.desc || "",
         link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        code: ad.code || ad.adCode || ad.html || "",
+        adType: ad.adType || ad.mode || ad.kind || (ad.code || ad.adCode || ad.html ? "code" : "image"),
         imageKey: ad.imageKey || ad.assetKey || "",
         slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
         placement: normalizeAdPlacement(ad)
@@ -1735,6 +1743,7 @@
       return {
         "home-banner": "首页广告",
         "home-popup": "首页弹窗广告",
+        "global-js": "全站JS/弹窗广告",
         "home-feed": "首页内容流广告",
         "detail-top": "帖子标题下广告",
         "detail-text": "标题文字广告",
@@ -1752,21 +1761,33 @@
       const entries = ads
         .map((ad, index) => ({ ad, index }))
         .filter(({ ad }) => currentAdSection === "square" ? square.includes(ad.placement) : ad.placement === currentAdSection);
-      if (["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
+      if (["home-popup", "global-js", "home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
         return entries.sort((a, b) => (Number(a.ad.slot) || 1) - (Number(b.ad.slot) || 1) || a.index - b.index);
       }
       return entries;
     }
+    function isCodeAd(ad) {
+      return String(ad?.adType || ad?.mode || ad?.kind || "").toLowerCase() === "code" || Boolean(ad?.code || ad?.adCode || ad?.html);
+    }
     function renderAdControls() {
       const isTextAd = currentAdSection === "detail-text";
+      const isGlobalJsAd = currentAdSection === "global-js";
+      const supportsCode = isGlobalJsAd || (!isTextAd && currentAdSection !== "square" && currentAdSection !== "home-popup");
+      const mode = document.querySelector("#adMode");
+      const codeInput = document.querySelector("#adCodeInput");
+      if (isGlobalJsAd) mode.value = "code";
+      if (!supportsCode && mode.value === "code") mode.value = "image";
+      const isCodeMode = supportsCode && mode.value === "code";
       const imageButton = document.querySelector("#adImageInput").closest("label");
+      mode.style.display = supportsCode && !isGlobalJsAd ? "" : "none";
       document.querySelector("#squarePlacement").style.display = currentAdSection === "square" ? "" : "none";
-      document.querySelector("#adSlot").style.display = ["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? "" : "none";
+      document.querySelector("#adSlot").style.display = ["home-popup", "global-js", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? "" : "none";
       document.querySelector("#adSlot").max = isTextAd ? "20" : "";
-      document.querySelector("#adTitle").placeholder = isTextAd ? "文字广告内容，例如 33直播" : "广告标题";
+      document.querySelector("#adTitle").placeholder = isTextAd ? "文字广告内容，例如 33直播" : (isCodeMode ? "JS广告名称，后台识别用" : "广告标题");
       document.querySelector("#adDesc").style.display = isTextAd ? "none" : "";
-      imageButton.style.display = isTextAd ? "none" : "grid";
-      if (isTextAd) document.querySelector("#adImagePreview").classList.remove("active");
+      imageButton.style.display = (isTextAd || isCodeMode) ? "none" : "grid";
+      codeInput.classList.toggle("active", isCodeMode);
+      if (isTextAd || isCodeMode) document.querySelector("#adImagePreview").classList.remove("active");
       document.querySelector(".ad-config-row").style.display = currentAdSection === "square" ? "grid" : "none";
       document.querySelector("#saveAdConfig").style.display = currentAdSection === "square" ? "" : "none";
       document.querySelector("#feedOrderPanel").classList.toggle("active", currentAdSection === "home-feed");
@@ -1776,7 +1797,7 @@
       const stream = storedPosts.map((post, index) => ({ type: "post", index, title: post.title || "未命名帖子" }));
       const feedAds = ads
         .map((ad, index) => ({ type: "ad", index, title: ad.title || "首页内容流广告", ad }))
-        .filter((item) => item.ad.placement === "home-feed" && item.ad.image)
+        .filter((item) => item.ad.placement === "home-feed" && (item.ad.image || isCodeAd(item.ad)))
         .sort((a, b) => (Number(a.ad.slot) || 1) - (Number(b.ad.slot) || 1) || a.index - b.index);
       feedAds.forEach((item, order) => {
         const slot = Math.max(1, Math.min(stream.length + 1, Number(item.ad.slot) || order + 1));
@@ -1832,18 +1853,19 @@
       const entries = adEntriesForCurrentSection();
       const rows = await Promise.all(entries.map(async ({ ad, index }, position) => {
         const preview = await adImageUrl(ad);
+        const codePreview = isCodeAd(ad) ? `<br><code class="ad-code-preview">${escapeHtml(String(ad.code || ad.adCode || ad.html || "").replace(/\s+/g, " ").slice(0, 180))}</code>` : "";
         return `
         <div class="ad-admin-item">
-          <span><strong>${escapeHtml(ad.title)}</strong>${ad.desc ? `<br>${escapeHtml(ad.desc)}` : ""}<br><small>位置：${escapeHtml(adPlacementLabel(ad.placement))}${ad.slot ? ` · 插入位置 ${escapeHtml(ad.slot)}` : ""} · ${escapeHtml(ad.link || "app.html")}</small>${preview ? `<br><img class="ad-preview" src="${safeUrl(preview)}" alt="${escapeHtml(ad.title)}">` : ""}</span>
+          <span><strong>${escapeHtml(ad.title)}</strong>${ad.desc ? `<br>${escapeHtml(ad.desc)}` : ""}<br><small>类型：${isCodeAd(ad) ? "接入代码" : "图片/GIF"} · 位置：${escapeHtml(adPlacementLabel(ad.placement))}${ad.slot ? ` · 插入位置 ${escapeHtml(ad.slot)}` : ""} · ${escapeHtml(ad.link || "app.html")}</small>${preview ? `<br><img class="ad-preview" src="${safeUrl(preview)}" alt="${escapeHtml(ad.title)}">` : ""}${codePreview}</span>
           <span class="mini-actions">
-            <button class="btn" data-move-ad="${index}" data-dir="-1" ${["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((Number(ad.slot) || 1) <= 1 ? "disabled" : "") : (position === 0 ? "disabled" : "")}>上移</button>
-            <button class="btn" data-move-ad="${index}" data-dir="1" ${["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((currentAdSection === "detail-text" && (Number(ad.slot) || 1) >= 20) ? "disabled" : "") : (position === entries.length - 1 ? "disabled" : "")}>下移</button>
+            <button class="btn" data-move-ad="${index}" data-dir="-1" ${["home-popup", "global-js", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((Number(ad.slot) || 1) <= 1 ? "disabled" : "") : (position === 0 ? "disabled" : "")}>上移</button>
+            <button class="btn" data-move-ad="${index}" data-dir="1" ${["home-popup", "global-js", "home-feed", "detail-top", "detail-text"].includes(currentAdSection) ? ((currentAdSection === "detail-text" && (Number(ad.slot) || 1) >= 20) ? "disabled" : "") : (position === entries.length - 1 ? "disabled" : "")}>下移</button>
             <button class="btn" data-remove-ad="${index}">删除</button>
           </span>
         </div>
       `;
       }));
-      document.querySelector("#adList").innerHTML = entries.length ? rows.join("") : `<div class="ad-admin-item"><span><strong>暂无${currentAdSection === "square" ? "方形广告" : adPlacementLabel(currentAdSection)}</strong><br>${currentAdSection === "detail-text" ? "填写文字内容和位置后点击添加广告。" : "上传图片/GIF 后点击添加广告。"}</span></div>`;
+      document.querySelector("#adList").innerHTML = entries.length ? rows.join("") : `<div class="ad-admin-item"><span><strong>暂无${currentAdSection === "square" ? "方形广告" : adPlacementLabel(currentAdSection)}</strong><br>${currentAdSection === "detail-text" ? "填写文字内容和位置后点击添加广告。" : (currentAdSection === "global-js" ? "粘贴广告主提供的 JS/HTML 接入代码后点击添加广告。" : "上传图片/GIF 后点击添加广告。")}</span></div>`;
       if (currentAdSection === "home-feed") renderHomeFeedOrder();
     }
     document.querySelectorAll(".toolbar button[data-command]").forEach((button) => {
@@ -2029,6 +2051,7 @@
       tab.classList.add("active");
       renderAds();
     });
+    document.querySelector("#adMode").addEventListener("change", renderAdControls);
     document.querySelector("#addAd").addEventListener("click", async () => {
       if (currentAdSection === "detail-text") {
         const entries = adEntriesForCurrentSection();
@@ -2059,6 +2082,37 @@
         document.querySelector("#adSlot").value = "1";
         renderAds();
         toast("文字广告已添加，前台刷新后可见");
+        return;
+      }
+      if (document.querySelector("#adMode").value === "code" && currentAdSection !== "square" && currentAdSection !== "home-popup") {
+        const code = document.querySelector("#adCodeInput").value.trim();
+        if (!code) {
+          toast("请粘贴广告接入代码");
+          return;
+        }
+        const nextAd = {
+          title: document.querySelector("#adTitle").value || "代码广告",
+          desc: document.querySelector("#adDesc").value || "",
+          link: document.querySelector("#adLink").value || "app.html",
+          image: "",
+          imageKey: "",
+          code,
+          adType: "code",
+          slot: ["global-js", "home-feed", "detail-top"].includes(currentAdSection) ? Number(document.querySelector("#adSlot").value || 1) : 0,
+          placement: currentAdPlacement()
+        };
+        ads.push(nextAd);
+        if (!save("postwave_ads", ads)) {
+          ads.pop();
+          return;
+        }
+        document.querySelector("#adTitle").value = "";
+        document.querySelector("#adDesc").value = "";
+        document.querySelector("#adLink").value = "";
+        document.querySelector("#adSlot").value = "1";
+        document.querySelector("#adCodeInput").value = "";
+        renderAds();
+        toast("代码广告已添加，前台刷新后可见");
         return;
       }
       const file = currentAdFile || document.querySelector("#adImageInput").files[0];
@@ -2092,6 +2146,7 @@
       document.querySelector("#adDesc").value = "";
       document.querySelector("#adLink").value = "";
       document.querySelector("#adSlot").value = "1";
+      document.querySelector("#adCodeInput").value = "";
       document.querySelector("#adImagePreview").classList.remove("active");
       document.querySelector("#adPreviewImg").removeAttribute("src");
       document.querySelector("#adImageName").textContent = "支持 GIF、PNG、JPG、WebP";
@@ -2114,7 +2169,7 @@
       if (move) {
         const index = Number(move.dataset.moveAd);
         const dir = Number(move.dataset.dir);
-        if (["home-popup", "home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
+        if (["home-popup", "global-js", "home-feed", "detail-top", "detail-text"].includes(currentAdSection)) {
           const maxSlot = currentAdSection === "detail-text" ? 20 : Number.MAX_SAFE_INTEGER;
           ads[index].slot = Math.max(1, Math.min(maxSlot, (Number(ads[index].slot) || 1) + dir));
           save("postwave_ads", ads);

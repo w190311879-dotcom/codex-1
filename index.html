@@ -114,6 +114,7 @@
     .post-meta { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; color: rgba(255,255,255,.9); font-size: 14px; line-height: 1.5; font-weight: 500; text-shadow: 0 2px 8px rgba(0,0,0,.72); }
     .feed-ad::after { display: none; }
     .feed-ad .post-content { pointer-events: none; }
+    .code-feed-ad { display: block; padding: 0; background: transparent; }
     .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin: 22px 0 36px; }
     .page-btn { min-width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--card); cursor: pointer; font-weight: 900; text-decoration: none; }
     .page-btn.active, .page-btn:hover { color: #07110a; border-color: var(--green); background: var(--green); }
@@ -129,6 +130,8 @@
     .ad-item { min-height: 88px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid rgba(69,240,106,.45); border-radius: var(--radius); background: linear-gradient(90deg, rgba(17,28,20,.96), rgba(22,24,28,.92)); }
     .ad-item.has-ad-image { width: 100%; min-height: 0; aspect-ratio: 1300 / 180; padding: 0; display: block; border-color: transparent; background: transparent; }
     .ad-item.has-ad-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ad-item.has-ad-code { width: 100%; min-height: 0; aspect-ratio: 1300 / 180; padding: 0; display: block; border-color: transparent; background: transparent; }
+    .ad-code-frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
     .ad-item > * { position: relative; z-index: 1; }
     .ad-copy { min-width: 0; }
     :root.light .ad-item { border-color: #b9efc8; background: linear-gradient(90deg, #ffffff, #effaf2); box-shadow: 0 10px 30px rgba(30, 70, 45, .08); }
@@ -570,6 +573,7 @@
       const aliases = {
         "home-banner": ["home-banner", "home", "首页广告"],
         "home-popup": ["home-popup", "popup", "modal-ad", "首页弹窗广告", "弹窗广告", "首页弹窗"],
+        "global-js": ["global-js", "global-script", "site-js", "全站js", "全站JS", "全站JS广告", "全站弹窗广告", "全站JS/弹窗广告"],
         "home-feed": ["home-feed", "feed", "首页内容流广告", "内容流广告"],
         "detail-top": ["detail-top", "detail-title", "post-title-ad", "帖子标题下广告", "帖子下方标题广告", "标题下广告"],
         "detail-banner": ["detail-banner", "detail-inner", "post-inner", "post-banner", "帖子内广告", "帖子内容广告", "正文后广告"],
@@ -590,12 +594,15 @@
     function normalizeAd(ad) {
       const possibleUrl = String(ad.url || "");
       const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+      const code = ad.code || ad.adCode || ad.html || "";
       return {
         ...ad,
         title: ad.title || "",
         desc: ad.desc || "",
         link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        code,
+        adType: ad.adType || ad.mode || ad.kind || (code ? "code" : "image"),
         imageKey: ad.imageKey || ad.assetKey || "",
         slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
         placement: normalizeAdPlacement(ad)
@@ -608,6 +615,48 @@
       if (!ad) return "";
       if (ad.image) return ad.image;
       return "";
+    }
+    function isCodeAd(ad) {
+      return String(ad?.adType || ad?.mode || ad?.kind || "").toLowerCase() === "code" || Boolean(ad?.code || ad?.adCode || ad?.html);
+    }
+    function adCodeFrame(ad, className = "") {
+      const code = String(ad?.code || ad?.adCode || ad?.html || "");
+      if (!code.trim()) return "";
+      const srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;min-height:100%;background:transparent;overflow:hidden}body{display:grid;place-items:center}img,iframe,video,embed,object{max-width:100%;max-height:100%}a{color:inherit}</style></head><body>${code}</body></html>`;
+      return `<iframe class="ad-code-frame ${escapeHtml(className)}" title="${escapeHtml(ad?.title || "广告")}" srcdoc="${escapeHtml(srcdoc)}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" referrerpolicy="no-referrer-when-downgrade" loading="lazy"></iframe>`;
+    }
+    const executedGlobalJsAds = new Set();
+    function executeGlobalAdCode(ad) {
+      const code = String(ad?.code || ad?.adCode || ad?.html || "").trim();
+      if (!code) return;
+      const key = `${ad?.placement || "global-js"}|${ad?.slot || 0}|${ad?.title || ""}|${code}`;
+      if (executedGlobalJsAds.has(key)) return;
+      executedGlobalJsAds.add(key);
+      const mount = document.querySelector("#globalJsAdMount") || document.body.appendChild(Object.assign(document.createElement("div"), { id: "globalJsAdMount" }));
+      mount.hidden = true;
+      const template = document.createElement("template");
+      template.innerHTML = code;
+      Array.from(template.content.childNodes).forEach((node) => {
+        if (node.nodeName.toLowerCase() === "script") {
+          const script = document.createElement("script");
+          Array.from(node.attributes || []).forEach((attr) => script.setAttribute(attr.name, attr.value));
+          script.textContent = node.textContent || "";
+          document.body.appendChild(script);
+        } else {
+          mount.appendChild(node);
+        }
+      });
+    }
+    function renderGlobalJsAds(sourceAds = loadAds()) {
+      sourceAds
+        .filter((ad) => ad.placement === "global-js" && isCodeAd(ad))
+        .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1))
+        .forEach(executeGlobalAdCode);
+    }
+    async function feedAdMarkup(ad, eager = false) {
+      if (isCodeAd(ad)) return `<div class="post-row feed-ad code-feed-ad">${adCodeFrame(ad, "feed-code-frame")}</div>`;
+      const img = await adImageUrl(ad);
+      return img ? `<a class="post-row feed-ad" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>` : "";
     }
     let currentPage = 1;
     let activeCategory = "首页";
@@ -713,13 +762,6 @@
       if (!badge) return "";
       return `<span class="post-badge"><img src="${badge.src}" alt="${escapeHtml(badge.label)}" width="266" height="91" loading="lazy" decoding="async"></span>`;
     }
-
-    async function feedAdMarkup(ad, eager = false) {
-      const img = await adImageUrl(ad);
-      if (!img) return "";
-      return `<a class="post-row feed-ad" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>`;
-    }
-
     async function fetchApiPosts() {
       try {
         const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
@@ -780,7 +822,7 @@
       currentPage = Math.min(currentPage, totalPages);
       const start = (currentPage - 1) * perPage;
       const pageItems = items.slice(start, start + perPage);
-      const feedAds = (activeCategory === "首页" || activeCategory === defaultCategoryName()) ? loadAds().filter((ad) => ad.placement === "home-feed" && ad.image).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
+      const feedAds = (activeCategory === "首页" || activeCategory === defaultCategoryName()) ? loadAds().filter((ad) => ad.placement === "home-feed" && (ad.image || isCodeAd(ad))).sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
       const rows = pageItems.map((post) => ({ kind: "post", post }));
       feedAds.forEach((ad, order) => {
         const slot = Math.max(1, Math.min(rows.length + 1, Number(ad.slot) || order + 1));
@@ -881,8 +923,10 @@
     }
     async function renderAds() {
       const ads = loadAds();
-      const homeAds = ads.filter((ad) => (!ad.placement || ad.placement === "home-banner") && ad.image);
+      renderGlobalJsAds(ads);
+      const homeAds = ads.filter((ad) => (!ad.placement || ad.placement === "home-banner") && (ad.image || isCodeAd(ad)));
       const rows = await Promise.all(homeAds.map(async (ad) => {
+        if (isCodeAd(ad)) return `<div class="ad-item has-ad-code">${adCodeFrame(ad, "banner-code-frame")}</div>`;
         const img = await adImageUrl(ad);
         return img ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ width: 1300, height: 180 })}></a>` : "";
       }));

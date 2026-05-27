@@ -192,10 +192,10 @@ const routeLines = (routeLineOrigins.length ? routeLineOrigins : publicSiteOrigi
 }));
 let cachedRoutingSettings = { entryHosts: [] };
 const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || "";
-const cspConnectSources = ["'self'", publicApiBaseUrl, publicMediaBaseUrl, publicAdminOrigin, publicUploadOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
+const cspConnectSources = ["'self'", "https:", publicApiBaseUrl, publicMediaBaseUrl, publicAdminOrigin, publicUploadOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
 const cspMediaSources = ["'self'", "blob:", "data:", publicMediaBaseUrl].filter(Boolean);
-const cspImageSources = ["'self'", "data:", "blob:", publicMediaBaseUrl, "https://images.unsplash.com"].filter(Boolean);
-const cspScriptSources = ["'self'", "'unsafe-inline'"];
+const cspImageSources = ["'self'", "data:", "blob:", "https:", publicMediaBaseUrl, "https://images.unsplash.com"].filter(Boolean);
+const cspScriptSources = ["'self'", "'unsafe-inline'", "https:"];
 const cspStyleSources = ["'self'", "'unsafe-inline'"];
 const defaultAdmins = [
   { id: "author-alun", name: "alun", account: "alun", status: "正常", passwordHash: "$2b$12$U92wyNFjRMMT8su0BmPkE.B6CxgnrR4NyjV0seeXmhTg..2Wwih6m" },
@@ -319,6 +319,7 @@ app.use((req, res, next) => {
     `img-src ${cspImageSources.join(" ")}`,
     `media-src ${cspMediaSources.join(" ")}`,
     `connect-src ${cspConnectSources.join(" ")}`,
+    "frame-src 'self' https: data:",
     "font-src 'self' data:",
     "object-src 'none'",
     "base-uri 'self'",
@@ -436,6 +437,8 @@ function normalizeSiteSettings(input = {}) {
     link: String(ad?.link || "app.html"),
     image: String(ad?.image || ""),
     imageKey: String(ad?.imageKey || ""),
+    code: String(ad?.code || ad?.adCode || ad?.html || ""),
+    adType: String(ad?.adType || ad?.mode || ad?.kind || (ad?.code || ad?.adCode || ad?.html ? "code" : "image")),
     slot: Number(ad?.slot) || 0,
     placement: String(ad?.placement || "home-banner")
   })) : defaultSiteSettings.ads;
@@ -3354,18 +3357,33 @@ function ssrPostRow(post, eager = false) {
 function normalizeSsrAd(ad = {}) {
   const possibleUrl = String(ad.url || "");
   const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+  const code = String(ad.code || ad.adCode || ad.html || "");
   return {
     ...ad,
     title: ad.title || "",
     desc: ad.desc || "",
     link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
     image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+    code,
+    adType: ad.adType || ad.mode || ad.kind || (code ? "code" : "image"),
     slot: Number(ad.slot ?? ad.order ?? ad.sort ?? 0),
     placement: ad.placement || "home-banner"
   };
 }
 
+function ssrIsCodeAd(ad = {}) {
+  return String(ad.adType || ad.mode || ad.kind || "").toLowerCase() === "code" || Boolean(ad.code || ad.adCode || ad.html);
+}
+
+function ssrAdCodeFrame(ad = {}, className = "") {
+  const code = String(ad.code || ad.adCode || ad.html || "");
+  if (!code.trim()) return "";
+  const srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;min-height:100%;background:transparent;overflow:hidden}body{display:grid;place-items:center}img,iframe,video,embed,object{max-width:100%;max-height:100%}a{color:inherit}</style></head><body>${code}</body></html>`;
+  return `<iframe class="ad-code-frame ${htmlEscape(className)}" title="${htmlEscape(ad.title || "广告")}" srcdoc="${htmlEscape(srcdoc)}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms" referrerpolicy="no-referrer-when-downgrade" loading="lazy"></iframe>`;
+}
+
 function ssrFeedAdRow(ad, eager = false) {
+  if (ssrIsCodeAd(ad)) return `<div class="post-row feed-ad code-feed-ad">${ssrAdCodeFrame(ad, "feed-code-frame")}</div>`;
   if (!ad.image) return "";
   return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}"><img src="${htmlEscape(safePublicUrl(ad.image))}" alt="${htmlEscape(ad.title || "广告")}" ${ssrImageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>`;
 }
@@ -4142,7 +4160,7 @@ async function renderIndexPage(req, res, next) {
     const pagePosts = filteredPosts.slice(start, start + perPage);
     const feedAds = !requestedCategory ? (settings.ads || [])
       .map(normalizeSsrAd)
-      .filter((ad) => ad.placement === "home-feed" && ad.image)
+      .filter((ad) => ad.placement === "home-feed" && (ad.image || ssrIsCodeAd(ad)))
       .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
     const rows = pagePosts.map((post) => ({ kind: "post", post }));
     feedAds.forEach((ad, order) => {
