@@ -94,6 +94,10 @@ def load_config():
     telegram_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     telegram_channel_id = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
     bot_api_token = os.environ.get("BOT_API_TOKEN", "").strip()
+    fixed_content = os.environ.get("FIXED_CONTENT", "").strip()
+    fixed_content_file = os.environ.get("FIXED_CONTENT_FILE", "").strip()
+    if fixed_content_file:
+        fixed_content = Path(fixed_content_file).read_text(encoding="utf-8").strip()
 
     if not dry_run and not telegram_bot_token:
         raise ValueError("TELEGRAM_BOT_TOKEN is required when DRY_RUN=false")
@@ -113,7 +117,7 @@ def load_config():
             "POST_SOURCE_API_URL",
             "https://51cmtv.com/api/bot/random-posts",
         ).strip(),
-        fixed_content=os.environ.get("FIXED_CONTENT", "").strip(),
+        fixed_content=fixed_content,
         timezone_name=timezone_name,
         daily_post_limit=int_env("DAILY_POST_LIMIT", 15, minimum=1, maximum=50),
         images_per_post=int_env("IMAGES_PER_POST", 6, minimum=1, maximum=20),

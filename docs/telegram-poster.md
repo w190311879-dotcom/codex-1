@@ -26,6 +26,8 @@ TELEGRAM_CHANNEL_ID=@channel_username_or_-100_id
 BOT_API_TOKEN=site-bot-api-token
 POST_SOURCE_API_URL=https://51cmtv.com/api/bot/random-posts
 FIXED_CONTENT=your-fixed-message
+# 多行固定文案建议写入单独文件：
+FIXED_CONTENT_FILE=/var/www/telegram-poster/fixed-content.txt
 TIMEZONE=Asia/Shanghai
 DAILY_POST_LIMIT=15
 IMAGES_PER_POST=6
