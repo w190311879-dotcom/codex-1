@@ -36,7 +36,7 @@ class CaptionTests(unittest.TestCase):
         )
 
         self.assertLessEqual(len(caption), 1024)
-        self.assertIn("原文链接：https://51cmtv.com/v/post-1", caption)
+        self.assertNotIn("https://51cmtv.com/v/post-1", caption)
         self.assertIn("#alpha", caption)
         self.assertIn("#betakeyword", caption)
         self.assertIn("#中文关键词", caption)
