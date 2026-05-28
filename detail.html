@@ -216,6 +216,7 @@
         <a class="icon-btn mobile-hide" id="topGroupLink" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
         <a class="icon-btn" id="topTelegramLink" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><span class="svg-icon svg-icon-telegram" aria-hidden="true"></span></a>
         <a class="icon-btn" id="topXLink" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X"><span class="svg-icon svg-icon-x" aria-hidden="true"></span></a>
+        <a class="icon-btn mobile-hide" id="topBusinessLink" href="mailto:business@example.com" aria-label="商务合作" title="商务合作"><i data-lucide="handshake"></i></a>
         <button class="icon-btn mobile-hide" id="themeToggle" aria-label="日间夜间模式" title="日间夜间模式"><i data-lucide="sun-moon"></i></button>
         <button class="icon-btn" id="authOpen" aria-label="登录注册" title="登录/注册"><i data-lucide="user-round"></i></button>
       </div>
@@ -451,6 +452,10 @@
         el.removeAttribute("rel");
       }
     }
+    function footerLinkByLabel(label, fallbackHref) {
+      const target = String(label || "").trim();
+      return footerConfig.footerLinks.find((link) => String(link.label || "").trim() === target) || { href: fallbackHref };
+    }
     function renderSiteChrome() {
       const siteName = siteConfig.siteName || "51春梦";
       document.querySelector(".brand").href = "/";
@@ -467,6 +472,7 @@
       applyTopLink("#topGroupLink", footerConfig.topLinks.group, "qq.html");
       applyTopLink("#topTelegramLink", footerConfig.topLinks.telegram, "https://t.me/example_group");
       applyTopLink("#topXLink", footerConfig.topLinks.x, "https://x.com/example");
+      applyTopLink("#topBusinessLink", footerLinkByLabel("商务合作", "mailto:business@example.com"), "mailto:business@example.com");
       document.querySelector(".legal div:last-child").textContent = `Copyright © 2026 ${siteName}. All rights reserved.`;
       document.title = "51春梦 - 吃瓜爆料 + 成人视频，一站搞定";
       window.lucide?.createIcons?.();
