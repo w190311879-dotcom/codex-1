@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "db:migrate": "node scripts/db-migrate.js",
-    "db:backup": "node scripts/db-backup.js"
+    "db:backup": "node scripts/db-backup.js",
+    "test:bot-api": "node scripts/test-bot-api.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

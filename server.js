@@ -54,6 +54,11 @@ const isProduction = process.env.NODE_ENV === "production";
 const defaultSessionSecret = "postwave-local-dev-secret";
 const sessionSecret = process.env.SESSION_SECRET || (isProduction ? "" : defaultSessionSecret);
 const analyticsReadToken = process.env.ANALYTICS_READ_TOKEN || "";
+const botApiToken = String(process.env.BOT_API_TOKEN || "").trim();
+const botDefaultPostLimit = 15;
+const botMaxPostLimit = 50;
+const botDefaultImagesPerPost = 6;
+const botMaxImagesPerPost = 20;
 const sessionCookieName = "postwave_session";
 const userSessionCookieName = "postwave_user_session";
 const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
@@ -1223,6 +1228,20 @@ function requireAnalyticsReadApi(req, res, next) {
   }
   const token = readBearerToken(req);
   if (!token || !timingSafeStringEqual(token, analyticsReadToken)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+
+function requireBotApiToken(req, res, next) {
+  if (!botApiToken) {
+    console.error("BOT_API_TOKEN is not configured");
+    res.status(503).json({ error: "Bot API token is not configured" });
+    return;
+  }
+  const token = readBearerToken(req);
+  if (!token || !timingSafeStringEqual(token, botApiToken)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -2862,6 +2881,38 @@ app.get("/api/posts", async (_req, res, next) => {
   }
 });
 
+app.get("/api/bot/random-posts", requireBotApiToken, async (req, res, next) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const limit = parseBoundedIntegerParam(req.query.limit, {
+      name: "limit",
+      defaultValue: botDefaultPostLimit,
+      min: 1,
+      max: botMaxPostLimit
+    });
+    const imagesPerPost = parseBoundedIntegerParam(req.query.images_per_post, {
+      name: "images_per_post",
+      defaultValue: botDefaultImagesPerPost,
+      min: botDefaultImagesPerPost,
+      max: botMaxImagesPerPost
+    });
+    const excludeIds = parseExcludeIds(req.query.exclude_ids);
+    const posts = publicPostsFrom(await readPosts())
+      .filter((post) => !excludeIds.has(String(post.id)))
+      .map((post) => ({ post, images: uniqueAbsoluteImageUrls(req, post) }))
+      .filter((item) => item.images.length >= imagesPerPost);
+    const selected = shuffleItems(posts).slice(0, limit).map(({ post }) => botPostPayload(req, post, imagesPerPost));
+    res.json({ posts: selected });
+  } catch (error) {
+    if (error.status === 400) {
+      res.status(400).json({ error: error.message || "参数非法" });
+      return;
+    }
+    console.error("Bot random posts API failed:", error);
+    next(error);
+  }
+});
+
 app.post("/api/posts", requireAdminApi, async (req, res, next) => {
   try {
     const post = req.body?.post || req.body;
@@ -3314,6 +3365,87 @@ function publicPostForHome(post = {}, index = 0) {
     body: post.body || "",
     pinned: isPinnedPost(post),
     topBadge: String(post.topBadge || post.badge || "").trim()
+  };
+}
+
+function parseBoundedIntegerParam(value, { name, defaultValue, min, max }) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return defaultValue;
+  if (!/^\d+$/.test(raw)) {
+    const error = new Error(`${name} 参数非法`);
+    error.status = 400;
+    throw error;
+  }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    const error = new Error(`${name} 必须在 ${min} 到 ${max} 之间`);
+    error.status = 400;
+    throw error;
+  }
+  return parsed;
+}
+
+function parseExcludeIds(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return new Set();
+  const ids = raw.split(",").map((item) => item.trim()).filter(Boolean);
+  if (ids.length > 1000 || ids.some((id) => id.length > 160)) {
+    const error = new Error("exclude_ids 参数非法");
+    error.status = 400;
+    throw error;
+  }
+  return new Set(ids);
+}
+
+function shuffleItems(items = []) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = crypto.randomInt(index + 1);
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
+function uniqueAbsoluteImageUrls(req, post = {}) {
+  const urls = [
+    post.image,
+    post.cover,
+    ...(Array.isArray(post.bodyImages) ? post.bodyImages : [])
+  ];
+  const seen = new Set();
+  return urls.map((url) => absolutePublicUrl(req, safePublicUrl(url, "")))
+    .filter((url) => /^https?:\/\//i.test(url))
+    .filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+}
+
+function botPublishedAt(post = {}) {
+  const parsed = parsePostDate(post.date || post.date_text || "");
+  if (!parsed) return "";
+  const date = new Date(parsed);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function botPostKeywords(post = {}) {
+  return uniqueList([
+    ...normalizeArray(post.keywords),
+    ...normalizeArray(post.tags)
+  ].map((item) => String(item).replace(/^#+/, "").trim()).filter(Boolean)).slice(0, 20);
+}
+
+function botPostPayload(req, post = {}, imagesPerPost = botDefaultImagesPerPost) {
+  const images = uniqueAbsoluteImageUrls(req, post);
+  return {
+    id: String(post.id || ""),
+    title: String(post.title || ""),
+    keywords: botPostKeywords(post),
+    images: images.slice(0, imagesPerPost),
+    url: detailUrl(req, post),
+    published_at: botPublishedAt(post),
+    excerpt: detailDescription(post)
   };
 }
 
