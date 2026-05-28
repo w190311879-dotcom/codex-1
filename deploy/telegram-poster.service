@@ -1,0 +1,17 @@
+[Unit]
+Description=51cmtv Telegram Poster
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=postwave
+Group=postwave
+WorkingDirectory=/var/www/telegram-poster
+Environment=TELEGRAM_POSTER_ENV_FILE=/var/www/telegram-poster/.env
+ExecStart=/usr/bin/python3 -m telegram_poster
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
