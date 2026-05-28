@@ -3672,15 +3672,30 @@ function extractPostVideoIds(post = {}) {
 }
 
 async function mediaMapForVideoIds(videoIds = []) {
-  const entries = await Promise.all(videoIds.map(async (id) => {
-    try {
-      const [media] = await readMediaRecords({ id, publicOnly: true });
-      return [id, media || null];
-    } catch {
-      return [id, null];
+  const ids = uniqueList(videoIds.map((id) => String(id || "").trim()).filter(Boolean));
+  if (!ids.length) return new Map();
+  try {
+    if (pool) {
+      const { rows } = await pool.query(
+        `SELECT media_id AS id, kind, original_name AS "originalName", mime_type AS "mimeType",
+                size_bytes AS size, storage_provider AS "storageProvider", storage_path AS "storagePath",
+                url, status, width, height, duration, metadata, created_at AS "createdAt"
+         FROM media_files
+         WHERE media_id = ANY($1::text[]) AND status = $2 AND kind = $3
+         ORDER BY created_at DESC, id DESC`,
+        [ids, "ready", "video"]
+      );
+      return new Map(rows.map((row) => {
+        const media = normalizeMediaRecord(row);
+        return [media.id, media];
+      }));
     }
-  }));
-  return new Map(entries);
+    const wanted = new Set(ids);
+    const records = await readMediaRecords({ kind: "video", publicOnly: true });
+    return new Map(records.filter((record) => wanted.has(record.id)).map((record) => [record.id, record]));
+  } catch {
+    return new Map();
+  }
 }
 
 function ssrDetailContent(post, mediaById = new Map()) {
@@ -4028,17 +4043,62 @@ function isPrimarySiteRequest(req) {
   return Boolean(primaryHost) && hostWithoutPort(requestHost(req)) === primaryHost;
 }
 
+function sitemapImageXml(image = {}) {
+  const loc = typeof image === "string" ? image : image.loc;
+  if (!loc) return "";
+  const parts = [
+    `      <image:loc>${xmlEscape(loc)}</image:loc>`,
+    image.title ? `      <image:title>${xmlEscape(truncateText(image.title, 110))}</image:title>` : "",
+    image.caption ? `      <image:caption>${xmlEscape(truncateText(image.caption, 2048))}</image:caption>` : ""
+  ].filter(Boolean).join("\n");
+  return `    <image:image>\n${parts}\n    </image:image>`;
+}
+
+function sitemapVideoXml(video = {}) {
+  const thumbnailLoc = video.thumbnailLoc || video.thumbnail_loc;
+  const title = truncateText(video.title || "", 100);
+  const description = truncateText(video.description || title, 2048);
+  const contentLoc = video.contentLoc || video.content_loc;
+  const playerLoc = video.playerLoc || video.player_loc;
+  if (!thumbnailLoc || !title || !description || (!contentLoc && !playerLoc)) return "";
+  const duration = Math.floor(Number(video.duration) || 0);
+  const tags = normalizeArray(video.tags).map((tag) => truncateText(String(tag).replace(/^#+/, "").trim(), 256)).filter(Boolean).slice(0, 32);
+  const parts = [
+    `      <video:thumbnail_loc>${xmlEscape(thumbnailLoc)}</video:thumbnail_loc>`,
+    `      <video:title>${xmlEscape(title)}</video:title>`,
+    `      <video:description>${xmlEscape(description)}</video:description>`,
+    contentLoc ? `      <video:content_loc>${xmlEscape(contentLoc)}</video:content_loc>` : "",
+    playerLoc ? `      <video:player_loc allow_embed="yes">${xmlEscape(playerLoc)}</video:player_loc>` : "",
+    duration > 0 && duration <= 28800 ? `      <video:duration>${duration}</video:duration>` : "",
+    video.publicationDate ? `      <video:publication_date>${xmlEscape(video.publicationDate)}</video:publication_date>` : "",
+    video.category ? `      <video:category>${xmlEscape(truncateText(video.category, 256))}</video:category>` : "",
+    ...tags.map((tag) => `      <video:tag>${xmlEscape(tag)}</video:tag>`)
+  ].filter(Boolean).join("\n");
+  return `    <video:video>\n${parts}\n    </video:video>`;
+}
+
 function sitemapUrlset(entries = []) {
+  const hasImages = entries.some((entry) => Array.isArray(entry.images) && entry.images.length);
+  const hasVideos = entries.some((entry) => Array.isArray(entry.videos) && entry.videos.length);
+  const namespaces = [
+    `xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"`,
+    hasImages ? `xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"` : "",
+    hasVideos ? `xmlns:video="http://www.google.com/schemas/sitemap-video/1.1"` : ""
+  ].filter(Boolean).join(" ");
   const rows = entries.map((entry) => {
+    const images = Array.isArray(entry.images) ? entry.images.map(sitemapImageXml).filter(Boolean).join("\n") : "";
+    const videos = Array.isArray(entry.videos) ? entry.videos.map(sitemapVideoXml).filter(Boolean).join("\n") : "";
     const parts = [
       `    <loc>${xmlEscape(entry.loc)}</loc>`,
       entry.lastmod ? `    <lastmod>${xmlEscape(entry.lastmod)}</lastmod>` : "",
       entry.changefreq ? `    <changefreq>${xmlEscape(entry.changefreq)}</changefreq>` : "",
-      entry.priority ? `    <priority>${xmlEscape(entry.priority)}</priority>` : ""
+      entry.priority ? `    <priority>${xmlEscape(entry.priority)}</priority>` : "",
+      images,
+      videos
     ].filter(Boolean).join("\n");
     return `  <url>\n${parts}\n  </url>`;
   }).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${rows}\n</urlset>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset ${namespaces}>\n${rows}\n</urlset>\n`;
 }
 
 function sitemapIndexXml(entries = []) {
@@ -4056,8 +4116,39 @@ function siteMapOriginForRequest(req) {
   return normalizeOrigin(canonicalSiteOrigin(req));
 }
 
-const sitemapPostChunkSize = 45000;
+const sitemapPostChunkSize = 5000;
 const publicListingPageSize = 26;
+
+function sitemapPostImages(req, post = {}) {
+  return uniqueAbsoluteImageUrls(req, post).slice(0, 20).map((loc) => ({
+    loc,
+    title: post.title || ""
+  }));
+}
+
+function sitemapPostVideos(req, post = {}, mediaById = new Map()) {
+  const description = detailDescription(post);
+  const publicationDate = parsePostDate(post.date);
+  const category = primaryPostCategory(post);
+  const fallbackThumbnail = uniqueAbsoluteImageUrls(req, post)[0] || "";
+  return extractPostVideoIds(post).map((videoId) => {
+    const media = mediaById.get(videoId);
+    const directVideoUrl = /^https?:\/\//i.test(videoId) || String(videoId).startsWith("/") ? videoId : "";
+    const contentLoc = absolutePublicUrl(req, media?.url || directVideoUrl);
+    const thumbnailLoc = absolutePublicUrl(req, media?.posterUrl || fallbackThumbnail);
+    if (!/^https?:\/\//i.test(contentLoc) || !/^https?:\/\//i.test(thumbnailLoc)) return null;
+    return {
+      thumbnailLoc,
+      title: post.title || "",
+      description,
+      contentLoc,
+      duration: media?.duration || 0,
+      publicationDate,
+      category,
+      tags: botPostKeywords(post)
+    };
+  }).filter(Boolean);
+}
 
 function sitemapPageCount(items = [], pageSize = publicListingPageSize) {
   return Math.max(1, Math.ceil(items.length / pageSize));
@@ -4221,11 +4312,15 @@ async function renderSitemapPostsXml(req, res, next) {
     }
 
     const pagePosts = posts.slice((page - 1) * sitemapPostChunkSize, page * sitemapPostChunkSize);
+    const videoIds = uniqueList(pagePosts.flatMap((post) => extractPostVideoIds(post)));
+    const mediaById = await mediaMapForVideoIds(videoIds);
     const entries = pagePosts.map((post) => ({
       loc: `${origin}${detailPath(post)}`,
       lastmod: parsePostDate(post.date),
       changefreq: "daily",
-      priority: "0.8"
+      priority: "0.8",
+      images: sitemapPostImages(req, post),
+      videos: sitemapPostVideos(req, post, mediaById)
     }));
     res.send(sitemapUrlset(entries));
   } catch (error) {

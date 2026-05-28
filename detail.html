@@ -480,7 +480,7 @@
     renderSiteChrome();
     function renderNav() {
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
-      const visibleLimit = 14;
+      const visibleLimit = 15;
       const visibleTabs = tabs.slice(0, visibleLimit);
       const moreTabs = tabs.slice(visibleLimit);
       document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `<a class="${index === 0 ? "active" : ""}" href="index.html#${encodeURIComponent(tab.name)}">${escapeHtml(tab.name)}</a>`).join("") + (moreTabs.length ? `
