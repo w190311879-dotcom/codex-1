@@ -84,7 +84,10 @@
     .body { padding:0; border:0; border-radius:0; background:transparent; color:var(--text); font-size:22px; line-height:1.95; white-space:pre-wrap; }
     .media { width:min(800px, 100%); margin:0 auto; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card); }
     .image-media { border:0; border-radius:0; background:transparent; }
-    .image-media img { display:block; width:100%; height:auto; object-fit:contain; }
+    .image-media img,
+    .image-media picture,
+    .image-original-link { display:block; width:100%; height:auto; }
+    .image-media picture img { object-fit:contain; }
     .video-media { display:grid; place-items:center; background:#000; }
     .video-media.ratio-16-9 { aspect-ratio:16 / 9; }
     .video-media.ratio-9-16 { width:min(420px, 100%); aspect-ratio:9 / 16; }
@@ -102,7 +105,10 @@
     .ad-stack { display:grid; gap:12px; margin:0 auto 28px; max-width:940px; }
     .ad-item { min-height:92px; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px; border:1px solid rgba(40,212,176,.45); border-radius:8px; background:linear-gradient(90deg, rgba(17,28,20,.96), rgba(22,24,28,.92)); }
     .ad-item.has-ad-image { width:100%; min-height:0; aspect-ratio:1300 / 180; padding:0; display:block; border-color:transparent; background:transparent; }
-    .ad-item.has-ad-image img { width:100%; height:100%; object-fit:cover; display:block; }
+    .ad-item.has-ad-image img,
+    .ad-item.has-ad-image picture { width:100%; height:100%; display:block; }
+    .ad-item.has-ad-image picture img,
+    .ad-item.has-ad-image > img { object-fit:cover; }
     .ad-item.has-ad-code { width:100%; min-height:0; aspect-ratio:1300 / 180; padding:0; display:block; border-color:transparent; background:transparent; }
     .ad-code-frame { width:100%; height:100%; border:0; display:block; background:transparent; }
     .ad-item > * { position:relative; z-index:1; }
@@ -121,10 +127,16 @@
     .section-head h2 { margin:0; color:var(--green); font-size:30px; letter-spacing:0; }
     .square-grid { display:grid; grid-template-columns:repeat(10, 1fr); gap:10px; }
     .square-ad { aspect-ratio:1; position:relative; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card); }
-    .square-ad img { width:100%; height:100%; object-fit:cover; display:block; }
+    .square-ad img,
+    .square-ad picture { width:100%; height:100%; display:block; }
+    .square-ad picture img,
+    .square-ad > img { object-fit:cover; }
     .guess-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
     .guess { position:relative; min-height:170px; aspect-ratio:16 / 9; overflow:hidden; border:1px solid var(--line); border-radius:8px; isolation:isolate; }
-    .guess img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:-2; }
+    .guess img,
+    .guess picture { position:absolute; inset:0; width:100%; height:100%; z-index:-2; }
+    .guess picture img,
+    .guess > img { display:block; width:100%; height:100%; object-fit:cover; }
     .guess::after { content:""; position:absolute; inset:0; background:linear-gradient(0deg,rgba(4,7,8,.78),rgba(4,7,8,.16)); z-index:-1; }
     .guess h3 { position:absolute; left:14px; right:14px; bottom:12px; margin:0; color:#fff; font-size:18px; letter-spacing:0; }
     .refresh { height:38px; border:1px solid var(--line); border-radius:8px; color:var(--green); background:var(--card); cursor:pointer; font-weight:900; }
@@ -351,7 +363,7 @@
     }
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
-      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
     }
     function imageAttrs({ eager = false, width = 800, height = 1067 } = {}) {
@@ -363,6 +375,44 @@
       ];
       if (eager) attrs.push(`fetchpriority="high"`);
       return attrs.join(" ");
+    }
+    function imageVariantUrl(variant = {}, format = "webp") {
+      if (!variant || typeof variant !== "object") return "";
+      return variant[format] || variant.formats?.[format]?.url || "";
+    }
+    function imageVariantEntries(variants = {}) {
+      if (!variants || typeof variants !== "object") return [];
+      return Object.values(variants)
+        .filter((variant) => variant && typeof variant === "object")
+        .map((variant) => ({ ...variant, width: Number(variant.width) || 0 }))
+        .filter((variant) => variant.width > 0)
+        .sort((a, b) => a.width - b.width);
+    }
+    function imageVariantSrcset(variants = {}, format = "webp") {
+      return imageVariantEntries(variants)
+        .map((variant) => {
+          const url = safeUrl(imageVariantUrl(variant, format));
+          return url ? `${escapeHtml(url)} ${variant.width}w` : "";
+        })
+        .filter(Boolean)
+        .join(", ");
+    }
+    function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", sizes = "(max-width: 860px) 100vw, 800px" } = {}) {
+      const safe = safeUrl(src);
+      if (!safe) return "";
+      const avif = imageVariantSrcset(variants, "avif");
+      const webp = imageVariantSrcset(variants, "webp");
+      const sources = [
+        avif ? `<source type="image/avif" srcset="${avif}" sizes="${escapeHtml(sizes)}">` : "",
+        webp ? `<source type="image/webp" srcset="${webp}" sizes="${escapeHtml(sizes)}">` : ""
+      ].filter(Boolean).join("");
+      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs}>`;
+      return sources ? `<picture>${sources}${img}</picture>` : img;
+    }
+    function bodyImageVariantsFor(post = {}, index = 0) {
+      const variants = Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants[index] : null;
+      if (!variants || typeof variants !== "object") return {};
+      return variants.variants && typeof variants.variants === "object" ? variants.variants : variants;
     }
     function normalizeIconName(icon = "", label = "") {
       const value = String(icon || "").trim();
@@ -528,7 +578,7 @@
     const mediaById = new Map();
     let mediaLibrary = Array.isArray(ssrDetail.media) ? ssrDetail.media : [];
     function mapAdminPosts(source) {
-      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || images[index % images.length], bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), video:post.video || "", author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。", status:post.status || "已发布" }));
+      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || post.image || images[index % images.length], imageVariants:post.coverVariants || post.imageVariants || {}, bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), bodyImageVariants:Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants : [], video:post.video || "", videos:Array.isArray(post.videos) ? post.videos : [], author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。", status:post.status || "已发布" }));
     }
     const ssrPostSource = Array.isArray(ssrDetail.posts) ? ssrDetail.posts : [];
     const localAdminPostSource = ssrPostSource.length ? ssrPostSource : (localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : []);
@@ -616,7 +666,7 @@
     }
     function normalizeAd(ad) {
       const possibleUrl = String(ad.url || "");
-      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp|avif);|blob:)|\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(possibleUrl);
       const code = ad.code || ad.adCode || ad.html || "";
       return {
         ...ad,
@@ -624,6 +674,7 @@
         desc: ad.desc || "",
         link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        imageVariants: ad.imageVariants || {},
         code,
         adType: ad.adType || ad.mode || ad.kind || (code ? "code" : "image"),
         imageKey: ad.imageKey || ad.assetKey || "",
@@ -757,14 +808,16 @@
       const source = byPlacement(name).filter((ad) => ad.image).slice(0, count);
       const rows = await Promise.all(source.map(async (ad) => {
         const img = await adImageUrl(ad);
-        return img ? `<a class="square-ad" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ width: 320, height: 320 })}></a>` : "";
+        const image = responsiveImageMarkup({ src: img, variants: ad.imageVariants, alt: ad.title || "广告", attrs: imageAttrs({ width: 320, height: 320 }), sizes: "160px" });
+        return image ? `<a class="square-ad" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}</a>` : "";
       }));
       return rows.join("");
     }
     async function bannerMarkup(ad) {
       if (isCodeAd(ad)) return `<div class="ad-item has-ad-code">${adCodeFrame(ad, "banner-code-frame")}</div>`;
       const img = await adImageUrl(ad);
-      return img ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ width: 1300, height: 180 })}></a>` : "";
+      const image = responsiveImageMarkup({ src: img, variants: ad.imageVariants, alt: ad.title || "广告", attrs: imageAttrs({ width: 1300, height: 180 }), sizes: "(max-width: 720px) 100vw, 940px" });
+      return image ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}</a>` : "";
     }
     async function renderBannerPlacement(name, target, fallback) {
       const source = byPlacement(name).filter((ad) => ad.image || isCodeAd(ad)).sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
@@ -796,7 +849,7 @@
     }
     function guess() {
       const shuffled = [...posts].sort(() => Math.random() - .5).slice(0, 4);
-      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="${postUrl(post)}"><img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}" ${imageAttrs({ width: 640, height: 360 })}><h3>${escapeHtml(post.title)}</h3></a>`).join("");
+      document.querySelector("#guessGrid").innerHTML = shuffled.map((post) => `<a class="guess" href="${postUrl(post)}">${responsiveImageMarkup({ src: post.image, variants: post.imageVariants, alt: post.title, attrs: imageAttrs({ width: 640, height: 360 }), sizes: "(max-width: 720px) 50vw, 260px" })}<h3>${escapeHtml(post.title)}</h3></a>`).join("");
       window.lucide?.createIcons?.();
     }
     async function fetchApprovedComments() {
@@ -949,7 +1002,14 @@
           if (img) {
             const eager = imageCount === 0;
             imageCount += 1;
-            flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><img src="${safeUrl(img)}" alt="${escapeHtml(current.title)}" ${imageAttrs({ eager })}></div>`);
+            const image = responsiveImageMarkup({
+              src: img,
+              variants: bodyImageVariantsFor(current, imgIndex),
+              alt: current.title,
+              attrs: imageAttrs({ eager }),
+              sizes: "(max-width: 860px) 100vw, 800px"
+            });
+            flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><a class="image-original-link" href="${safeUrl(img)}" target="_blank" rel="noopener">${image}</a></div>`);
           }
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);

@@ -8,6 +8,7 @@ import fsSync from "node:fs";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 import multer from "multer";
+import sharp from "sharp";
 import { runMigrations } from "./scripts/db-migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -88,6 +89,10 @@ const ffprobeBin = process.env.FFPROBE_PATH || "ffprobe";
 const allowedImageMimes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 const allowedImageUploadMessage = "只允许上传 JPG、PNG、WEBP、GIF 图片";
 const allowedVideoMimes = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "application/octet-stream"]);
+const imageVariantWidths = [480, 768, 1200];
+const imageVariantWebpQuality = Math.max(40, Math.min(95, Number(process.env.POSTWAVE_IMAGE_WEBP_QUALITY || 78) || 78));
+const imageVariantAvifQuality = Math.max(35, Math.min(85, Number(process.env.POSTWAVE_IMAGE_AVIF_QUALITY || 50) || 50));
+const imageVariantMaxPixels = Math.max(16, Number(process.env.POSTWAVE_IMAGE_MAX_PIXELS || 120) || 120) * 1000 * 1000;
 const imageUpload = multer({
   storage: multer.diskStorage({
     destination(_req, _file, callback) {
@@ -435,6 +440,23 @@ function isGonePost(post = {}) {
   return !isPublishedPost(post) && gonePostStatusPattern.test(status);
 }
 
+function compactImageVariants(variants = {}) {
+  if (!variants || typeof variants !== "object") return {};
+  const compact = {};
+  for (const key of ["sm", "md", "lg"]) {
+    const variant = variants[key];
+    if (!variant || typeof variant !== "object") continue;
+    const next = {
+      width: Number(variant.width) || 0,
+      height: Number(variant.height) || 0,
+      avif: String(variant.avif || variant.formats?.avif?.url || ""),
+      webp: String(variant.webp || variant.formats?.webp?.url || "")
+    };
+    if (next.avif || next.webp) compact[key] = next;
+  }
+  return compact;
+}
+
 function publicPostsFrom(rawPosts = []) {
   return (Array.isArray(rawPosts) ? rawPosts : [])
     .filter(isPublishedPost)
@@ -457,6 +479,7 @@ function normalizeSiteSettings(input = {}) {
     link: String(ad?.link || "app.html"),
     image: String(ad?.image || ""),
     imageKey: String(ad?.imageKey || ""),
+    imageVariants: ad?.imageVariants && typeof ad.imageVariants === "object" ? ad.imageVariants : {},
     code: String(ad?.code || ad?.adCode || ad?.html || ""),
     adType: String(ad?.adType || ad?.mode || ad?.kind || (ad?.code || ad?.adCode || ad?.html ? "code" : "image")),
     slot: Number(ad?.slot) || 0,
@@ -647,6 +670,7 @@ function extensionFromMime(mime = "") {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/gif": ".gif",
+    "image/avif": ".avif",
     "image/webp": ".webp",
     "video/mp4": ".mp4",
     "video/webm": ".webm",
@@ -673,6 +697,38 @@ function createMediaStoragePath(file, kind) {
   return `${folder}/${day}/${crypto.randomUUID()}-${safeFilename(file.originalname, file.mimetype)}`;
 }
 
+function isTransformableImageMime(mime = "") {
+  return ["image/jpeg", "image/png", "image/webp"].includes(String(mime || "").toLowerCase());
+}
+
+function imageVariantKey(width) {
+  if (width <= 480) return "sm";
+  if (width <= 768) return "md";
+  return "lg";
+}
+
+function imageVariantStoragePath(storagePath, width, format) {
+  const parsed = path.posix.parse(String(storagePath || ""));
+  const filename = `${parsed.name}@${width}.${format}`;
+  return parsed.dir ? `${parsed.dir}/${filename}` : filename;
+}
+
+function collectImageVariantStoragePaths(record = {}) {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const variants = record.imageVariants || metadata.imageVariants || record.variants || metadata.variants || {};
+  const paths = [];
+  Object.values(variants || {}).forEach((variant) => {
+    if (!variant || typeof variant !== "object") return;
+    ["webpStoragePath", "avifStoragePath", "storagePath"].forEach((key) => {
+      if (variant[key]) paths.push(variant[key]);
+    });
+    Object.values(variant.formats || {}).forEach((format) => {
+      if (format?.storagePath) paths.push(format.storagePath);
+    });
+  });
+  return paths;
+}
+
 async function uploadFileToBunny(file, storagePath) {
   const url = `https://${bunnyStorageHost.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${encodeURIComponent(bunnyStorageZone)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
   const response = await fetch(url, {
@@ -682,6 +738,24 @@ async function uploadFileToBunny(file, storagePath) {
       "Content-Type": file.mimetype || "application/octet-stream"
     },
     body: file.buffer
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`bunny Storage 上传失败：${response.status} ${text}`.trim());
+  }
+  return `${bunnyCdnBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+async function uploadBufferToBunny(buffer, mimeType, storagePath) {
+  const url = `https://${bunnyStorageHost.replace(/^https?:\/\//, "").replace(/\/+$/, "")}/${encodeURIComponent(bunnyStorageZone)}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      AccessKey: bunnyStorageAccessKey,
+      "Content-Type": mimeType || "application/octet-stream",
+      "Content-Length": String(buffer.length)
+    },
+    body: buffer
   });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -761,6 +835,63 @@ async function deleteStoredObject(storageProvider, storagePath) {
   else await deletePathLocally(storagePath);
 }
 
+async function uploadBufferLocally(buffer, storagePath) {
+  const filePath = path.join(uploadsDir, storagePath);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, buffer);
+  return publicUploadUrl(storagePath);
+}
+
+async function uploadImageVariantBuffer(buffer, mimeType, storagePath) {
+  return useBunnyStorage
+    ? uploadBufferToBunny(buffer, mimeType, storagePath)
+    : uploadBufferLocally(buffer, storagePath);
+}
+
+async function createImageVariants(file, storagePath) {
+  if (!file || !storagePath || !isTransformableImageMime(file.mimetype)) return { variants: {} };
+  const input = file.path || file.buffer;
+  if (!input) return { variants: {} };
+  try {
+    const metadata = await sharp(input, { animated: false, limitInputPixels: imageVariantMaxPixels }).metadata();
+    const sourceWidth = Number(metadata.width) || 0;
+    const sourceHeight = Number(metadata.height) || 0;
+    const variants = {};
+    for (const width of imageVariantWidths) {
+      const key = imageVariantKey(width);
+      const baseResize = { width, fit: "inside", withoutEnlargement: true };
+      const webpStoragePath = imageVariantStoragePath(storagePath, width, "webp");
+      const avifStoragePath = imageVariantStoragePath(storagePath, width, "avif");
+      const webp = await sharp(input, { animated: false, limitInputPixels: imageVariantMaxPixels })
+        .rotate()
+        .resize(baseResize)
+        .webp({ quality: imageVariantWebpQuality, effort: 4 })
+        .toBuffer({ resolveWithObject: true });
+      const webpUrl = await uploadImageVariantBuffer(webp.data, "image/webp", webpStoragePath);
+      const avif = await sharp(input, { animated: false, limitInputPixels: imageVariantMaxPixels })
+        .rotate()
+        .resize(baseResize)
+        .avif({ quality: imageVariantAvifQuality, effort: 4 })
+        .toBuffer({ resolveWithObject: true });
+      const avifUrl = await uploadImageVariantBuffer(avif.data, "image/avif", avifStoragePath);
+      variants[key] = {
+        width: webp.info.width || Math.min(width, sourceWidth || width),
+        height: webp.info.height || 0,
+        webp: webpUrl,
+        avif: avifUrl,
+        webpStoragePath,
+        avifStoragePath,
+        webpSize: webp.data.length,
+        avifSize: avif.data.length
+      };
+    }
+    return { variants, width: sourceWidth, height: sourceHeight };
+  } catch (error) {
+    console.warn("Image variant generation failed:", error.message || error);
+    return { variants: {} };
+  }
+}
+
 async function deleteStoredMediaObjects(record) {
   const provider = record.storageProvider || record.storage_provider || "local";
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
@@ -769,7 +900,8 @@ async function deleteStoredMediaObjects(record) {
   const paths = [
     ...primaryPaths,
     record.posterStoragePath,
-    metadata.posterStoragePath
+    metadata.posterStoragePath,
+    ...collectImageVariantStoragePaths(record)
   ].filter(Boolean);
   for (const storagePath of Array.from(new Set(paths))) {
     await deleteStoredObject(provider, storagePath);
@@ -929,6 +1061,7 @@ async function uploadMediaFile(file, kind) {
   const url = useBunnyStorage
     ? (file.path ? await uploadPathToBunny(file.path, file.mimetype, storagePath) : await uploadFileToBunny(file, storagePath))
     : await uploadFileLocally(file, storagePath);
+  const imageVariantResult = await createImageVariants(file, storagePath);
   const record = {
     id: crypto.randomUUID(),
     kind: kind || mediaFolder("", file.mimetype || ""),
@@ -940,6 +1073,9 @@ async function uploadMediaFile(file, kind) {
     storagePath,
     storageProvider: useBunnyStorage ? "bunny" : "local",
     url,
+    width: imageVariantResult.width || 0,
+    height: imageVariantResult.height || 0,
+    imageVariants: imageVariantResult.variants || {},
     createdAt: new Date().toISOString()
   };
   await saveMediaRecord(record);
@@ -2476,6 +2612,7 @@ function normalizeMediaRecord(record = {}, { includeInternal = false } = {}) {
     keyStoragePath: String(record.keyStoragePath || metadata.keyStoragePath || ""),
     hlsSegmentSeconds: Number(record.hlsSegmentSeconds ?? metadata.hlsSegmentSeconds ?? 0) || 0,
     uploadProgress: record.uploadProgress || metadata.uploadProgress || null,
+    imageVariants: record.imageVariants || metadata.imageVariants || record.variants || metadata.variants || {},
     createdAt: record.createdAt || record.created_at || metadata.createdAt || "",
     date: record.date || metadata.date || (record.created_at ? new Date(record.created_at).toLocaleString() : "")
   };
@@ -2890,7 +3027,7 @@ app.get("/api/posts", async (_req, res, next) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     const posts = await readPosts();
-    res.json({ posts: posts.filter(isPublishedPost) });
+    res.json({ posts: publicPostsFrom(posts) });
   } catch (error) {
     next(error);
   }
@@ -3271,7 +3408,7 @@ function htmlEscape(value = "") {
 
 function safePublicUrl(value = "", fallback = "") {
   const url = String(value || "").trim();
-  if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+  if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
   return fallback;
 }
 
@@ -3365,11 +3502,14 @@ function publicPostForHome(post = {}, index = 0) {
   const categories = Array.isArray(post.categories) && post.categories.length
     ? post.categories
     : normalizeArray(post.category);
+  const coverVariants = compactImageVariants(post.coverVariants || post.cover_variants || post.imageVariants || post.image_variants || {});
   return {
     ...post,
     id: String(post.id || post.clientId || post.client_id || `post-${index}`),
     title: post.title || "未命名帖子",
     image: post.cover || post.cover_url || post.image || "",
+    imageVariants: coverVariants,
+    coverVariants,
     author: post.author || "alun",
     date: post.date || post.date_text || "",
     category: post.category || categories[0] || "内容",
@@ -3487,11 +3627,61 @@ function ssrImageAttrs({ eager = false, width = 1200, height = 675 } = {}) {
   return attrs.join(" ");
 }
 
+function imageVariantUrl(variant = {}, format = "webp") {
+  if (!variant || typeof variant !== "object") return "";
+  return variant[format] || variant.formats?.[format]?.url || "";
+}
+
+function imageVariantEntries(variants = {}) {
+  if (!variants || typeof variants !== "object") return [];
+  return Object.values(variants)
+    .filter((variant) => variant && typeof variant === "object")
+    .map((variant) => ({ ...variant, width: Number(variant.width) || 0 }))
+    .filter((variant) => variant.width > 0)
+    .sort((a, b) => a.width - b.width);
+}
+
+function imageVariantSrcset(variants = {}, format = "webp") {
+  return imageVariantEntries(variants)
+    .map((variant) => {
+      const url = safePublicUrl(imageVariantUrl(variant, format), "");
+      return url ? `${htmlEscape(url)} ${variant.width}w` : "";
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function bodyImageVariantsFor(post = {}, index = 0) {
+  const variants = Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants[index] : null;
+  if (!variants || typeof variants !== "object") return {};
+  return variants.variants && typeof variants.variants === "object" ? variants.variants : variants;
+}
+
+function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", sizes = "(max-width: 720px) 100vw, 1200px" } = {}) {
+  const safeSrc = safePublicUrl(src, "");
+  if (!safeSrc) return "";
+  const avifSrcset = imageVariantSrcset(variants, "avif");
+  const webpSrcset = imageVariantSrcset(variants, "webp");
+  const sources = [
+    avifSrcset ? `<source type="image/avif" srcset="${avifSrcset}" sizes="${htmlEscape(sizes)}">` : "",
+    webpSrcset ? `<source type="image/webp" srcset="${webpSrcset}" sizes="${htmlEscape(sizes)}">` : ""
+  ].filter(Boolean).join("");
+  const img = `<img src="${htmlEscape(safeSrc)}" alt="${htmlEscape(alt)}" ${attrs}>`;
+  return sources ? `<picture>${sources}${img}</picture>` : img;
+}
+
 function ssrPostRow(post, eager = false) {
   const categories = post.categories && post.categories.length ? post.categories.join("、") : post.category;
+  const image = responsiveImageMarkup({
+    src: post.image,
+    variants: post.imageVariants || post.coverVariants,
+    alt: post.title,
+    attrs: ssrImageAttrs({ eager }),
+    sizes: "(max-width: 720px) 100vw, 1180px"
+  });
   return `
         <a class="post-row" href="${htmlEscape(detailPath(post))}">
-          <img src="${htmlEscape(safePublicUrl(post.image))}" alt="${htmlEscape(post.title)}" ${ssrImageAttrs({ eager })}>
+          ${image}
           ${ssrPostBadgeMarkup(post)}
           <div class="post-content">
             <h2 class="post-title">${htmlEscape(post.title)}</h2>
@@ -3503,7 +3693,7 @@ function ssrPostRow(post, eager = false) {
 
 function normalizeSsrAd(ad = {}) {
   const possibleUrl = String(ad.url || "");
-  const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+  const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp|avif);|blob:)|\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(possibleUrl);
   const code = String(ad.code || ad.adCode || ad.html || "");
   return {
     ...ad,
@@ -3532,7 +3722,14 @@ function ssrAdCodeFrame(ad = {}, className = "") {
 function ssrFeedAdRow(ad, eager = false) {
   if (ssrIsCodeAd(ad)) return `<div class="post-row feed-ad code-feed-ad">${ssrAdCodeFrame(ad, "feed-code-frame")}</div>`;
   if (!ad.image) return "";
-  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}"><img src="${htmlEscape(safePublicUrl(ad.image))}" alt="${htmlEscape(ad.title || "广告")}" ${ssrImageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>`;
+  const image = responsiveImageMarkup({
+    src: ad.image,
+    variants: ad.imageVariants,
+    alt: ad.title || "广告",
+    attrs: ssrImageAttrs({ eager, width: 1200, height: 675 }),
+    sizes: "(max-width: 720px) 100vw, 1180px"
+  });
+  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}">${image}<div class="post-content" aria-hidden="true"></div></a>`;
 }
 
 function ssrPager(totalPages, currentPage = 1, category = "首页") {
@@ -3730,7 +3927,14 @@ function ssrDetailContent(post, mediaById = new Map()) {
       if (!img) return "";
       const eager = imageCount === 0;
       imageCount += 1;
-      return `<div class="media image-media"><img src="${htmlEscape(safePublicUrl(img))}" alt="${htmlEscape(post.title)}" ${ssrImageAttrs({ eager, width: 800, height: 1067 })}></div>`;
+      const image = responsiveImageMarkup({
+        src: img,
+        variants: bodyImageVariantsFor(post, imgIndex),
+        alt: post.title,
+        attrs: ssrImageAttrs({ eager, width: 800, height: 1067 }),
+        sizes: "(max-width: 860px) 100vw, 800px"
+      });
+      return `<div class="media image-media"><a class="image-original-link" href="${htmlEscape(safePublicUrl(img))}" target="_blank" rel="noopener">${image}</a></div>`;
     }
     if (part.startsWith("[视频")) {
       const match = part.match(/\[视频(?::([^\]]+))?\]/);
@@ -3810,8 +4014,11 @@ function detailClientPost(post = {}, includeBody = false) {
     id: post.id,
     title: post.title,
     cover: post.cover || post.image || "",
+    coverVariants: compactImageVariants(post.coverVariants || post.imageVariants),
+    imageVariants: compactImageVariants(post.imageVariants || post.coverVariants),
     body: includeBody ? post.body || "" : "",
     bodyImages: post.bodyImages || [],
+    bodyImageVariants: Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants.map(compactImageVariants) : [],
     video: post.video || "",
     videos: Array.isArray(post.videos) ? post.videos : [],
     author: post.author || "alun",
@@ -3828,6 +4035,7 @@ function homeClientPost(post = {}) {
     id: post.id,
     title: post.title,
     image: post.image || post.cover || "",
+    imageVariants: compactImageVariants(post.imageVariants || post.coverVariants),
     author: post.author || "alun",
     date: post.date || "",
     category: post.category || "",

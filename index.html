@@ -103,10 +103,14 @@
     .search-box input { width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; }
     .content-list { display: grid; gap: 14px; }
     .post-row { position: relative; overflow: hidden; min-height: 280px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); isolation: isolate; contain: layout paint; }
-    .post-row > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: translateZ(0) scale(1.01); backface-visibility: hidden; transition: transform .2s ease; z-index: -2; }
+    .post-row > img,
+    .post-row > picture { position: absolute; inset: 0; width: 100%; height: 100%; transform: translateZ(0) scale(1.01); backface-visibility: hidden; transition: transform .2s ease; z-index: -2; }
+    .post-row > picture img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .post-row > img { object-fit: cover; }
     .post-row::after { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(0,0,0,.15); pointer-events: none; }
     .post-row:hover { border-color: rgba(69, 240, 106, .72); }
-    .post-row:hover > img { transform: translateZ(0) scale(1.045); }
+    .post-row:hover > img,
+    .post-row:hover > picture { transform: translateZ(0) scale(1.045); }
     .post-badge { position: absolute; top: 12px; right: 12px; z-index: 3; width: min(34%, 190px); min-width: 108px; pointer-events: none; }
     .post-badge img { display: block; width: 100%; height: auto; filter: drop-shadow(0 8px 16px rgba(0,0,0,.45)); }
     .post-content { min-height: 280px; padding: 26px 36px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 10px; text-align: center; }
@@ -123,13 +127,19 @@
     .section-title { margin: 0 0 16px; font-size: 28px; letter-spacing: 0; }
     .recommend-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
     .recommend-card { position: relative; min-height: 190px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); isolation: isolate; }
-    .recommend-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+    .recommend-card img,
+    .recommend-card picture { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; }
+    .recommend-card picture img,
+    .recommend-card > img { display: block; width: 100%; height: 100%; object-fit: cover; }
     .recommend-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(4,7,8,.78), rgba(4,7,8,.18)); z-index: -1; }
     .recommend-card h3 { position: absolute; left: 18px; right: 18px; bottom: 16px; margin: 0; color: #fff; font-size: 24px; letter-spacing: 0; text-shadow: 0 3px 16px rgba(0,0,0,.7); }
     .ad-stack { display: grid; gap: 12px; margin: 0 0 28px; }
     .ad-item { min-height: 88px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid rgba(69,240,106,.45); border-radius: var(--radius); background: linear-gradient(90deg, rgba(17,28,20,.96), rgba(22,24,28,.92)); }
     .ad-item.has-ad-image { width: 100%; min-height: 0; aspect-ratio: 1300 / 180; padding: 0; display: block; border-color: transparent; background: transparent; }
-    .ad-item.has-ad-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ad-item.has-ad-image img,
+    .ad-item.has-ad-image picture { width: 100%; height: 100%; display: block; }
+    .ad-item.has-ad-image picture img,
+    .ad-item.has-ad-image > img { object-fit: cover; }
     .ad-item.has-ad-code { width: 100%; min-height: 0; aspect-ratio: 1300 / 180; padding: 0; display: block; border-color: transparent; background: transparent; }
     .ad-code-frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
     .ad-item > * { position: relative; z-index: 1; }
@@ -354,7 +364,7 @@
     }
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
-      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
     }
     function imageAttrs({ eager = false, width = 1200, height = 675 } = {}) {
@@ -366,6 +376,39 @@
       ];
       if (eager) attrs.push(`fetchpriority="high"`);
       return attrs.join(" ");
+    }
+    function imageVariantUrl(variant = {}, format = "webp") {
+      if (!variant || typeof variant !== "object") return "";
+      return variant[format] || variant.formats?.[format]?.url || "";
+    }
+    function imageVariantEntries(variants = {}) {
+      if (!variants || typeof variants !== "object") return [];
+      return Object.values(variants)
+        .filter((variant) => variant && typeof variant === "object")
+        .map((variant) => ({ ...variant, width: Number(variant.width) || 0 }))
+        .filter((variant) => variant.width > 0)
+        .sort((a, b) => a.width - b.width);
+    }
+    function imageVariantSrcset(variants = {}, format = "webp") {
+      return imageVariantEntries(variants)
+        .map((variant) => {
+          const url = safeUrl(imageVariantUrl(variant, format));
+          return url ? `${escapeHtml(url)} ${variant.width}w` : "";
+        })
+        .filter(Boolean)
+        .join(", ");
+    }
+    function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", sizes = "(max-width: 720px) 100vw, 1200px" } = {}) {
+      const safe = safeUrl(src);
+      if (!safe) return "";
+      const avif = imageVariantSrcset(variants, "avif");
+      const webp = imageVariantSrcset(variants, "webp");
+      const sources = [
+        avif ? `<source type="image/avif" srcset="${avif}" sizes="${escapeHtml(sizes)}">` : "",
+        webp ? `<source type="image/webp" srcset="${webp}" sizes="${escapeHtml(sizes)}">` : ""
+      ].filter(Boolean).join("");
+      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs}>`;
+      return sources ? `<picture>${sources}${img}</picture>` : img;
     }
     function normalizeIconName(icon = "", label = "") {
       const value = String(icon || "").trim();
@@ -541,6 +584,7 @@
         id: String(post.id || post.clientId || post.client_id || `admin-${index}`),
         title: post.title || "未命名帖子",
         image: post.cover || images[index % images.length],
+        imageVariants: post.coverVariants || post.imageVariants || {},
         author: post.author || "alun",
         date: post.date || "2026 年 05 月 13 日",
         category: post.category || (post.categories || [])[0] || "视频",
@@ -599,7 +643,7 @@
     }
     function normalizeAd(ad) {
       const possibleUrl = String(ad.url || "");
-      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp|avif);|blob:)|\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(possibleUrl);
       const code = ad.code || ad.adCode || ad.html || "";
       return {
         ...ad,
@@ -607,6 +651,7 @@
         desc: ad.desc || "",
         link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        imageVariants: ad.imageVariants || {},
         code,
         adType: ad.adType || ad.mode || ad.kind || (code ? "code" : "image"),
         imageKey: ad.imageKey || ad.assetKey || "",
@@ -662,7 +707,14 @@
     async function feedAdMarkup(ad, eager = false) {
       if (isCodeAd(ad)) return `<div class="post-row feed-ad code-feed-ad">${adCodeFrame(ad, "feed-code-frame")}</div>`;
       const img = await adImageUrl(ad);
-      return img ? `<a class="post-row feed-ad" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ eager, width: 1200, height: 675 })}><div class="post-content" aria-hidden="true"></div></a>` : "";
+      const image = responsiveImageMarkup({
+        src: img,
+        variants: ad.imageVariants,
+        alt: ad.title || "广告",
+        attrs: imageAttrs({ eager, width: 1200, height: 675 }),
+        sizes: "(max-width: 720px) 100vw, 1180px"
+      });
+      return image ? `<a class="post-row feed-ad" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}<div class="post-content" aria-hidden="true"></div></a>` : "";
     }
     let currentPage = 1;
     let activeCategory = "首页";
@@ -841,9 +893,16 @@
           continue;
         }
         const post = rows[i].post;
+        const image = responsiveImageMarkup({
+          src: post.image,
+          variants: post.imageVariants,
+          alt: post.title,
+          attrs: imageAttrs({ eager }),
+          sizes: "(max-width: 720px) 100vw, 1180px"
+        });
         rows[i] = `
           <a class="post-row" href="${postUrl(post)}">
-            <img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}" ${imageAttrs({ eager })}>
+            ${image}
             ${postBadgeMarkup(post)}
             <div class="post-content">
               <h2 class="post-title">${escapeHtml(post.title)}</h2>
@@ -871,7 +930,7 @@
     function renderRecommend() {
       document.querySelector("#recommendGrid").innerHTML = posts.slice(0, 4).map((post) => `
         <a class="recommend-card" href="${postUrl(post)}">
-          <img src="${safeUrl(post.image)}" alt="${escapeHtml(post.title)}" ${imageAttrs({ width: 640, height: 360 })}>
+          ${responsiveImageMarkup({ src: post.image, variants: post.imageVariants, alt: post.title, attrs: imageAttrs({ width: 640, height: 360 }), sizes: "(max-width: 720px) 50vw, 320px" })}
           <h3>${escapeHtml(post.title)}</h3>
         </a>
       `).join("");
@@ -934,7 +993,14 @@
       const rows = await Promise.all(homeAds.map(async (ad) => {
         if (isCodeAd(ad)) return `<div class="ad-item has-ad-code">${adCodeFrame(ad, "banner-code-frame")}</div>`;
         const img = await adImageUrl(ad);
-        return img ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}"><img src="${safeUrl(img)}" alt="${escapeHtml(ad.title || "广告")}" ${imageAttrs({ width: 1300, height: 180 })}></a>` : "";
+        const image = responsiveImageMarkup({
+          src: img,
+          variants: ad.imageVariants,
+          alt: ad.title || "广告",
+          attrs: imageAttrs({ width: 1300, height: 180 }),
+          sizes: "(max-width: 720px) 100vw, 1180px"
+        });
+        return image ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}</a>` : "";
       }));
       document.querySelector("#adStack").innerHTML = rows.join("");
       await renderPopupAds(ads);

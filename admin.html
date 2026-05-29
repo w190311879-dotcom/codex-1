@@ -534,8 +534,10 @@
     let videoPickerPage = 1;
     let serverComments = [];
     let currentCoverData = "";
+    let currentCoverVariants = {};
     let currentVideoData = "";
     let currentBodyImages = [];
+    let currentBodyImageVariants = [];
     let editingPostIndex = null;
     let selectedUploadVideo = null;
     let selectedUploadPoster = null;
@@ -646,13 +648,14 @@
     }
     function normalizeAd(ad) {
       const possibleUrl = String(ad.url || "");
-      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp);|blob:)|\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(possibleUrl);
+      const urlIsImage = /^(data:image\/(?:png|jpe?g|gif|webp|avif);|blob:)|\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(possibleUrl);
       return {
         ...ad,
         title: ad.title || "",
         desc: ad.desc || "",
         link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
+        imageVariants: ad.imageVariants || {},
         code: ad.code || ad.adCode || ad.html || "",
         adType: ad.adType || ad.mode || ad.kind || (ad.code || ad.adCode || ad.html ? "code" : "image"),
         imageKey: ad.imageKey || ad.assetKey || "",
@@ -988,7 +991,7 @@
     }
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
-      if (/^(https?:|blob:|data:image\/(?:png|jpe?g|gif|webp);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+      if (/^(https?:|blob:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
       return fallback;
     }
     function normalizeIconName(icon = "", label = "") {
@@ -1239,6 +1242,7 @@
       try {
         const media = await uploadMediaFile(file, "cover");
         currentCoverData = media.url;
+        currentCoverVariants = media.imageVariants || {};
         const coverBox = document.querySelector("#coverBox");
         coverBox.classList.add("has-image");
         document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${safeUrl(media.url)}" alt="封面预览"><span class="cover-caption">${escapeHtml(file.name)}</span>`;
@@ -1246,6 +1250,7 @@
       } catch (error) {
         console.error(error);
         currentCoverData = "";
+        currentCoverVariants = {};
         document.querySelector("#coverText").textContent = "点击上传封面";
         toast(error.message || "封面上传失败");
       }
@@ -1411,8 +1416,10 @@
       renderAuthorSelect();
       document.querySelectorAll(".left-form input.field").forEach((input) => { input.value = ""; });
       currentCoverData = "";
+      currentCoverVariants = {};
       currentVideoData = "";
       currentBodyImages = [];
+      currentBodyImageVariants = [];
       editingPostIndex = null;
       document.querySelector("#postPinned").checked = false;
       document.querySelector("#postBadge").value = "jpbl";
@@ -1439,8 +1446,10 @@
         title: document.querySelector("#postTitle").value || "未命名帖子",
         body: document.querySelector("#bodyText").value || "这是一篇从后台发布的帖子正文。",
         cover: currentCoverData,
+        coverVariants: currentCoverVariants,
         video: currentVideoData,
         bodyImages: currentBodyImages,
+        bodyImageVariants: currentBodyImageVariants,
         category: categories.length ? categories.join("、") : fallbackCategory,
         categories,
         keywords: parseKeywords(),
@@ -1976,6 +1985,7 @@
         const markers = uploaded.map((media) => {
           const src = media.url || "";
           const index = currentBodyImages.push(src) - 1;
+          currentBodyImageVariants[index] = media.imageVariants || {};
           return `[图片:${index}]`;
         });
         insertBodyMarkers(markers, pendingBodyInsertionRange || currentBodySelectionRange());
@@ -2133,6 +2143,7 @@
         desc: document.querySelector("#adDesc").value || "广告描述",
         link: document.querySelector("#adLink").value || "app.html",
         image: uploadedAd.url,
+        imageVariants: uploadedAd.imageVariants || {},
         imageKey: "",
         slot: ["home-popup", "home-feed", "detail-top"].includes(currentAdSection) ? Number(document.querySelector("#adSlot").value || 1) : 0,
         placement: currentAdPlacement()
@@ -2251,7 +2262,9 @@
         document.querySelector("#bodyText").dispatchEvent(new Event("input"));
         document.querySelector("#keywordInput").value = (post.keywords || []).map((keyword) => String(keyword).replace(/^#+/, "")).join(" ");
         currentCoverData = post.cover || "";
+        currentCoverVariants = post.coverVariants || post.imageVariants || {};
         currentBodyImages = post.bodyImages || (post.bodyImage ? [post.bodyImage] : []);
+        currentBodyImageVariants = Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants : [];
         currentVideoData = post.video || "";
         document.querySelector("#postPinned").checked = Boolean(post.pinned);
         document.querySelector("#postBadge").value = post.topBadge || "jpbl";
