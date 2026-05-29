@@ -3810,7 +3810,7 @@ function categoryUrl(req, category = "") {
   return `${origin || ""}${categoryPath(category)}`;
 }
 
-const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
+const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|强迫|侵犯|侵害|骚扰|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
 const topicKeywordCatalog = [
   "吃瓜",
   "今日吃瓜",

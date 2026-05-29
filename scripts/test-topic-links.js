@@ -117,6 +117,8 @@ try {
 
   const blockedTag = await getText("/tag/%E5%81%B7%E6%8B%8D");
   assert.equal(blockedTag.response.status, 404, "高风险 tag 页面不应公开");
+  const violationTag = await getText("/tag/%E4%BE%B5%E7%8A%AF");
+  assert.equal(violationTag.response.status, 404, "侵权/非自愿语义 tag 页面不应公开");
 
   const blockedDetail = await getText("/v/blocked-topic");
   assert.equal(blockedDetail.response.status, 200, "公开帖子详情仍应正常返回");

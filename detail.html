@@ -604,7 +604,7 @@
     function postUrl(post) {
       return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
     }
-    const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
+    const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|强迫|侵犯|侵害|骚扰|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
     const topicKeywordCatalog = ["吃瓜","今日吃瓜","热门吃瓜","娱乐吃瓜","明星吃瓜","网红吃瓜","情感吃瓜","恋爱吃瓜","婚恋吃瓜","社交吃瓜","朋友圈吃瓜","匿名吃瓜","投稿吃瓜","爆料吃瓜","热点爆料","八卦爆料","网络热点","全网热门吃瓜","最新吃瓜爆料","娱乐圈吃瓜合集","网红吃瓜事件","匿名吃瓜投稿","成人影视","成人视频","免费成人视频","日本AV","欧美视频","国产自拍","中文字幕AV","高清视频","4K视频","手机观看","在线观看","视频合集","图片合集","真实自拍","直播视频","制服主题","办公室主题","剧情视频"];
     function cleanTopicTerm(value = "") {
       const term = String(value || "").normalize("NFKC").replace(/^#+/, "").replace(/\s+/g, "").trim().slice(0, 32);
