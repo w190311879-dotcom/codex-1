@@ -309,6 +309,21 @@ const defaultSiteSettings = {
   notice: "欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。"
 };
 
+function shouldSendNoindexRobotsHeader(req) {
+  const pathname = String(req.path || "");
+  return pathname === "/api"
+    || pathname.startsWith("/api/")
+    || isAdminPagePath(pathname)
+    || (pathname === "/" && hostMatches(req, adminHost));
+}
+
+app.use((req, res, next) => {
+  if (shouldSendNoindexRobotsHeader(req)) {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  }
+  next();
+});
+
 app.use(express.json({ limit: "80mb" }));
 
 app.use((req, res, next) => {
