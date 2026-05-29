@@ -96,7 +96,8 @@
     .video-media .hls-player { display:block; width:100%; height:100%; background:#000; }
     .video-media video { object-fit:contain; }
     .tags { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:12px 0 0; }
-    .tag { min-height:34px; display:inline-flex; align-items:center; padding:0 12px; border:1px solid rgba(40,212,176,.55); border-radius:999px; color:var(--green); background:rgba(40,212,176,.08); font-weight:900; }
+    .tag { min-height:34px; display:inline-flex; align-items:center; padding:0 12px; border:1px solid rgba(40,212,176,.55); border-radius:999px; color:var(--green); background:rgba(40,212,176,.08); font-weight:900; text-decoration:none; }
+    .tag:hover { border-color:var(--green); background:rgba(40,212,176,.16); }
     .notice { margin:24px auto 0; max-width:940px; padding:20px; border:1px solid rgba(40,212,176,.48); border-radius:8px; background:rgba(40,212,176,.08); line-height:1.8; }
     .notice strong { color:var(--green); }
     .prev-next { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:26px auto; max-width:940px; }
@@ -578,7 +579,7 @@
     const mediaById = new Map();
     let mediaLibrary = Array.isArray(ssrDetail.media) ? ssrDetail.media : [];
     function mapAdminPosts(source) {
-      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || post.image || images[index % images.length], imageVariants:post.coverVariants || post.imageVariants || {}, bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), bodyImageVariants:Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants : [], video:post.video || "", videos:Array.isArray(post.videos) ? post.videos : [], author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], body:post.body || "这篇内容来自后台发布系统。", status:post.status || "已发布" }));
+      return (Array.isArray(source) ? source : []).map((post, index) => ({ id:String(post.id || post.clientId || post.client_id || `admin-${index}`), title:post.title || "未命名帖子", image:post.cover || post.image || images[index % images.length], imageVariants:post.coverVariants || post.imageVariants || {}, bodyImages:post.bodyImages || (post.bodyImage ? [post.bodyImage] : []), bodyImageVariants:Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants : [], video:post.video || "", videos:Array.isArray(post.videos) ? post.videos : [], author:post.author || "alun", date:post.date || "2026 年 05 月 13 日", category:post.category || "视频分类", categories:post.categories || (post.category ? String(post.category).split("、") : []), keywords:post.keywords || [], tags:post.tags || ["后台标签"], topicKeywords:post.topicKeywords || [], body:post.body || "这篇内容来自后台发布系统。", status:post.status || "已发布" }));
     }
     const ssrPostSource = Array.isArray(ssrDetail.posts) ? ssrDetail.posts : [];
     const localAdminPostSource = ssrPostSource.length ? ssrPostSource : (localPostFallbackEnabled ? JSON.parse(localStorage.getItem("postwave_posts") || "[]") : []);
@@ -602,6 +603,40 @@
     }
     function postUrl(post) {
       return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
+    }
+    const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
+    const topicKeywordCatalog = ["吃瓜","今日吃瓜","热门吃瓜","娱乐吃瓜","明星吃瓜","网红吃瓜","情感吃瓜","恋爱吃瓜","婚恋吃瓜","社交吃瓜","朋友圈吃瓜","匿名吃瓜","投稿吃瓜","爆料吃瓜","热点爆料","八卦爆料","网络热点","全网热门吃瓜","最新吃瓜爆料","娱乐圈吃瓜合集","网红吃瓜事件","匿名吃瓜投稿","成人影视","成人视频","免费成人视频","日本AV","欧美视频","国产自拍","中文字幕AV","高清视频","4K视频","手机观看","在线观看","视频合集","图片合集","真实自拍","直播视频","制服主题","办公室主题","剧情视频"];
+    function cleanTopicTerm(value = "") {
+      const term = String(value || "").normalize("NFKC").replace(/^#+/, "").replace(/\s+/g, "").trim().slice(0, 32);
+      if (term.length < 2 || /https?:|www\.|@/.test(term) || blockedTopicTermPattern.test(term)) return "";
+      return term;
+    }
+    function tagHref(tag) {
+      const cleanTag = cleanTopicTerm(tag);
+      return cleanTag ? `/tag/${encodeURIComponent(cleanTag)}` : "/";
+    }
+    function postTopicKeywords(post = {}, max = 6) {
+      if (Array.isArray(post.topicKeywords) && post.topicKeywords.length) {
+        return post.topicKeywords.map(cleanTopicTerm).filter(Boolean).slice(0, max);
+      }
+      const scored = new Map();
+      const push = (value, score) => {
+        const term = cleanTopicTerm(value);
+        if (!term) return;
+        const key = term.toLowerCase();
+        const current = scored.get(key);
+        if (!current || score > current.score) scored.set(key, { term, score, index: current?.index ?? scored.size });
+      };
+      (post.tags || []).forEach((tag) => push(tag, 100));
+      (post.keywords || []).forEach((keyword) => push(keyword, 90));
+      const categories = post.categories && post.categories.length ? post.categories : [post.category];
+      categories.forEach((category) => { if (category && category !== "首页") push(category, 80); });
+      const text = [post.title, post.body, post.category, categories.join(" "), (post.keywords || []).join(" "), (post.tags || []).join(" ")].join(" ").replace(/#/g, "").toLowerCase();
+      topicKeywordCatalog.forEach((keyword, index) => {
+        const term = cleanTopicTerm(keyword);
+        if (term && text.includes(term.toLowerCase())) push(term, 70 - (index / 1000));
+      });
+      return Array.from(scored.values()).sort((a, b) => (b.score - a.score) || (a.index - b.index)).slice(0, max).map((item) => item.term);
     }
     function requestedIdFromLocation() {
       const match = location.pathname.match(/^\/v\/([^/]+)/);
@@ -1025,7 +1060,6 @@
       });
       scheduleVideoPlayers(flow);
     }
-    function cleanTag(tag) { return String(tag).replace(/^#+/, ""); }
     async function renderDetailPage() {
       renderSiteChrome();
       renderNav();
@@ -1036,7 +1070,7 @@
       document.querySelector("#date").textContent = current.date;
       document.querySelector("#category").textContent = current.category;
       renderContentFlow();
-      document.querySelector("#tags").innerHTML = (current.tags || []).map((tag) => `<span class="tag">${escapeHtml(cleanTag(tag))}</span>`).join("");
+      document.querySelector("#tags").innerHTML = postTopicKeywords(current, 6).map((tag) => `<a class="tag" href="${escapeHtml(tagHref(tag))}" rel="tag">${escapeHtml(tag)}</a>`).join("");
       document.querySelector("#officialNotice").textContent = notice;
       const prev = index >= 0 && posts.length > 1 ? posts[(index - 1 + posts.length) % posts.length] : null;
       const next = index >= 0 && posts.length > 1 ? posts[(index + 1) % posts.length] : null;

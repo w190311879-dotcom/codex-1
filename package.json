@@ -9,7 +9,8 @@
     "db:migrate": "node scripts/db-migrate.js",
     "db:backup": "node scripts/db-backup.js",
     "images:variants": "node scripts/generate-image-variants.js",
-    "test:bot-api": "node scripts/test-bot-api.js"
+    "test:bot-api": "node scripts/test-bot-api.js",
+    "test:topic-links": "node scripts/test-topic-links.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

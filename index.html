@@ -591,6 +591,7 @@
         categories: post.categories || (post.category ? String(post.category).split("、") : []),
         tags: post.tags || [],
         keywords: post.keywords || [],
+        topicKeywords: post.topicKeywords || [],
         body: post.body || "这篇内容来自后台发布系统。",
         status: post.status || "已发布",
         pinned: isPinnedPost(post),
@@ -735,6 +736,48 @@
     function postUrl(post) {
       return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
     }
+    const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
+    const topicKeywordCatalog = ["吃瓜","今日吃瓜","热门吃瓜","娱乐吃瓜","明星吃瓜","网红吃瓜","情感吃瓜","恋爱吃瓜","婚恋吃瓜","社交吃瓜","朋友圈吃瓜","匿名吃瓜","投稿吃瓜","爆料吃瓜","热点爆料","八卦爆料","网络热点","全网热门吃瓜","最新吃瓜爆料","娱乐圈吃瓜合集","网红吃瓜事件","匿名吃瓜投稿","成人影视","成人视频","免费成人视频","日本AV","欧美视频","国产自拍","中文字幕AV","高清视频","4K视频","手机观看","在线观看","视频合集","图片合集","真实自拍","直播视频","制服主题","办公室主题","剧情视频"];
+    function cleanTopicTerm(value = "") {
+      const term = String(value || "").normalize("NFKC").replace(/^#+/, "").replace(/\s+/g, "").trim().slice(0, 32);
+      if (term.length < 2 || /https?:|www\.|@/.test(term) || blockedTopicTermPattern.test(term)) return "";
+      return term;
+    }
+    function topicTermKey(value = "") {
+      return cleanTopicTerm(value).toLowerCase();
+    }
+    function tagHref(tag) {
+      const cleanTag = cleanTopicTerm(tag);
+      return cleanTag ? `/tag/${encodeURIComponent(cleanTag)}` : "/";
+    }
+    function tagPageHref(tag, page = 1) {
+      const current = Math.max(1, Number.parseInt(String(page || "1"), 10) || 1);
+      const base = tagHref(tag);
+      return current > 1 ? `${base}/page/${current}` : base;
+    }
+    function postTopicKeywords(post = {}, max = 6) {
+      if (Array.isArray(post.topicKeywords) && post.topicKeywords.length) {
+        return post.topicKeywords.map(cleanTopicTerm).filter(Boolean).slice(0, max);
+      }
+      const scored = new Map();
+      const push = (value, score) => {
+        const term = cleanTopicTerm(value);
+        if (!term) return;
+        const key = term.toLowerCase();
+        const current = scored.get(key);
+        if (!current || score > current.score) scored.set(key, { term, score, index: current?.index ?? scored.size });
+      };
+      (post.tags || []).forEach((tag) => push(tag, 100));
+      (post.keywords || []).forEach((keyword) => push(keyword, 90));
+      const categories = post.categories && post.categories.length ? post.categories : [post.category];
+      categories.forEach((category) => { if (category && category !== "首页") push(category, 80); });
+      const text = [post.title, post.body, post.category, categories.join(" "), (post.keywords || []).join(" "), (post.tags || []).join(" ")].join(" ").replace(/#/g, "").toLowerCase();
+      topicKeywordCatalog.forEach((keyword, index) => {
+        const term = cleanTopicTerm(keyword);
+        if (term && text.includes(term.toLowerCase())) push(term, 70 - (index / 1000));
+      });
+      return Array.from(scored.values()).sort((a, b) => (b.score - a.score) || (a.index - b.index)).slice(0, max).map((item) => item.term);
+    }
     function navTabs() {
       return siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
     }
@@ -746,10 +789,17 @@
     }
     function pageHref(name, page = 1) {
       const current = Math.max(1, Number.parseInt(String(page || "1"), 10) || 1);
+      if (activeTag) return tagPageHref(activeTag, current);
       if (!name || name === "首页" || name === defaultCategoryName()) return current > 1 ? `/page/${current}` : "/";
       return `${categoryHref(name)}${current > 1 ? `/page/${current}` : ""}`;
     }
+    function tagFromLocation() {
+      const match = location.pathname.match(/^\/tag\/([^/]+)(?:\/page\/\d+)?\/?$/);
+      if (!match) return "";
+      try { return cleanTopicTerm(decodeURIComponent(match[1])); } catch (_error) { return cleanTopicTerm(match[1]); }
+    }
     function categoryFromLocation() {
+      if (tagFromLocation()) return defaultCategoryName();
       const match = location.pathname.match(/^\/category\/([^/]+)(?:\/page\/\d+)?\/?$/);
       if (match) {
         try { return decodeURIComponent(match[1]); } catch (_error) { return match[1]; }
@@ -761,6 +811,7 @@
       const match = location.pathname.match(/(?:^\/page\/|\/page\/)(\d+)\/?$/);
       return match ? Math.max(1, Number.parseInt(match[1], 10) || 1) : 1;
     }
+    let activeTag = cleanTopicTerm(ssrData.activeTag || "") || tagFromLocation();
     activeCategory = categoryFromLocation();
     currentPage = Number(ssrData.currentPage) || pageFromLocation();
 
@@ -771,18 +822,18 @@
       const moreTabs = tabs.slice(visibleLimit);
       const activeIndex = tabs.findIndex((tab) => tab.name === activeCategory);
       document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `
-        <a class="${tab.name === activeCategory ? "active" : ""}" href="${categoryHref(tab.name)}" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>
+        <a class="${!activeTag && tab.name === activeCategory ? "active" : ""}" href="${categoryHref(tab.name)}" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>
       `).join("") + (moreTabs.length ? `
         <span class="more-wrap" id="moreWrap">
-          <button class="nav-more ${activeIndex >= visibleLimit ? "active" : ""}" type="button" id="moreNav">更多</button>
+          <button class="nav-more ${!activeTag && activeIndex >= visibleLimit ? "active" : ""}" type="button" id="moreNav">更多</button>
           <span class="more-menu">
-            ${moreTabs.map((tab) => `<a class="${tab.name === activeCategory ? "active" : ""}" href="${categoryHref(tab.name)}" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>`).join("")}
+            ${moreTabs.map((tab) => `<a class="${!activeTag && tab.name === activeCategory ? "active" : ""}" href="${categoryHref(tab.name)}" data-title="${escapeHtml(tab.name)}" data-subtitle="${escapeHtml(tab.subtitle || `${tab.name}内容聚合展示。`)}">${escapeHtml(tab.name)}</a>`).join("")}
           </span>
         </span>
       ` : "");
       const activeTab = activeIndex >= 0 ? tabs[activeIndex] : { name: activeCategory, subtitle: `${activeCategory}内容聚合展示。` };
-      document.querySelector("#pageTitle").textContent = activeTab.name;
-      document.querySelector("#pageSubtitle").textContent = activeTab.subtitle || `${activeTab.name}内容聚合展示。`;
+      document.querySelector("#pageTitle").textContent = activeTag ? `#${activeTag}` : activeTab.name;
+      document.querySelector("#pageSubtitle").textContent = activeTag ? `与「${activeTag}」相关的内容合集。` : (activeTab.subtitle || `${activeTab.name}内容聚合展示。`);
     }
 
     function normalizeSearchValue(value) {
@@ -803,7 +854,9 @@
       const terms = searchInput.value.trim().replace(/#/g, "").toLowerCase().split(/\s+/).filter(Boolean);
       return posts.filter((post) => {
         const categories = post.categories && post.categories.length ? post.categories : [post.category];
-        const matchCategory = activeCategory === "首页" || categories.includes(activeCategory);
+        const matchTag = activeTag ? postTopicKeywords(post, 24).some((tag) => topicTermKey(tag) === topicTermKey(activeTag)) : true;
+        const matchCategory = Boolean(activeTag) || activeCategory === "首页" || categories.includes(activeCategory);
+        if (!matchTag) return false;
         if (!terms.length) return matchCategory;
         const text = postSearchText(post);
         return terms.every((term) => text.includes(term));
@@ -1097,6 +1150,7 @@
       const link = event.target.closest("a");
       if (link) {
         event.preventDefault();
+        activeTag = "";
         activeCategory = link.dataset.title;
         history.pushState(null, "", categoryHref(activeCategory));
         document.querySelector("#moreWrap")?.classList.remove("open");
@@ -1107,6 +1161,7 @@
       }
     });
     window.addEventListener("popstate", () => {
+      activeTag = tagFromLocation();
       activeCategory = categoryFromLocation();
       currentPage = pageFromLocation();
       renderNav();

@@ -3732,12 +3732,15 @@ function ssrFeedAdRow(ad, eager = false) {
   return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}">${image}<div class="post-content" aria-hidden="true"></div></a>`;
 }
 
-function ssrPager(totalPages, currentPage = 1, category = "首页") {
+function ssrPager(totalPages, currentPage = 1, target = "首页") {
+  const hrefForPage = typeof target === "function"
+    ? target
+    : (page) => listingPath(target, page);
   const link = (page, label, attrs = "") => {
     const active = page === currentPage;
     const classes = `page-btn${active ? " active" : ""}`;
     const aria = active ? ` aria-current="page"` : "";
-    return `<a class="${classes}" href="${htmlEscape(listingPath(category, page))}" data-page="${page}"${aria}${attrs}>${label}</a>`;
+    return `<a class="${classes}" href="${htmlEscape(hrefForPage(page))}" data-page="${page}"${aria}${attrs}>${label}</a>`;
   };
   const prev = currentPage > 1
     ? link(currentPage - 1, "上一页", " data-prev")
@@ -3805,6 +3808,137 @@ function categoryPath(category = "") {
 function categoryUrl(req, category = "") {
   const origin = canonicalSiteOrigin(req);
   return `${origin || ""}${categoryPath(category)}`;
+}
+
+const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
+const topicKeywordCatalog = [
+  "吃瓜",
+  "今日吃瓜",
+  "热门吃瓜",
+  "娱乐吃瓜",
+  "明星吃瓜",
+  "网红吃瓜",
+  "情感吃瓜",
+  "恋爱吃瓜",
+  "婚恋吃瓜",
+  "社交吃瓜",
+  "朋友圈吃瓜",
+  "匿名吃瓜",
+  "投稿吃瓜",
+  "爆料吃瓜",
+  "热点爆料",
+  "八卦爆料",
+  "网络热点",
+  "全网热门吃瓜",
+  "最新吃瓜爆料",
+  "娱乐圈吃瓜合集",
+  "网红吃瓜事件",
+  "匿名吃瓜投稿",
+  "成人影视",
+  "成人视频",
+  "免费成人视频",
+  "日本AV",
+  "欧美视频",
+  "国产自拍",
+  "中文字幕AV",
+  "高清视频",
+  "4K视频",
+  "手机观看",
+  "在线观看",
+  "视频合集",
+  "图片合集",
+  "真实自拍",
+  "直播视频",
+  "制服主题",
+  "办公室主题",
+  "剧情视频"
+];
+
+function cleanTopicTerm(value = "") {
+  const term = String(value || "")
+    .normalize("NFKC")
+    .replace(/^#+/, "")
+    .replace(/\s+/g, "")
+    .trim()
+    .slice(0, 32);
+  if (term.length < 2) return "";
+  if (/https?:|www\.|@/.test(term)) return "";
+  if (blockedTopicTermPattern.test(term)) return "";
+  return term;
+}
+
+function topicTermKey(value = "") {
+  return cleanTopicTerm(value).toLowerCase();
+}
+
+function tagPath(tag = "") {
+  const cleanTag = cleanTopicTerm(tag);
+  return cleanTag ? `/tag/${encodeURIComponent(cleanTag)}` : "/";
+}
+
+function tagUrl(req, tag = "") {
+  const origin = canonicalSiteOrigin(req);
+  return `${origin || ""}${tagPath(tag)}`;
+}
+
+function tagListingPath(tag = "", page = 1) {
+  const cleanTag = cleanTopicTerm(tag);
+  if (!cleanTag) return pagePath(page);
+  const currentPage = normalizePageNumber(page);
+  return `${tagPath(cleanTag)}${currentPage > 1 ? `/page/${currentPage}` : ""}`;
+}
+
+function tagListingUrl(req, tag = "", page = 1) {
+  const origin = canonicalSiteOrigin(req);
+  return `${origin || ""}${tagListingPath(tag, page)}`;
+}
+
+function postTopicSearchText(post = {}) {
+  return [
+    post.title,
+    plainPostText(post.body),
+    post.category,
+    normalizeArray(post.categories).join(" "),
+    normalizeArray(post.keywords).join(" "),
+    normalizeArray(post.tags).join(" ")
+  ].join(" ").replace(/#/g, "").toLowerCase();
+}
+
+function postTopicKeywords(post = {}, { max = 6 } = {}) {
+  const scored = new Map();
+  const push = (value, score) => {
+    const term = cleanTopicTerm(value);
+    if (!term) return;
+    const key = term.toLowerCase();
+    const current = scored.get(key);
+    if (!current || score > current.score) {
+      scored.set(key, { term, score, index: current?.index ?? scored.size });
+    }
+  };
+
+  normalizeArray(post.tags).forEach((tag) => push(tag, 100));
+  normalizeArray(post.keywords).forEach((keyword) => push(keyword, 90));
+  const categories = post.categories && post.categories.length ? post.categories : normalizeArray(post.category);
+  categories.forEach((category) => {
+    if (category && category !== "首页") push(category, 80);
+  });
+
+  const text = postTopicSearchText(post);
+  topicKeywordCatalog.forEach((keyword, index) => {
+    const term = cleanTopicTerm(keyword);
+    if (term && text.includes(term.toLowerCase())) push(term, 70 - (index / 1000));
+  });
+
+  return Array.from(scored.values())
+    .sort((a, b) => (b.score - a.score) || (a.index - b.index))
+    .slice(0, Math.max(0, Number(max) || 0))
+    .map((item) => item.term);
+}
+
+function postMatchesTag(post = {}, tag = "") {
+  const key = topicTermKey(tag);
+  if (!key) return false;
+  return postTopicKeywords(post, { max: 24 }).some((term) => topicTermKey(term) === key);
 }
 
 function normalizePageNumber(value = 1) {
@@ -3949,8 +4083,8 @@ function ssrDetailContent(post, mediaById = new Map()) {
 }
 
 function ssrTags(post) {
-  const tags = normalizeArray(post.tags).map((tag) => String(tag).replace(/^#+/, "")).filter(Boolean);
-  return `<div class="tags" id="tags">${tags.map((tag) => `<span class="tag">${htmlEscape(tag)}</span>`).join("")}</div>`;
+  const tags = postTopicKeywords(post, { max: 6 });
+  return `<div class="tags" id="tags">${tags.map((tag) => `<a class="tag" href="${htmlEscape(tagPath(tag))}" rel="tag">${htmlEscape(tag)}</a>`).join("")}</div>`;
 }
 
 function primaryPostCategory(post = {}) {
@@ -4026,7 +4160,8 @@ function detailClientPost(post = {}, includeBody = false) {
     category: post.category || "",
     categories: post.categories || [],
     keywords: post.keywords || [],
-    tags: post.tags || []
+    tags: post.tags || [],
+    topicKeywords: postTopicKeywords(post, { max: 6 })
   };
 }
 
@@ -4041,7 +4176,8 @@ function homeClientPost(post = {}) {
     category: post.category || "",
     categories: post.categories || [],
     pinned: isPinnedPost(post),
-    topBadge: post.topBadge || post.badge || ""
+    topBadge: post.topBadge || post.badge || "",
+    topicKeywords: postTopicKeywords(post, { max: 6 })
   };
 }
 
@@ -4084,6 +4220,58 @@ function homeSeoHead(req, settings = {}, posts = [], category = "首页", curren
         inLanguage: "zh-CN",
         image,
         isFamilyFriendly: false,
+        mainEntity: {
+          "@type": "ItemList",
+          itemListElement: listItems
+        }
+      }
+    ]
+  };
+  return {
+    title,
+    meta: seoHeadTags({
+      title,
+      description,
+      canonical,
+      image,
+      type: "website",
+      siteName,
+      imageAlt: `${siteName} 分享封面`,
+      extra: paginationLinks,
+      jsonLd
+    })
+  };
+}
+
+function tagSeoHead(req, settings = {}, posts = [], tag = "", currentPage = 1, totalPages = 1) {
+  const siteName = seoSiteName(settings);
+  const cleanTag = cleanTopicTerm(tag);
+  const pageSuffix = currentPage > 1 ? ` - 第${currentPage}页` : "";
+  const title = `${cleanTag} - ${siteName}${pageSuffix}`;
+  const description = truncateText(`${siteName}「${cleanTag}」相关内容合集，按发布时间聚合展示主题相近的图文与视频内容。`, 160);
+  const canonical = tagListingUrl(req, cleanTag, currentPage);
+  const image = seoDefaultImage(req);
+  const listItems = posts.slice(0, 8).map((post, index) => ({
+    "@type": "ListItem",
+    position: index + 1,
+    url: detailUrl(req, post)
+  }));
+  const paginationLinks = [
+    currentPage > 1 ? `<link rel="prev" href="${htmlEscape(tagListingUrl(req, cleanTag, currentPage - 1))}">` : "",
+    currentPage < totalPages ? `<link rel="next" href="${htmlEscape(tagListingUrl(req, cleanTag, currentPage + 1))}">` : ""
+  ].filter(Boolean);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        name: title,
+        url: canonical,
+        description,
+        inLanguage: "zh-CN",
+        image,
+        isFamilyFriendly: false,
+        keywords: cleanTag,
         mainEntity: {
           "@type": "ItemList",
           itemListElement: listItems
@@ -4169,10 +4357,7 @@ function detailSeoHead(req, post, description, mediaById = new Map(), settings =
     .filter(Boolean)
     .slice(0, 8);
   if (!images.length && fallbackImage) images.push(fallbackImage);
-  const articleTags = uniqueList([
-    ...normalizeArray(post.tags),
-    ...normalizeArray(post.keywords)
-  ].map((item) => String(item).replace(/^#+/, "").trim()).filter(Boolean)).slice(0, 12);
+  const articleTags = postTopicKeywords(post, { max: 12 });
   const publisher = {
     "@type": "Organization",
     name: siteName,
@@ -4188,7 +4373,7 @@ function detailSeoHead(req, post, description, mediaById = new Map(), settings =
     publisher,
     datePublished: published || undefined,
     dateModified: published || undefined,
-    keywords: normalizeArray(post.keywords).join(", "),
+    keywords: articleTags.join(", "),
     articleSection: post.categories?.length ? post.categories.join(", ") : post.category,
     mainEntityOfPage: canonical,
     inLanguage: "zh-CN",
@@ -4383,6 +4568,22 @@ function sitemapCategoryNames(settings = {}) {
     .filter((name) => name && name !== "首页");
 }
 
+function sitemapTagNames(posts = []) {
+  const counts = new Map();
+  posts.forEach((post) => {
+    postTopicKeywords(post, { max: 6 }).forEach((tag) => {
+      const key = topicTermKey(tag);
+      if (!key) return;
+      const current = counts.get(key);
+      counts.set(key, { tag, count: (current?.count || 0) + 1 });
+    });
+  });
+  return Array.from(counts.values())
+    .sort((a, b) => (b.count - a.count) || a.tag.localeCompare(b.tag, "zh-CN"))
+    .slice(0, 200)
+    .map((item) => item.tag);
+}
+
 function postMatchesCategory(post = {}, category = "") {
   const categories = post.categories && post.categories.length ? post.categories : [post.category];
   return categories.includes(category);
@@ -4399,11 +4600,13 @@ async function sitemapContext(req) {
     readSiteSettings(),
     readPosts()
   ]);
+  const posts = publicPostsFrom(rawPosts);
   return {
     settings,
     origin: siteMapOriginForRequest(req),
-    posts: publicPostsFrom(rawPosts),
-    categories: sitemapCategoryNames(settings)
+    posts,
+    categories: sitemapCategoryNames(settings),
+    tags: sitemapTagNames(posts)
   };
 }
 
@@ -4447,6 +4650,7 @@ async function renderSitemapIndexXml(req, res, next) {
     const entries = [
       { loc: `${origin}/sitemap-pages.xml` },
       { loc: `${origin}/sitemap-categories.xml` },
+      { loc: `${origin}/sitemap-tags.xml` },
       ...Array.from({ length: postSitemapCount }, (_, index) => ({ loc: `${origin}/sitemap-posts-${index + 1}.xml` }))
     ];
     res.send(sitemapIndexXml(entries));
@@ -4508,6 +4712,32 @@ async function renderSitemapCategoriesXml(req, res, next) {
         loc: `${origin}${listingPath(category, index + 1)}`,
         changefreq: "daily",
         priority: index === 0 ? "0.7" : "0.6"
+      }));
+    });
+    res.send(sitemapUrlset(entries));
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function renderSitemapTagsXml(req, res, next) {
+  try {
+    res.type("application/xml");
+    res.setHeader("Cache-Control", "public, max-age=300");
+
+    if (sitemapUnavailable(req)) {
+      res.status(404).send(sitemapUrlset([]));
+      return;
+    }
+
+    const { origin, posts, tags } = await sitemapContext(req);
+    const entries = tags.flatMap((tag) => {
+      const tagPosts = posts.filter((post) => postMatchesTag(post, tag));
+      const totalPages = sitemapPageCount(tagPosts);
+      return Array.from({ length: totalPages }, (_, index) => ({
+        loc: `${origin}${tagListingPath(tag, index + 1)}`,
+        changefreq: "daily",
+        priority: index === 0 ? "0.6" : "0.5"
       }));
     });
     res.send(sitemapUrlset(entries));
@@ -4585,22 +4815,30 @@ async function renderIndexPage(req, res, next) {
     const perPage = publicListingPageSize;
     const posts = publicPostsFrom(rawPosts);
     const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
-    const requestedCategory = String(req.params.category || "").trim();
+    const requestedTag = cleanTopicTerm(req.params.tag || "");
+    const isTagPage = Object.prototype.hasOwnProperty.call(req.params, "tag");
+    if (isTagPage && !requestedTag) {
+      sendNotFoundPage(res);
+      return;
+    }
+    const requestedCategory = isTagPage ? "" : String(req.params.category || "").trim();
     const defaultCategory = defaultContentCategory(tabs);
-    const activeCategory = requestedCategory || defaultCategory;
+    const activeCategory = isTagPage ? "首页" : (requestedCategory || defaultCategory);
     const pagerCategory = requestedCategory ? activeCategory : "首页";
     const hasPageParam = Object.prototype.hasOwnProperty.call(req.params, "page");
     const currentPage = normalizePageNumber(req.params.page || 1);
     if (hasPageParam && currentPage <= 1) {
-      res.redirect(301, listingPath(pagerCategory, 1));
+      res.redirect(301, isTagPage ? tagListingPath(requestedTag, 1) : listingPath(pagerCategory, 1));
       return;
     }
     const activeTab = tabs.find((tab) => tab.name === activeCategory) || null;
-    const filteredPosts = activeCategory === "首页"
-      ? posts
-      : posts.filter((post) => {
+    const filteredPosts = isTagPage
+      ? posts.filter((post) => postMatchesTag(post, requestedTag))
+      : (activeCategory === "首页"
+        ? posts
+        : posts.filter((post) => {
           return postMatchesCategory(post, activeCategory);
-        });
+        }));
     const totalPages = Math.max(1, Math.ceil(filteredPosts.length / perPage));
     if (currentPage > totalPages) {
       sendNotFoundPage(res);
@@ -4608,7 +4846,7 @@ async function renderIndexPage(req, res, next) {
     }
     const start = (currentPage - 1) * perPage;
     const pagePosts = filteredPosts.slice(start, start + perPage);
-    const feedAds = !requestedCategory ? (settings.ads || [])
+    const feedAds = !requestedCategory && !isTagPage ? (settings.ads || [])
       .map(normalizeSsrAd)
       .filter((ad) => ad.placement === "home-feed" && (ad.image || ssrIsCodeAd(ad)))
       .sort((a, b) => (Number(a.slot) || 1) - (Number(b.slot) || 1)) : [];
@@ -4620,9 +4858,12 @@ async function renderIndexPage(req, res, next) {
     const postHtml = rows.map((row, index) => (
       row.kind === "ad" ? ssrFeedAdRow(row.ad, index === 0) : ssrPostRow(row.post, index === 0)
     )).join("");
-    const pageTitle = activeCategory;
-    const pageSubtitle = activeTab?.subtitle || `${activeCategory}内容聚合展示。`;
-    const seo = homeSeoHead(req, settings, pagePosts, pagerCategory, currentPage, totalPages);
+    const pageTitle = isTagPage ? `#${requestedTag}` : activeCategory;
+    const pageSubtitle = isTagPage ? `与「${requestedTag}」相关的内容合集。` : (activeTab?.subtitle || `${activeCategory}内容聚合展示。`);
+    const seo = isTagPage
+      ? tagSeoHead(req, settings, pagePosts, requestedTag, currentPage, totalPages)
+      : homeSeoHead(req, settings, pagePosts, pagerCategory, currentPage, totalPages);
+    const pagerTarget = isTagPage ? ((page) => tagListingPath(requestedTag, page)) : pagerCategory;
     const ssrPayload = {
       posts: pagePosts.map(homeClientPost),
       postsPartial: true,
@@ -4632,6 +4873,7 @@ async function renderIndexPage(req, res, next) {
       footer: settings.footer,
       ads: settings.ads,
       activeCategory,
+      activeTag: requestedTag,
       currentPage
     };
     const rendered = injectSeoHead(html, seo.meta)
@@ -4641,7 +4883,7 @@ async function renderIndexPage(req, res, next) {
       .replace('<p class="page-subtitle" id="pageSubtitle">精选图文与视频内容，按发布时间聚合展示。</p>', `<p class="page-subtitle" id="pageSubtitle">${htmlEscape(pageSubtitle)}</p>`)
       .replace('<section class="content-list" id="postList" aria-label="内容列表"></section>', `<section class="content-list" id="postList" aria-label="内容列表">${postHtml}</section>`)
       .replace('<div class="empty" id="emptyState">没有找到匹配内容</div>', `<div class="empty" id="emptyState" style="${pagePosts.length ? "display:none" : "display:block"}">没有找到匹配内容</div>`)
-      .replace('<nav class="pager" id="pager" aria-label="分页"></nav>', `<nav class="pager" id="pager" aria-label="分页">${ssrPager(totalPages, currentPage, pagerCategory)}</nav>`);
+      .replace('<nav class="pager" id="pager" aria-label="分页"></nav>', `<nav class="pager" id="pager" aria-label="分页">${ssrPager(totalPages, currentPage, pagerTarget)}</nav>`);
     res.type("html").send(rendered);
   } catch (error) {
     next(error);
@@ -4790,12 +5032,15 @@ app.get("/robots.txt", renderRobotsTxt);
 app.get(["/sitemap.xml", "/sitemap-index.xml"], renderSitemapXml);
 app.get("/sitemap-pages.xml", renderSitemapPagesXml);
 app.get("/sitemap-categories.xml", renderSitemapCategoriesXml);
+app.get("/sitemap-tags.xml", renderSitemapTagsXml);
 app.get(/^\/sitemap-posts-(\d+)\.xml$/, renderSitemapPostsXml);
 app.get("/route-select.html", renderRouteSelectPage);
 app.get(["/", "/index.html"], renderIndexPage);
 app.get("/page/:page", renderIndexPage);
 app.get("/category/:category/page/:page", renderIndexPage);
 app.get("/category/:category", renderIndexPage);
+app.get("/tag/:tag/page/:page", renderIndexPage);
+app.get("/tag/:tag", renderIndexPage);
 app.get("/v/:id/:slug?", renderDetailPage);
 app.get("/detail.html", redirectLegacyDetailPage);
 app.get("/app.html", sendHtmlPage("app.html"));
