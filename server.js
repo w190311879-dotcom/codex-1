@@ -476,7 +476,7 @@ function normalizeSiteSettings(input = {}) {
   const ads = Array.isArray(input.ads) ? input.ads.map((ad) => ({
     title: String(ad?.title || ""),
     desc: String(ad?.desc || ""),
-    link: String(ad?.link || "app.html"),
+    link: safePublicUrl(ad?.link || ad?.href || ad?.target || ad?.url || "", "app.html"),
     image: String(ad?.image || ""),
     imageKey: String(ad?.imageKey || ""),
     imageVariants: ad?.imageVariants && typeof ad.imageVariants === "object" ? ad.imageVariants : {},
@@ -3409,6 +3409,7 @@ function htmlEscape(value = "") {
 function safePublicUrl(value = "", fallback = "") {
   const url = String(value || "").trim();
   if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+  if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
   return fallback;
 }
 

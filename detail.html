@@ -365,6 +365,7 @@
     function safeUrl(value, fallback = "") {
       const url = String(value || "").trim();
       if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+      if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
       return fallback;
     }
     function imageAttrs({ eager = false, width = 800, height = 1067 } = {}) {
