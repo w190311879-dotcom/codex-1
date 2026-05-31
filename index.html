@@ -863,8 +863,7 @@
         try { return decodeURIComponent(match[1]); } catch (_error) { return match[1]; }
       }
       const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
-      if (!hashTab || document.getElementById(hashTab)) return defaultCategoryName();
-      return hashTab;
+      return hashTab || defaultCategoryName();
     }
     function pageFromLocation() {
       const match = location.pathname.match(/(?:^\/page\/|\/page\/)(\d+)\/?$/);
