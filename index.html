@@ -152,7 +152,7 @@
     .footer-icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0 0 26px; }
     .footer-icons a { min-height: 78px; display: grid; place-items: center; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-weight: 900; }
     .footer-icons a:hover { color: var(--green); border-color: var(--green); }
-    .intro { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-size: 15px; line-height: 1.8; font-weight: 700; }
+    .intro { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-size: 15px; line-height: 1.8; font-weight: 700; white-space: pre-line; }
     .footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 24px 0; color: #d8dedb; font-weight: 800; }
     :root.light .footer-links { color: #3d463f; }
     .social-row { display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; }
@@ -253,7 +253,8 @@
 
     <section class="footer-icons" id="footerQuickLinks"></section>
 
-    <section class="intro" id="site-map">
+    <span id="site-map"></span>
+    <section class="intro" id="about">
       51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。
     </section>
 
@@ -319,13 +320,69 @@
         { name: "专题", subtitle: "按主题整理的合集页面。" }
       ]
     };
+    const defaultFooterIntroText = `欢迎来到51春梦 — 热门吃瓜与成人娱乐平台
+51春梦（51cmtv.com）是一个专注于最新娱乐吃瓜爆料、网红热点、明星动态以及高质量成人视频的内容聚合平台。我们致力于为用户提供及时、丰富、有趣的娱乐资讯与视听内容，满足大家“吃瓜”与休闲放松的双重需求。
+作为51吃瓜系列的重要站点，51春梦坚持“实时更新、内容优质、用户体验优先”的原则，汇聚海量热门话题与精选成人资源。无论您想了解娱乐圈最新动态，还是想寻找高质量视频放松，这里都是您的理想选择。
+
+我们的核心定位
+在快节奏的信息时代，51春梦希望成为一个便捷、清晰、内容优质的娱乐平台：
+•  实时更新：每日快速推送最新吃瓜资讯与视频资源，让您第一时间掌握热点。
+•  内容丰富：涵盖明星绯闻、网红热点、社会话题以及各类成人视频。
+•  品质保障：所有视频和图片均经过严格筛选，确保清晰度和观赏体验。
+•  使用便捷：简洁界面、智能推荐、强大搜索功能，让您轻松找到想看的内容。
+我们不仅是吃瓜平台，更是一个综合的成人娱乐休闲空间。
+
+主要栏目介绍
+1. 吃瓜爆料频道
+专注全网热门娱乐话题与社会热点，包括：
+•  娱乐圈最新动态（情感、合作、个人生活等）
+•  网红热点事件与话题讨论
+•  热门社会新闻解读
+•  瓜榜实时排行
+每日精选内容推送，帮助您快速了解最新“好戏”。
+
+2. 成人视频专区
+精选高清成人视频，分类清晰，涵盖多种风格：
+•  国产精品视频
+•  日韩欧美系列
+•  网红主播精选内容
+•  剧情类、角色扮演、制服主题等多种类型
+所有视频均支持在线流畅播放，画质清晰，满足不同用户的观看喜好。
+
+3. 热门推荐与今日热榜
+根据实时热度与用户喜好智能推荐最受欢迎的爆料和视频。新用户能快速找到方向，老用户也能持续发现新鲜内容。
+
+4. 搜索与标签导航
+支持关键词快速搜索，同时提供热门标签分类，让您精准找到感兴趣的内容。
+
+5. 社区互动区
+用户可在评论区分享看法与讨论（遵守平台规则）。我们欢迎积极、健康的交流氛围，未来也将持续优化社区功能。
+
+为什么选择51春梦？
+•  更新及时：紧跟热点，许多热门事件能快速呈现。
+•  资源全面：吃瓜资讯与成人视频相结合，一站式满足多样需求。
+•  访问稳定：优化多线路访问，确保国内外用户都能顺畅浏览。
+•  隐私保护：重视用户隐私与数据安全，提供安心浏览环境。
+•  持续改进：根据用户反馈不断优化平台，致力于打造更好的娱乐体验。
+
+我们的承诺
+51春梦严格遵守相关法律法规，所有内容均经过审核。我们尊重原创，欢迎优质内容合作。平台致力于提供积极向上的娱乐方式，在合法合规的范围内为用户带来快乐。
+
+免责声明：本站部分内容来源于网络，如有侵权请联系我们及时处理。所有资源仅供个人学习与欣赏，请勿用于其他用途。
+
+加入51春梦，一起探索精彩
+无论您是喜欢追热点、吃瓜的资深用户，还是偶尔想放松身心的朋友，51春梦（51cmtv.com） 都欢迎您的到来。这里有最新最全的娱乐爆料，也有丰富的高清成人视频，让您的休闲时光更加丰富有趣。
+官网地址：https://51cmtv.com
+常用搜索词：51春梦、51吃瓜、娱乐爆料、网红热点、高清成人视频
+
+感谢您阅读51春梦的介绍！我们会持续更新优质内容，期待与您一起享受精彩的娱乐世界。欢迎收藏本站，开启您的每日娱乐之旅！`;
     const defaultFooterConfig = {
-      introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+      introText: defaultFooterIntroText,
       quickLinks: [
         { label: "首页", href: "/", icon: "home" },
         { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
         { label: "Q群", href: "qq.html", icon: "message-circle" },
-        { label: "网站导航", href: "#site-map", icon: "map" }
+        { label: "网站导航", href: "#about", icon: "map" }
       ],
       footerLinks: [
         { label: "往期回顾", href: "#archive" },
@@ -509,7 +566,7 @@
       document.querySelector(".brand").href = "/";
       document.querySelector("#brandMark").innerHTML = `<img src="/assets/logo.png" alt="${escapeHtml(siteName)}" width="180" height="80" loading="eager" decoding="async">`;
       const introText = String(footerConfig.introText || defaultFooterConfig.introText).replaceAll("{{siteName}}", siteName);
-      document.querySelector("#site-map").textContent = introText;
+      document.querySelector("#about").textContent = introText;
       document.querySelector("#footerQuickLinks").innerHTML = footerConfig.quickLinks.map((link) => `
         <a ${linkAttrs(link, "#")}>${iconMarkup(link.icon, link.label)}<span>${escapeHtml(link.label)}</span></a>
       `).join("");

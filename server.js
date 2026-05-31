@@ -222,6 +222,63 @@ const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
     }]
   : null;
 const seedAdmins = envAdmin || defaultAdmins;
+const previousDefaultFooterIntroText = "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。";
+const defaultFooterIntroText = `欢迎来到51春梦 — 热门吃瓜与成人娱乐平台
+51春梦（51cmtv.com）是一个专注于最新娱乐吃瓜爆料、网红热点、明星动态以及高质量成人视频的内容聚合平台。我们致力于为用户提供及时、丰富、有趣的娱乐资讯与视听内容，满足大家“吃瓜”与休闲放松的双重需求。
+作为51吃瓜系列的重要站点，51春梦坚持“实时更新、内容优质、用户体验优先”的原则，汇聚海量热门话题与精选成人资源。无论您想了解娱乐圈最新动态，还是想寻找高质量视频放松，这里都是您的理想选择。
+
+我们的核心定位
+在快节奏的信息时代，51春梦希望成为一个便捷、清晰、内容优质的娱乐平台：
+•  实时更新：每日快速推送最新吃瓜资讯与视频资源，让您第一时间掌握热点。
+•  内容丰富：涵盖明星绯闻、网红热点、社会话题以及各类成人视频。
+•  品质保障：所有视频和图片均经过严格筛选，确保清晰度和观赏体验。
+•  使用便捷：简洁界面、智能推荐、强大搜索功能，让您轻松找到想看的内容。
+我们不仅是吃瓜平台，更是一个综合的成人娱乐休闲空间。
+
+主要栏目介绍
+1. 吃瓜爆料频道
+专注全网热门娱乐话题与社会热点，包括：
+•  娱乐圈最新动态（情感、合作、个人生活等）
+•  网红热点事件与话题讨论
+•  热门社会新闻解读
+•  瓜榜实时排行
+每日精选内容推送，帮助您快速了解最新“好戏”。
+
+2. 成人视频专区
+精选高清成人视频，分类清晰，涵盖多种风格：
+•  国产精品视频
+•  日韩欧美系列
+•  网红主播精选内容
+•  剧情类、角色扮演、制服主题等多种类型
+所有视频均支持在线流畅播放，画质清晰，满足不同用户的观看喜好。
+
+3. 热门推荐与今日热榜
+根据实时热度与用户喜好智能推荐最受欢迎的爆料和视频。新用户能快速找到方向，老用户也能持续发现新鲜内容。
+
+4. 搜索与标签导航
+支持关键词快速搜索，同时提供热门标签分类，让您精准找到感兴趣的内容。
+
+5. 社区互动区
+用户可在评论区分享看法与讨论（遵守平台规则）。我们欢迎积极、健康的交流氛围，未来也将持续优化社区功能。
+
+为什么选择51春梦？
+•  更新及时：紧跟热点，许多热门事件能快速呈现。
+•  资源全面：吃瓜资讯与成人视频相结合，一站式满足多样需求。
+•  访问稳定：优化多线路访问，确保国内外用户都能顺畅浏览。
+•  隐私保护：重视用户隐私与数据安全，提供安心浏览环境。
+•  持续改进：根据用户反馈不断优化平台，致力于打造更好的娱乐体验。
+
+我们的承诺
+51春梦严格遵守相关法律法规，所有内容均经过审核。我们尊重原创，欢迎优质内容合作。平台致力于提供积极向上的娱乐方式，在合法合规的范围内为用户带来快乐。
+
+免责声明：本站部分内容来源于网络，如有侵权请联系我们及时处理。所有资源仅供个人学习与欣赏，请勿用于其他用途。
+
+加入51春梦，一起探索精彩
+无论您是喜欢追热点、吃瓜的资深用户，还是偶尔想放松身心的朋友，51春梦（51cmtv.com） 都欢迎您的到来。这里有最新最全的娱乐爆料，也有丰富的高清成人视频，让您的休闲时光更加丰富有趣。
+官网地址：https://51cmtv.com
+常用搜索词：51春梦、51吃瓜、娱乐爆料、网红热点、高清成人视频
+
+感谢您阅读51春梦的介绍！我们会持续更新优质内容，期待与您一起享受精彩的娱乐世界。欢迎收藏本站，开启您的每日娱乐之旅！`;
 
 function validateProductionSecurityConfig() {
   if (!isProduction) return;
@@ -276,12 +333,12 @@ const defaultSiteSettings = {
     text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
   },
   footer: {
-    introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+    introText: defaultFooterIntroText,
     quickLinks: [
       { label: "首页", href: "/", icon: "home" },
       { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
       { label: "Q群", href: "qq.html", icon: "message-circle" },
-      { label: "网站导航", href: "#site-map", icon: "map" }
+      { label: "网站导航", href: "#about", icon: "map" }
     ],
     footerLinks: [
       { label: "往期回顾", href: "#archive" },
@@ -493,6 +550,10 @@ function normalizeSiteSettings(input = {}) {
   const emailAutoReply = input.emailAutoReply || {};
   const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
   const incomingFooter = input.footer || {};
+  const incomingIntroText = String(incomingFooter.introText ?? defaultSiteSettings.footer.introText);
+  const footerIntroText = incomingIntroText.trim() === previousDefaultFooterIntroText
+    ? defaultSiteSettings.footer.introText
+    : incomingIntroText;
   const normalizeIconName = (icon = "", label = "") => {
     const value = String(icon || "").trim();
     const lowerValue = value.toLowerCase();
@@ -565,7 +626,7 @@ function normalizeSiteSettings(input = {}) {
       text: replyText || defaultSiteSettings.emailAutoReply.text
     },
     footer: {
-      introText: String(incomingFooter.introText ?? defaultSiteSettings.footer.introText),
+      introText: footerIntroText,
       quickLinks: normalizeLinks(incomingFooter.quickLinks, defaultSiteSettings.footer.quickLinks),
       footerLinks: normalizeLinks(incomingFooter.footerLinks, defaultSiteSettings.footer.footerLinks),
       topLinks: footerTopLinks,
@@ -2695,16 +2756,60 @@ function videoChunkMetaPath(uploadId) {
   return path.join(videoChunkUploadDir(uploadId), "metadata.json");
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function readVideoChunkMeta(uploadId) {
-  return JSON.parse(await fs.readFile(videoChunkMetaPath(uploadId), "utf8"));
+  const metaPath = videoChunkMetaPath(uploadId);
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return JSON.parse(await fs.readFile(metaPath, "utf8"));
+    } catch (error) {
+      lastError = error;
+      if (attempt === 4) break;
+      await wait(40 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 async function writeVideoChunkMeta(meta) {
-  await fs.writeFile(videoChunkMetaPath(meta.uploadId), JSON.stringify(meta, null, 2));
+  const metaPath = videoChunkMetaPath(meta.uploadId);
+  const tempPath = `${metaPath}.${process.pid}.${Date.now()}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(tempPath, JSON.stringify(meta, null, 2));
+    await fs.rename(tempPath, metaPath);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 function videoChunkPartPath(uploadId, index) {
   return path.join(videoChunkUploadDir(uploadId), `${String(index).padStart(8, "0")}.part`);
+}
+
+async function scanVideoChunkParts(uploadId, totalChunks) {
+  const uploadDir = videoChunkUploadDir(uploadId);
+  const entries = await fs.readdir(uploadDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => /^(\d{8})\.part$/.exec(entry.name))
+    .filter(Boolean)
+    .map((match) => Number(match[1]))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < totalChunks)
+    .sort((a, b) => a - b);
+}
+
+function missingVideoChunks(received, totalChunks) {
+  const receivedSet = new Set(received);
+  const missing = [];
+  for (let index = 0; index < totalChunks; index += 1) {
+    if (!receivedSet.has(index)) missing.push(index);
+  }
+  return missing;
 }
 
 async function assembleVideoChunks(meta, outputPath) {
@@ -3285,13 +3390,12 @@ app.post("/api/media/video/chunk/init", requireAdminApi, async (req, res, next) 
 app.get("/api/media/video/chunk/:uploadId/status", requireAdminApi, async (req, res, next) => {
   try {
     const meta = await readVideoChunkMeta(req.params.uploadId);
-    const received = Array.from(new Set((meta.received || []).map(Number)))
-      .filter((item) => Number.isInteger(item) && item >= 0 && item < meta.totalChunks)
-      .sort((a, b) => a - b);
-    const receivedSet = new Set(received);
-    const missing = [];
-    for (let index = 0; index < meta.totalChunks; index += 1) {
-      if (!receivedSet.has(index)) missing.push(index);
+    const received = await scanVideoChunkParts(meta.uploadId, meta.totalChunks);
+    const missing = missingVideoChunks(received, meta.totalChunks);
+    if (JSON.stringify(meta.received || []) !== JSON.stringify(received)) {
+      meta.received = received;
+      meta.updatedAt = new Date().toISOString();
+      await writeVideoChunkMeta(meta);
     }
     res.json({
       ok: true,
@@ -3315,7 +3419,7 @@ app.post("/api/media/video/chunk/:uploadId", requireAdminApi, videoChunkUpload.s
     if (!Number.isInteger(index) || index < 0 || index >= meta.totalChunks) throw new Error("视频分片序号无效");
     const targetPath = videoChunkPartPath(meta.uploadId, index);
     await fs.rename(req.file.path, targetPath);
-    meta.received = Array.from(new Set([...(meta.received || []), index])).sort((a, b) => a - b);
+    meta.received = await scanVideoChunkParts(meta.uploadId, meta.totalChunks);
     meta.updatedAt = new Date().toISOString();
     await writeVideoChunkMeta(meta);
     res.json({ ok: true, uploadId: meta.uploadId, index, received: meta.received.length, totalChunks: meta.totalChunks });
@@ -3329,9 +3433,16 @@ app.post("/api/media/video/chunk/:uploadId/complete", requireAdminApi, async (re
   let assembledPath = "";
   try {
     const meta = await readVideoChunkMeta(req.params.uploadId);
-    for (let index = 0; index < meta.totalChunks; index += 1) {
-      await fs.access(videoChunkPartPath(meta.uploadId, index));
+    const received = await scanVideoChunkParts(meta.uploadId, meta.totalChunks);
+    const missing = missingVideoChunks(received, meta.totalChunks);
+    if (missing.length) {
+      const error = new Error(`视频分片缺失：${missing.slice(0, 20).join(", ")}${missing.length > 20 ? "..." : ""}`);
+      error.status = 400;
+      throw error;
     }
+    meta.received = received;
+    meta.updatedAt = new Date().toISOString();
+    await writeVideoChunkMeta(meta);
     assembledPath = path.join(tempVideoDir, `${meta.uploadId}-${safeFilename(meta.originalName, meta.mimeType)}`);
     await assembleVideoChunks(meta, assembledPath);
     const stats = await fs.stat(assembledPath);
