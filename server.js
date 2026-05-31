@@ -222,7 +222,10 @@ const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
     }]
   : null;
 const seedAdmins = envAdmin || defaultAdmins;
-const previousDefaultFooterIntroText = "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。";
+const legacyDefaultFooterIntroTexts = new Set([
+  "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+  "51春梦 - 51cmtv.com\n专注成人娱乐，只为让你爽到腿软！\n欢迎来到 51春梦，你的专属极品成人乐园！在这里，每天为你精选最热、最骚、最真实的成人内容：无码高清、伦理禁忌、探花偷拍、人妻熟女、校园制服、直播大秀、动漫肉番……应有尽有！"
+]);
 const defaultFooterIntroText = `欢迎来到51春梦 — 热门吃瓜与成人娱乐平台
 51春梦（51cmtv.com）是一个专注于最新娱乐吃瓜爆料、网红热点、明星动态以及高质量成人视频的内容聚合平台。我们致力于为用户提供及时、丰富、有趣的娱乐资讯与视听内容，满足大家“吃瓜”与休闲放松的双重需求。
 作为51吃瓜系列的重要站点，51春梦坚持“实时更新、内容优质、用户体验优先”的原则，汇聚海量热门话题与精选成人资源。无论您想了解娱乐圈最新动态，还是想寻找高质量视频放松，这里都是您的理想选择。
@@ -551,7 +554,7 @@ function normalizeSiteSettings(input = {}) {
   const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
   const incomingFooter = input.footer || {};
   const incomingIntroText = String(incomingFooter.introText ?? defaultSiteSettings.footer.introText);
-  const footerIntroText = incomingIntroText.trim() === previousDefaultFooterIntroText
+  const footerIntroText = legacyDefaultFooterIntroTexts.has(incomingIntroText.trim())
     ? defaultSiteSettings.footer.introText
     : incomingIntroText;
   const normalizeIconName = (icon = "", label = "") => {
