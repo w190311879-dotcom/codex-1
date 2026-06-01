@@ -223,6 +223,15 @@ const envAdmin = process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD_HASH
     }]
   : null;
 const seedAdmins = envAdmin || defaultAdmins;
+const previousDefaultFooterIntroText = "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。";
+const defaultFooterIntroText = previousDefaultFooterIntroText;
+
+function isMisplacedAboutIntroText(value = "") {
+  const text = String(value || "").trim();
+  return text.startsWith("欢迎来到51春梦 — 热门吃瓜与成人娱乐平台")
+    && text.includes("我们的核心定位")
+    && text.includes("感谢您阅读51春梦的介绍");
+}
 
 function validateProductionSecurityConfig() {
   if (!isProduction) return;
@@ -277,7 +286,7 @@ const defaultSiteSettings = {
     text: "最新地址 🍉🍉🍉 (本信息更新时间 2026-05-20)\n\n\n\n51视频最新官网 https://51cmtv.com  请把网址或者群分享给身边有需要的人，您的转发、分享是我们前进的动力😘～"
   },
   footer: {
-    introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+    introText: defaultFooterIntroText,
     quickLinks: [
       { label: "首页", href: "/", icon: "home" },
       { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
@@ -290,7 +299,7 @@ const defaultSiteSettings = {
       { label: "我要投稿", href: "admin-login.html" },
       { label: "商务合作", href: "mailto:business@example.com" },
       { label: "加入我们", href: "mailto:join@example.com" },
-      { label: "关于我们", href: "#about" }
+      { label: "关于我们", href: "/about.html" }
     ],
     topLinks: {
       app: { href: "app.html", action: "app-placeholder" },
@@ -494,6 +503,10 @@ function normalizeSiteSettings(input = {}) {
   const emailAutoReply = input.emailAutoReply || {};
   const replyText = String(emailAutoReply.text ?? defaultSiteSettings.emailAutoReply.text).trim();
   const incomingFooter = input.footer || {};
+  const incomingIntroText = String(incomingFooter.introText ?? defaultSiteSettings.footer.introText);
+  const footerIntroText = incomingIntroText.trim() === previousDefaultFooterIntroText || isMisplacedAboutIntroText(incomingIntroText)
+    ? defaultSiteSettings.footer.introText
+    : incomingIntroText;
   const normalizeIconName = (icon = "", label = "") => {
     const value = String(icon || "").trim();
     const lowerValue = value.toLowerCase();
@@ -506,7 +519,10 @@ function normalizeSiteSettings(input = {}) {
     const label = String(link?.label || fallback.label || "").trim();
     const fallbackHref = String(fallback.href || "").trim();
     const rawHref = String(link?.href || fallbackHref || "#").trim() || "#";
-    const href = rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim()
+    const labelMatchesFallback = label === String(fallback.label || "").trim();
+    const href = rawHref === "#about" && fallbackHref === "#site-map" && labelMatchesFallback
+      ? fallbackHref
+      : rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && labelMatchesFallback
       ? fallbackHref
       : rawHref;
     return {
@@ -566,7 +582,7 @@ function normalizeSiteSettings(input = {}) {
       text: replyText || defaultSiteSettings.emailAutoReply.text
     },
     footer: {
-      introText: String(incomingFooter.introText ?? defaultSiteSettings.footer.introText),
+      introText: footerIntroText,
       quickLinks: normalizeLinks(incomingFooter.quickLinks, defaultSiteSettings.footer.quickLinks),
       footerLinks: normalizeLinks(incomingFooter.footerLinks, defaultSiteSettings.footer.footerLinks),
       topLinks: footerTopLinks,
@@ -1997,6 +2013,7 @@ function routeSelectorUrl() {
 }
 
 const compliancePagePaths = [
+  "/about.html",
   "/terms.html",
   "/privacy.html",
   "/dmca.html",
@@ -2696,16 +2713,60 @@ function videoChunkMetaPath(uploadId) {
   return path.join(videoChunkUploadDir(uploadId), "metadata.json");
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function readVideoChunkMeta(uploadId) {
-  return JSON.parse(await fs.readFile(videoChunkMetaPath(uploadId), "utf8"));
+  const metaPath = videoChunkMetaPath(uploadId);
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return JSON.parse(await fs.readFile(metaPath, "utf8"));
+    } catch (error) {
+      lastError = error;
+      if (attempt === 4) break;
+      await wait(40 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 async function writeVideoChunkMeta(meta) {
-  await fs.writeFile(videoChunkMetaPath(meta.uploadId), JSON.stringify(meta, null, 2));
+  const metaPath = videoChunkMetaPath(meta.uploadId);
+  const tempPath = `${metaPath}.${process.pid}.${Date.now()}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(tempPath, JSON.stringify(meta, null, 2));
+    await fs.rename(tempPath, metaPath);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 function videoChunkPartPath(uploadId, index) {
   return path.join(videoChunkUploadDir(uploadId), `${String(index).padStart(8, "0")}.part`);
+}
+
+async function scanVideoChunkParts(uploadId, totalChunks) {
+  const uploadDir = videoChunkUploadDir(uploadId);
+  const entries = await fs.readdir(uploadDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => /^(\d{8})\.part$/.exec(entry.name))
+    .filter(Boolean)
+    .map((match) => Number(match[1]))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < totalChunks)
+    .sort((a, b) => a - b);
+}
+
+function missingVideoChunks(received, totalChunks) {
+  const receivedSet = new Set(received);
+  const missing = [];
+  for (let index = 0; index < totalChunks; index += 1) {
+    if (!receivedSet.has(index)) missing.push(index);
+  }
+  return missing;
 }
 
 async function assembleVideoChunks(meta, outputPath) {
@@ -3290,13 +3351,12 @@ app.post("/api/media/video/chunk/init", requireAdminApi, async (req, res, next) 
 app.get("/api/media/video/chunk/:uploadId/status", requireAdminApi, async (req, res, next) => {
   try {
     const meta = await readVideoChunkMeta(req.params.uploadId);
-    const received = Array.from(new Set((meta.received || []).map(Number)))
-      .filter((item) => Number.isInteger(item) && item >= 0 && item < meta.totalChunks)
-      .sort((a, b) => a - b);
-    const receivedSet = new Set(received);
-    const missing = [];
-    for (let index = 0; index < meta.totalChunks; index += 1) {
-      if (!receivedSet.has(index)) missing.push(index);
+    const received = await scanVideoChunkParts(meta.uploadId, meta.totalChunks);
+    const missing = missingVideoChunks(received, meta.totalChunks);
+    if (JSON.stringify(meta.received || []) !== JSON.stringify(received)) {
+      meta.received = received;
+      meta.updatedAt = new Date().toISOString();
+      await writeVideoChunkMeta(meta);
     }
     res.json({
       ok: true,
@@ -3320,7 +3380,7 @@ app.post("/api/media/video/chunk/:uploadId", requireAdminApi, videoChunkUpload.s
     if (!Number.isInteger(index) || index < 0 || index >= meta.totalChunks) throw new Error("视频分片序号无效");
     const targetPath = videoChunkPartPath(meta.uploadId, index);
     await fs.rename(req.file.path, targetPath);
-    meta.received = Array.from(new Set([...(meta.received || []), index])).sort((a, b) => a - b);
+    meta.received = await scanVideoChunkParts(meta.uploadId, meta.totalChunks);
     meta.updatedAt = new Date().toISOString();
     await writeVideoChunkMeta(meta);
     res.json({ ok: true, uploadId: meta.uploadId, index, received: meta.received.length, totalChunks: meta.totalChunks });
@@ -3334,9 +3394,16 @@ app.post("/api/media/video/chunk/:uploadId/complete", requireAdminApi, async (re
   let assembledPath = "";
   try {
     const meta = await readVideoChunkMeta(req.params.uploadId);
-    for (let index = 0; index < meta.totalChunks; index += 1) {
-      await fs.access(videoChunkPartPath(meta.uploadId, index));
+    const received = await scanVideoChunkParts(meta.uploadId, meta.totalChunks);
+    const missing = missingVideoChunks(received, meta.totalChunks);
+    if (missing.length) {
+      const error = new Error(`视频分片缺失：${missing.slice(0, 20).join(", ")}${missing.length > 20 ? "..." : ""}`);
+      error.status = 400;
+      throw error;
     }
+    meta.received = received;
+    meta.updatedAt = new Date().toISOString();
+    await writeVideoChunkMeta(meta);
     assembledPath = path.join(tempVideoDir, `${meta.uploadId}-${safeFilename(meta.originalName, meta.mimeType)}`);
     await assembleVideoChunks(meta, assembledPath);
     const stats = await fs.stat(assembledPath);

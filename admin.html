@@ -583,8 +583,9 @@
     };
     let siteConfig = JSON.parse(JSON.stringify(defaultSiteConfig));
     currentLogoImage = siteConfig.logoImage || "";
+    const defaultFooterIntroText = "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。";
     const defaultFooterConfig = {
-      introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+      introText: defaultFooterIntroText,
       quickLinks: [
         { label: "首页", href: "/", icon: "home" },
         { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
@@ -597,7 +598,7 @@
         { label: "我要投稿", href: "admin-login.html" },
         { label: "商务合作", href: "mailto:business@example.com" },
         { label: "加入我们", href: "mailto:join@example.com" },
-        { label: "关于我们", href: "#about" }
+        { label: "关于我们", href: "/about.html" }
       ],
       topLinks: {
         app: { href: "app.html", action: "app-placeholder" },
@@ -1007,9 +1008,12 @@
       const label = String(link.label || fallback.label || "").trim();
       const fallbackHref = String(fallback.href || "").trim();
       const rawHref = String(link.href || fallbackHref || "#").trim() || "#";
+      const labelMatchesFallback = label === String(fallback.label || "").trim();
       return {
         label,
-        href: rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim() ? fallbackHref : rawHref,
+        href: rawHref === "#about" && fallbackHref === "#site-map" && labelMatchesFallback
+          ? fallbackHref
+          : rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && labelMatchesFallback ? fallbackHref : rawHref,
         icon: normalizeIconName(link.icon || fallback.icon || "", label),
         action: String(link.action || fallback.action || "").trim()
       };

@@ -152,7 +152,7 @@
     .footer-icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0 0 26px; }
     .footer-icons a { min-height: 78px; display: grid; place-items: center; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-weight: 900; }
     .footer-icons a:hover { color: var(--green); border-color: var(--green); }
-    .intro { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-size: 15px; line-height: 1.8; font-weight: 700; }
+    .intro { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--muted); font-size: 15px; line-height: 1.8; font-weight: 700; white-space: pre-line; }
     .footer-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin: 24px 0; color: #d8dedb; font-weight: 800; }
     :root.light .footer-links { color: #3d463f; }
     .social-row { display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; }
@@ -253,7 +253,8 @@
 
     <section class="footer-icons" id="footerQuickLinks"></section>
 
-    <section class="intro" id="site-map">
+    <span id="site-map"></span>
+    <section class="intro" id="about">
       51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。
     </section>
 
@@ -319,8 +320,9 @@
         { name: "专题", subtitle: "按主题整理的合集页面。" }
       ]
     };
+    const defaultFooterIntroText = "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。";
     const defaultFooterConfig = {
-      introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
+      introText: defaultFooterIntroText,
       quickLinks: [
         { label: "首页", href: "/", icon: "home" },
         { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
@@ -333,7 +335,7 @@
         { label: "我要投稿", href: "admin-login.html" },
         { label: "商务合作", href: "mailto:business@example.com" },
         { label: "加入我们", href: "mailto:join@example.com" },
-        { label: "关于我们", href: "#about" }
+        { label: "关于我们", href: "/about.html" }
       ],
       topLinks: {
         app: { href: "app.html", action: "app-placeholder" },
@@ -423,9 +425,12 @@
       const label = String(link.label || fallback.label || "").trim();
       const fallbackHref = String(fallback.href || "").trim();
       const rawHref = String(link.href || fallbackHref || "#").trim() || "#";
+      const labelMatchesFallback = label === String(fallback.label || "").trim();
       return {
         label,
-        href: rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim() ? fallbackHref : rawHref,
+        href: rawHref === "#about" && fallbackHref === "#site-map" && labelMatchesFallback
+          ? fallbackHref
+          : rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && labelMatchesFallback ? fallbackHref : rawHref,
         icon: normalizeIconName(link.icon || fallback.icon || "", label),
         action: String(link.action || fallback.action || "").trim()
       };
@@ -509,7 +514,7 @@
       document.querySelector(".brand").href = "/";
       document.querySelector("#brandMark").innerHTML = `<img src="/assets/logo.png" alt="${escapeHtml(siteName)}" width="180" height="80" loading="eager" decoding="async">`;
       const introText = String(footerConfig.introText || defaultFooterConfig.introText).replaceAll("{{siteName}}", siteName);
-      document.querySelector("#site-map").textContent = introText;
+      document.querySelector("#about").textContent = introText;
       document.querySelector("#footerQuickLinks").innerHTML = footerConfig.quickLinks.map((link) => `
         <a ${linkAttrs(link, "#")}>${iconMarkup(link.icon, link.label)}<span>${escapeHtml(link.label)}</span></a>
       `).join("");
