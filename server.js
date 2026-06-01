@@ -9,6 +9,7 @@ import pg from "pg";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import sharp from "sharp";
+import { pinyin } from "pinyin-pro";
 import { runMigrations } from "./scripts/db-migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3026,8 +3027,12 @@ app.get("/api/admin/posts", requireAdminApi, async (_req, res, next) => {
 app.get("/api/posts", async (_req, res, next) => {
   try {
     res.setHeader("Cache-Control", "no-store");
-    const posts = await readPosts();
-    res.json({ posts: publicPostsFrom(posts) });
+    const [posts, settings] = await Promise.all([readPosts(), readSiteSettings()]);
+    const publicPosts = publicPostsFrom(posts);
+    res.json({
+      posts: publicPosts,
+      topicSlugs: topicSlugMapForPosts(publicPosts, settings)
+    });
   } catch (error) {
     next(error);
   }
@@ -3800,10 +3805,96 @@ function detailUrl(req, post) {
   return `${origin || ""}${detailPath(post)}`;
 }
 
+const categorySlugOverrides = new Map(Object.entries({
+  "51春梦推荐": "recommended",
+  "撸管精选": "featured",
+  "每日大赛": "daily-contest",
+  "吃瓜爆料": "gossip",
+  "伦理禁忌": "taboo",
+  "校园激情": "campus",
+  "直播大秀": "live-show",
+  "色漫天堂": "anime",
+  "网红黑料": "influencer",
+  "看片娱乐": "entertainment",
+  "隐秘长尾": "long-tail",
+  "人妻熟女": "mature",
+  "国产探花": "tanhua",
+  "寸止挑战": "edging",
+  "世界杯": "world-cup"
+}));
+
+function asciiSlug(value = "", fallback = "topic") {
+  const slug = String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^0-9a-z]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96);
+  return slug || fallback;
+}
+
+function pinyinTopicSlug(value = "", fallback = "topic") {
+  const source = String(value || "").normalize("NFKC").replace(/^#+/, "").trim();
+  if (!source) return fallback;
+  if (!/[\u3400-\u9fff]/.test(source)) return asciiSlug(source, fallback);
+  const transliterated = pinyin(source, { toneType: "none", type: "array" }).join("-");
+  return asciiSlug(transliterated || source, fallback);
+}
+
+function topicSlug(value = "", { kind = "tag" } = {}) {
+  const cleanValue = kind === "category" ? String(value || "").trim() : cleanTopicTerm(value);
+  if (!cleanValue) return "";
+  if (kind === "category" && categorySlugOverrides.has(cleanValue)) return categorySlugOverrides.get(cleanValue);
+  return pinyinTopicSlug(cleanValue, kind === "category" ? "category" : "tag");
+}
+
+function topicSlugMapFor({ categories = [], tags = [] } = {}) {
+  const entries = {};
+  categories.forEach((category) => {
+    const name = String(category || "").trim();
+    const slug = topicSlug(name, { kind: "category" });
+    if (name && slug) entries[name] = slug;
+  });
+  tags.forEach((tag) => {
+    const name = cleanTopicTerm(tag);
+    const slug = topicSlug(name, { kind: "tag" });
+    if (name && slug) entries[name] = slug;
+  });
+  return entries;
+}
+
+function topicSlugMapForPosts(posts = [], settings = {}) {
+  return topicSlugMapFor({
+    categories: sitemapCategoryNames(settings),
+    tags: sitemapTagNames(posts)
+  });
+}
+
+function resolveCategorySlug(value = "", categories = []) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const decoded = raw;
+  const direct = categories.find((category) => category === decoded);
+  if (direct) return direct;
+  const lower = decoded.toLowerCase();
+  return categories.find((category) => topicSlug(category, { kind: "category" }) === lower) || decoded;
+}
+
+function resolveTagSlug(value = "", tags = []) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const clean = cleanTopicTerm(raw);
+  const direct = tags.find((tag) => topicTermKey(tag) === topicTermKey(clean));
+  if (direct) return direct;
+  const lower = raw.toLowerCase();
+  return tags.find((tag) => topicSlug(tag, { kind: "tag" }) === lower) || "";
+}
+
 function categoryPath(category = "") {
   const name = String(category || "").trim();
   if (!name || name === "首页") return "/";
-  return `/category/${encodeURIComponent(name)}`;
+  return `/category/${encodeURIComponent(topicSlug(name, { kind: "category" }) || asciiSlug(name, "category"))}`;
 }
 
 function categoryUrl(req, category = "") {
@@ -3874,7 +3965,7 @@ function topicTermKey(value = "") {
 
 function tagPath(tag = "") {
   const cleanTag = cleanTopicTerm(tag);
-  return cleanTag ? `/tag/${encodeURIComponent(cleanTag)}` : "/";
+  return cleanTag ? `/tag/${encodeURIComponent(topicSlug(cleanTag, { kind: "tag" }) || asciiSlug(cleanTag, "tag"))}` : "/";
 }
 
 function tagUrl(req, tag = "") {
@@ -4816,13 +4907,17 @@ async function renderIndexPage(req, res, next) {
     const perPage = publicListingPageSize;
     const posts = publicPostsFrom(rawPosts);
     const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
-    const requestedTag = cleanTopicTerm(req.params.tag || "");
+    const categoryNames = sitemapCategoryNames(settings);
+    const tagNames = sitemapTagNames(posts);
     const isTagPage = Object.prototype.hasOwnProperty.call(req.params, "tag");
+    const rawTagParam = String(req.params.tag || "").trim();
+    const requestedTag = isTagPage ? resolveTagSlug(rawTagParam, tagNames) : "";
     if (isTagPage && !requestedTag) {
       sendNotFoundPage(res);
       return;
     }
-    const requestedCategory = isTagPage ? "" : String(req.params.category || "").trim();
+    const rawCategoryParam = isTagPage ? "" : String(req.params.category || "").trim();
+    const requestedCategory = isTagPage ? "" : (rawCategoryParam ? resolveCategorySlug(rawCategoryParam, categoryNames) : "");
     const defaultCategory = defaultContentCategory(tabs);
     const activeCategory = isTagPage ? "首页" : (requestedCategory || defaultCategory);
     const pagerCategory = requestedCategory ? activeCategory : "首页";
@@ -4830,6 +4925,14 @@ async function renderIndexPage(req, res, next) {
     const currentPage = normalizePageNumber(req.params.page || 1);
     if (hasPageParam && currentPage <= 1) {
       res.redirect(301, isTagPage ? tagListingPath(requestedTag, 1) : listingPath(pagerCategory, 1));
+      return;
+    }
+    if (isTagPage && rawTagParam && rawTagParam !== topicSlug(requestedTag, { kind: "tag" })) {
+      res.redirect(301, tagListingPath(requestedTag, currentPage));
+      return;
+    }
+    if (!isTagPage && rawCategoryParam && rawCategoryParam !== topicSlug(activeCategory, { kind: "category" })) {
+      res.redirect(301, listingPath(activeCategory, currentPage));
       return;
     }
     const activeTab = tabs.find((tab) => tab.name === activeCategory) || null;
@@ -4873,6 +4976,7 @@ async function renderIndexPage(req, res, next) {
       siteConfig: settings.siteConfig,
       footer: settings.footer,
       ads: settings.ads,
+      topicSlugs: topicSlugMapFor({ categories: categoryNames, tags: tagNames }),
       activeCategory,
       activeTag: requestedTag,
       currentPage
@@ -4993,6 +5097,7 @@ async function renderDetailPage(req, res, next) {
       ads: settings.ads,
       adConfig: settings.adConfig,
       notice: settings.notice,
+      topicSlugs: topicSlugMapForPosts(posts, settings),
       media
     };
 

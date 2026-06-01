@@ -612,9 +612,22 @@
       if (term.length < 2 || /https?:|www\.|@/.test(term) || blockedTopicTermPattern.test(term)) return "";
       return term;
     }
+    let topicSlugs = ssrDetail.topicSlugs && typeof ssrDetail.topicSlugs === "object" ? { ...ssrDetail.topicSlugs } : {};
+    function mergeTopicSlugs(next = {}) {
+      if (!next || typeof next !== "object") return;
+      topicSlugs = { ...topicSlugs, ...next };
+    }
+    function asciiSlug(value = "", fallback = "topic") {
+      const slug = String(value || "").normalize("NFKC").toLowerCase().replace(/&/g, " and ").replace(/[^0-9a-z]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 96);
+      return slug || fallback;
+    }
+    function topicSlug(value = "") {
+      const key = cleanTopicTerm(value) || String(value || "").trim();
+      return topicSlugs[key] || asciiSlug(key, "topic");
+    }
     function tagHref(tag) {
       const cleanTag = cleanTopicTerm(tag);
-      return cleanTag ? `/tag/${encodeURIComponent(cleanTag)}` : "/";
+      return cleanTag ? `/tag/${encodeURIComponent(topicSlug(cleanTag))}` : "/";
     }
     function postTopicKeywords(post = {}, max = 6) {
       if (Array.isArray(post.topicKeywords) && post.topicKeywords.length) {
@@ -799,6 +812,7 @@
         const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
+        mergeTopicSlugs(data.topicSlugs);
         return Array.isArray(data.posts) ? data.posts : [];
       } catch (_error) {
         return null;

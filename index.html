@@ -747,9 +747,27 @@
     function topicTermKey(value = "") {
       return cleanTopicTerm(value).toLowerCase();
     }
+    let topicSlugs = ssrData.topicSlugs && typeof ssrData.topicSlugs === "object" ? { ...ssrData.topicSlugs } : {};
+    function mergeTopicSlugs(next = {}) {
+      if (!next || typeof next !== "object") return;
+      topicSlugs = { ...topicSlugs, ...next };
+    }
+    function asciiSlug(value = "", fallback = "topic") {
+      const slug = String(value || "").normalize("NFKC").toLowerCase().replace(/&/g, " and ").replace(/[^0-9a-z]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 96);
+      return slug || fallback;
+    }
+    function topicSlug(value = "") {
+      const key = cleanTopicTerm(value) || String(value || "").trim();
+      return topicSlugs[key] || asciiSlug(key, "topic");
+    }
+    function topicFromSlug(slug = "") {
+      const value = String(slug || "").trim().toLowerCase();
+      if (!value) return "";
+      return Object.entries(topicSlugs).find(([, topicSlugValue]) => String(topicSlugValue).toLowerCase() === value)?.[0] || "";
+    }
     function tagHref(tag) {
       const cleanTag = cleanTopicTerm(tag);
-      return cleanTag ? `/tag/${encodeURIComponent(cleanTag)}` : "/";
+      return cleanTag ? `/tag/${encodeURIComponent(topicSlug(cleanTag))}` : "/";
     }
     function tagPageHref(tag, page = 1) {
       const current = Math.max(1, Number.parseInt(String(page || "1"), 10) || 1);
@@ -786,7 +804,7 @@
       return (navTabs().find((tab) => tab.name && tab.name !== "首页") || { name: "首页" }).name;
     }
     function categoryHref(name) {
-      return !name || name === "首页" || name === defaultCategoryName() ? "/" : `/category/${encodeURIComponent(name)}`;
+      return !name || name === "首页" || name === defaultCategoryName() ? "/" : `/category/${encodeURIComponent(topicSlug(name))}`;
     }
     function pageHref(name, page = 1) {
       const current = Math.max(1, Number.parseInt(String(page || "1"), 10) || 1);
@@ -797,13 +815,23 @@
     function tagFromLocation() {
       const match = location.pathname.match(/^\/tag\/([^/]+)(?:\/page\/\d+)?\/?$/);
       if (!match) return "";
-      try { return cleanTopicTerm(decodeURIComponent(match[1])); } catch (_error) { return cleanTopicTerm(match[1]); }
+      try {
+        const decoded = decodeURIComponent(match[1]);
+        return cleanTopicTerm(topicFromSlug(decoded) || decoded);
+      } catch (_error) {
+        return cleanTopicTerm(topicFromSlug(match[1]) || match[1]);
+      }
     }
     function categoryFromLocation() {
       if (tagFromLocation()) return defaultCategoryName();
       const match = location.pathname.match(/^\/category\/([^/]+)(?:\/page\/\d+)?\/?$/);
       if (match) {
-        try { return decodeURIComponent(match[1]); } catch (_error) { return match[1]; }
+        try {
+          const decoded = decodeURIComponent(match[1]);
+          return topicFromSlug(decoded) || decoded;
+        } catch (_error) {
+          return topicFromSlug(match[1]) || match[1];
+        }
       }
       const hashTab = decodeURIComponent(location.hash.replace(/^#/, ""));
       return hashTab || defaultCategoryName();
@@ -879,6 +907,7 @@
         const response = await fetch(apiPath("/api/posts"), apiOptions({ cache: "no-store" }));
         if (!response.ok) return null;
         const data = await response.json();
+        mergeTopicSlugs(data.topicSlugs);
         return Array.isArray(data.posts) ? data.posts : [];
       } catch (_error) {
         return null;
