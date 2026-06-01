@@ -79,7 +79,7 @@
     .hidden { display: none; }
     .table, .settings, .ads { margin: 18px 24px; border: 1px solid #dbe4ef; border-radius: 8px; overflow: hidden; }
     .table-row { display: grid; grid-template-columns: 1fr 120px 140px 150px; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #eef2f7; align-items: center; }
-    .table-row.posts-row { grid-template-columns: 1fr 110px 110px 150px 260px; }
+    .table-row.posts-row { grid-template-columns: 1fr 110px 110px 150px 340px; }
     .table-row.header { color: #64748b; background: #f8fafc; font-weight: 900; }
     .settings { padding: 18px; display: grid; gap: 12px; max-width: 620px; }
     .settings.wide { max-width: 980px; }
@@ -166,6 +166,10 @@
     .picker { width: min(720px, 100%); max-height: 80vh; overflow: auto; padding: 18px; border: 1px solid #dbe4ef; border-radius: 10px; background: #fff; box-shadow: 0 24px 80px rgba(15,23,42,.25); }
     .picker-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
     .picker-head h2 { margin: 0; }
+    .comment-form { display: grid; gap: 10px; }
+    .comment-form textarea { min-height: 150px; padding: 14px; resize: vertical; }
+    .comment-target { color: #64748b; font-weight: 900; line-height: 1.5; }
+    .comment-actions { display: flex; justify-content: flex-end; gap: 10px; }
     .video-choice { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid #dbe4ef; border-radius: 8px; margin-top: 8px; }
     .video-picker-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
     .video-picker-page { min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; font-weight: 900; cursor: pointer; }
@@ -489,6 +493,27 @@
       <div id="videoPickerList"></div>
     </div>
   </div>
+  <div class="modal-layer" id="commentModal">
+    <div class="picker">
+      <div class="picker-head">
+        <h2>添加帖子评论</h2>
+        <button class="btn" id="closeCommentModal" type="button">关闭</button>
+      </div>
+      <div class="comment-form">
+        <div class="comment-target" id="commentPostTitle">选择帖子后添加评论</div>
+        <input class="field" id="commentNameInput" placeholder="评论昵称，例如：站长精选">
+        <select class="field" id="commentStatusInput">
+          <option value="approved">直接显示</option>
+          <option value="pending">进入待审核</option>
+        </select>
+        <textarea class="field" id="commentTextInput" placeholder="请输入评论内容"></textarea>
+        <div class="comment-actions">
+          <button class="btn" id="cancelPostComment" type="button">取消</button>
+          <button class="btn dark" id="savePostComment" type="button">保存评论</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="toast" id="toast">已保存</div>
   <script src="/config.js"></script>
   <script>
@@ -550,6 +575,7 @@
     let currentLogoImage = "";
     let pendingBodyInsertionRange = null;
     let editingAuthorIndex = null;
+    let activeCommentPostIndex = null;
     let mediaPollTimer = null;
     let webmasterPollTimer = null;
     const defaultAuthors = [
@@ -975,6 +1001,16 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "评论状态更新失败");
     }
+    async function createAdminCommentApi(comment) {
+      const response = await fetch(apiPath("/api/admin/comments"), apiOptions({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(comment)
+      }));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "评论创建失败");
+      return data.comment;
+    }
     async function deleteCommentApi(id) {
       const response = await fetch(apiPath(`/api/admin/comments/${encodeURIComponent(id)}`), apiOptions({ method: "DELETE" }));
       const data = await response.json().catch(() => ({}));
@@ -1099,6 +1135,28 @@
       const cleanUrl = String(url || "").trim();
       if (!cleanUrl || cleanUrl.startsWith("blob:") || cleanUrl.startsWith("data:")) return cleanUrl;
       return `${cleanUrl}${cleanUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+    }
+    function postIdForComment(post, index) {
+      return String(post?.id || `admin-${index}`);
+    }
+    function closeCommentModal() {
+      activeCommentPostIndex = null;
+      document.querySelector("#commentModal").classList.remove("active");
+    }
+    function openCommentModal(index) {
+      const post = storedPosts[index];
+      if (!post) return;
+      if (String(post.status || "已发布") === "已删除") {
+        toast("已删除帖子不能添加评论");
+        return;
+      }
+      activeCommentPostIndex = index;
+      document.querySelector("#commentPostTitle").textContent = `评论目标：${post.title || "未命名帖子"}`;
+      document.querySelector("#commentNameInput").value = siteConfig.commentLogoText || "站长";
+      document.querySelector("#commentStatusInput").value = "approved";
+      document.querySelector("#commentTextInput").value = "";
+      document.querySelector("#commentModal").classList.add("active");
+      setTimeout(() => document.querySelector("#commentTextInput").focus(), 0);
     }
     function categoryTabs() {
       const tabs = siteConfig.tabs && siteConfig.tabs.length ? siteConfig.tabs : defaultSiteConfig.tabs;
@@ -1491,7 +1549,10 @@
     }
     function postRows() {
       sortPinnedPostsFirstInPlace();
-      const rows = storedPosts.length ? storedPosts : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
+      if (!storedPosts.length) {
+        return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div><div class="table-row posts-row"><strong>暂无帖子</strong><span>-</span><span>-</span><span>-</span><span>-</span></div>`;
+      }
+      const rows = storedPosts;
       return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
         <div class="table-row posts-row">
           <strong>${escapeHtml(item.title)}${item.pinned ? `<br><em class="pin-label">置顶 · ${escapeHtml(postBadgeLabels[item.topBadge] || "角标")}</em>` : ""}</strong>
@@ -1499,6 +1560,7 @@
           <span>${escapeHtml(item.author)}</span>
           <span>${escapeHtml(item.date)}</span>
           <span class="mini-actions">
+            <button class="btn" data-add-comment="${index}">增加评论</button>
             <button class="btn" data-edit-post="${index}">编辑</button>
             <button class="btn" data-delete-post="${index}">删除</button>
             <button class="btn" data-move-post="${index}" data-dir="-1">上移</button>
@@ -2254,9 +2316,13 @@
       }
     });
     document.querySelector("#postsTable").addEventListener("click", (event) => {
+      const addComment = event.target.closest("[data-add-comment]");
       const edit = event.target.closest("[data-edit-post]");
       const del = event.target.closest("[data-delete-post]");
       const move = event.target.closest("[data-move-post]");
+      if (addComment) {
+        openCommentModal(Number(addComment.dataset.addComment));
+      }
       if (edit) {
         const index = Number(edit.dataset.editPost);
         const post = storedPosts[index];
@@ -2310,6 +2376,46 @@
         save("postwave_posts", storedPosts);
         renderTables();
         toast("帖子排序已更新");
+      }
+    });
+    document.querySelector("#closeCommentModal").addEventListener("click", closeCommentModal);
+    document.querySelector("#cancelPostComment").addEventListener("click", closeCommentModal);
+    document.querySelector("#commentModal").addEventListener("click", (event) => {
+      if (event.target.id === "commentModal") closeCommentModal();
+    });
+    document.querySelector("#savePostComment").addEventListener("click", async () => {
+      const post = storedPosts[activeCommentPostIndex];
+      const button = document.querySelector("#savePostComment");
+      const name = document.querySelector("#commentNameInput").value.trim();
+      const text = document.querySelector("#commentTextInput").value.trim();
+      const status = document.querySelector("#commentStatusInput").value;
+      if (!post) {
+        toast("请选择帖子");
+        return;
+      }
+      if (!name || !text) {
+        toast("请填写昵称和评论内容");
+        return;
+      }
+      try {
+        button.disabled = true;
+        button.textContent = "保存中";
+        await syncPostsToApi(storedPosts);
+        await createAdminCommentApi({
+          postId: postIdForComment(post, activeCommentPostIndex),
+          postTitle: post.title || "帖子",
+          name,
+          text,
+          status
+        });
+        closeCommentModal();
+        await loadCommentsFromApi();
+        toast(status === "approved" ? "评论已添加并显示到前台" : "评论已添加到待审核");
+      } catch (error) {
+        toast(error.message || "评论创建失败");
+      } finally {
+        button.disabled = false;
+        button.textContent = "保存评论";
       }
     });
     document.querySelector("#saveAuthorBtn").addEventListener("click", async () => {

@@ -1986,6 +1986,7 @@ function isSeoFilePath(pathname = "") {
     || pathname === "/sitemap-index.xml"
     || pathname === "/sitemap-pages.xml"
     || pathname === "/sitemap-categories.xml"
+    || pathname === "/sitemap-tags.xml"
     || /^\/sitemap-posts-\d+\.xml$/.test(pathname);
 }
 
@@ -2444,10 +2445,12 @@ function relativeCommentTime(value) {
 }
 
 async function createComment(input = {}) {
+  const requestedStatus = String(input.status || "pending").trim();
+  const status = ["pending", "approved"].includes(requestedStatus) ? requestedStatus : "pending";
   const comment = normalizeComment({
     ...input,
     id: crypto.randomUUID(),
-    status: "pending",
+    status,
     createdAt: new Date().toISOString(),
     time: "刚刚"
   });
@@ -3272,6 +3275,29 @@ app.get("/api/admin/comments", requireAdminApi, async (_req, res, next) => {
   }
 });
 
+app.post("/api/admin/comments", requireAdminApi, async (req, res, next) => {
+  try {
+    const postId = String(req.body?.postId || "").trim();
+    const posts = await readPosts();
+    const post = posts.find((item, index) => String(item.id || `admin-${index}`) === postId);
+    if (!post) {
+      res.status(404).json({ error: "帖子不存在" });
+      return;
+    }
+    const comment = await createComment({
+      postId,
+      postTitle: String(req.body?.postTitle || post.title || "帖子").trim(),
+      name: String(req.body?.name || "").trim(),
+      text: String(req.body?.text || "").trim(),
+      status: String(req.body?.status || "approved").trim(),
+      userId: String(req.admin?.account || req.admin?.id || "admin")
+    });
+    res.json({ ok: true, comment });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "评论创建失败" });
+  }
+});
+
 app.put("/api/admin/comments/:id", requireAdminApi, async (req, res, next) => {
   try {
     const status = String(req.body?.status || "approved");
@@ -3576,10 +3602,13 @@ function publicPostForHome(post = {}, index = 0) {
     ? post.categories
     : normalizeArray(post.category);
   const coverVariants = compactImageVariants(post.coverVariants || post.cover_variants || post.imageVariants || post.image_variants || {});
+  const id = String(post.id || post.clientId || post.client_id || `post-${index}`);
+  const title = post.title || "未命名帖子";
   return {
     ...post,
-    id: String(post.id || post.clientId || post.client_id || `post-${index}`),
-    title: post.title || "未命名帖子",
+    id,
+    title,
+    slug: numericPostSlug(id || title, String(index + 1).padStart(8, "0")),
     image: post.cover || post.cover_url || post.image || "",
     imageVariants: coverVariants,
     coverVariants,
@@ -3851,19 +3880,20 @@ function absolutePublicUrl(req, value = "") {
   return `${origin}/${url.replace(/^\.?\//, "")}`;
 }
 
-function urlSlug(value = "", fallback = "post") {
-  const slug = String(value || "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^0-9a-z\u3400-\u9fff]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 90);
-  return slug || fallback;
+function numericPostSlug(value = "", fallback = "10000000") {
+  const source = String(value || fallback || "post");
+  const hash = crypto.createHash("sha1").update(source).digest("hex");
+  const number = (parseInt(hash.slice(0, 12), 16) % 90000000) + 10000000;
+  return String(number);
+}
+
+function urlSlug(value = "", fallback = "10000000") {
+  return numericPostSlug(value, fallback);
 }
 
 function detailPath(post = {}) {
   const id = encodeURIComponent(post.id || "");
-  const slug = encodeURIComponent(urlSlug(post.title || post.id || "post"));
+  const slug = encodeURIComponent(post.slug || urlSlug(post.title || post.id || "post"));
   return `/v/${id}/${slug}`;
 }
 
@@ -4306,6 +4336,7 @@ function detailClientPost(post = {}, includeBody = false) {
   return {
     id: post.id,
     title: post.title,
+    slug: post.slug || numericPostSlug(post.id || post.title, "10000000"),
     cover: post.cover || post.image || "",
     coverVariants: compactImageVariants(post.coverVariants || post.imageVariants),
     imageVariants: compactImageVariants(post.imageVariants || post.coverVariants),
@@ -4328,6 +4359,7 @@ function homeClientPost(post = {}) {
   return {
     id: post.id,
     title: post.title,
+    slug: post.slug || numericPostSlug(post.id || post.title, "10000000"),
     image: post.image || post.cover || "",
     imageVariants: compactImageVariants(post.imageVariants || post.coverVariants),
     author: post.author || "alun",
@@ -4783,7 +4815,7 @@ async function renderRobotsTxt(req, res, next) {
       lines.push("Allow: /");
       if (!isRouteSelectorRequest(req)) {
         const origin = siteMapOriginForRequest(req);
-        if (origin) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap-index.xml`);
+        if (origin) lines.push(`Sitemap: ${normalizeOrigin(origin)}/sitemap.xml`);
       }
     }
     res.type("text/plain");
@@ -4828,18 +4860,9 @@ async function renderSitemapPagesXml(req, res, next) {
       return;
     }
 
-    const { origin, posts, settings } = await sitemapContext(req);
-    const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
-    const defaultCategory = defaultContentCategory(tabs);
-    const listingPosts = defaultCategory === "首页" ? posts : posts.filter((post) => postMatchesCategory(post, defaultCategory));
-    const totalPages = sitemapPageCount(listingPosts);
+    const { origin } = await sitemapContext(req);
     const entries = [
       { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
-      ...Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => ({
-        loc: `${origin}${pagePath(index + 2)}`,
-        changefreq: "hourly",
-        priority: "0.9"
-      })),
       { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
       ...compliancePagePaths.map((pagePath) => ({
         loc: `${origin}${pagePath}`,
@@ -4863,16 +4886,12 @@ async function renderSitemapCategoriesXml(req, res, next) {
       return;
     }
 
-    const { origin, posts, categories } = await sitemapContext(req);
-    const entries = categories.flatMap((category) => {
-      const categoryPosts = posts.filter((post) => postMatchesCategory(post, category));
-      const totalPages = sitemapPageCount(categoryPosts);
-      return Array.from({ length: totalPages }, (_, index) => ({
-        loc: `${origin}${listingPath(category, index + 1)}`,
-        changefreq: "daily",
-        priority: index === 0 ? "0.7" : "0.6"
-      }));
-    });
+    const { origin, categories } = await sitemapContext(req);
+    const entries = categories.map((category) => ({
+      loc: `${origin}${listingPath(category, 1)}`,
+      changefreq: "daily",
+      priority: "0.7"
+    }));
     res.send(sitemapUrlset(entries));
   } catch (error) {
     next(error);
@@ -4889,16 +4908,12 @@ async function renderSitemapTagsXml(req, res, next) {
       return;
     }
 
-    const { origin, posts, tags } = await sitemapContext(req);
-    const entries = tags.flatMap((tag) => {
-      const tagPosts = posts.filter((post) => postMatchesTag(post, tag));
-      const totalPages = sitemapPageCount(tagPosts);
-      return Array.from({ length: totalPages }, (_, index) => ({
-        loc: `${origin}${tagListingPath(tag, index + 1)}`,
-        changefreq: "daily",
-        priority: index === 0 ? "0.6" : "0.5"
-      }));
-    });
+    const { origin, tags } = await sitemapContext(req);
+    const entries = tags.map((tag) => ({
+      loc: `${origin}${tagListingPath(tag, 1)}`,
+      changefreq: "daily",
+      priority: "0.6"
+    }));
     res.send(sitemapUrlset(entries));
   } catch (error) {
     next(error);
@@ -4941,7 +4956,49 @@ async function renderSitemapPostsXml(req, res, next) {
 }
 
 async function renderSitemapXml(req, res, next) {
-  return renderSitemapIndexXml(req, res, next);
+  try {
+    res.type("application/xml");
+    res.setHeader("Cache-Control", "public, max-age=300");
+
+    if (sitemapUnavailable(req)) {
+      res.status(404).send(sitemapUrlset([]));
+      return;
+    }
+
+    const { origin, posts, categories, tags } = await sitemapContext(req);
+    const pageEntries = [
+      { loc: `${origin}/`, changefreq: "hourly", priority: "1.0" },
+      { loc: `${origin}/app.html`, changefreq: "weekly", priority: "0.4" },
+      ...compliancePagePaths.map((pagePath) => ({
+        loc: `${origin}${pagePath}`,
+        changefreq: "monthly",
+        priority: "0.3"
+      }))
+    ];
+    const categoryEntries = categories.map((category) => ({
+      loc: `${origin}${listingPath(category, 1)}`,
+      changefreq: "daily",
+      priority: "0.7"
+    }));
+    const tagEntries = tags.map((tag) => ({
+      loc: `${origin}${tagListingPath(tag, 1)}`,
+      changefreq: "daily",
+      priority: "0.6"
+    }));
+    const videoIds = uniqueList(posts.flatMap((post) => extractPostVideoIds(post)));
+    const mediaById = await mediaMapForVideoIds(videoIds);
+    const postEntries = posts.map((post) => ({
+      loc: `${origin}${detailPath(post)}`,
+      lastmod: parsePostDate(post.date),
+      changefreq: "daily",
+      priority: "0.8",
+      images: sitemapPostImages(req, post),
+      videos: sitemapPostVideos(req, post, mediaById)
+    }));
+    res.send(sitemapUrlset([...pageEntries, ...categoryEntries, ...tagEntries, ...postEntries]));
+  } catch (error) {
+    next(error);
+  }
 }
 
 function noindexHtml({ title = "内容不存在", heading = "内容不存在", message = "" } = {}) {
@@ -5144,7 +5201,7 @@ async function renderDetailPage(req, res, next) {
       return;
     }
 
-    if (req.params.id && String(req.params.slug || "") !== urlSlug(current.title || current.id || "post")) {
+    if (req.params.id && String(req.params.slug || "") !== (current.slug || numericPostSlug(current.id || current.title, "10000000"))) {
       res.redirect(301, detailUrl(req, current));
       return;
     }
@@ -5202,7 +5259,8 @@ app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {
 });
 
 app.get("/robots.txt", renderRobotsTxt);
-app.get(["/sitemap.xml", "/sitemap-index.xml"], renderSitemapXml);
+app.get("/sitemap.xml", renderSitemapXml);
+app.get("/sitemap-index.xml", renderSitemapIndexXml);
 app.get("/sitemap-pages.xml", renderSitemapPagesXml);
 app.get("/sitemap-categories.xml", renderSitemapCategoriesXml);
 app.get("/sitemap-tags.xml", renderSitemapTagsXml);

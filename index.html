@@ -3,6 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-7H28XP0KRW"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-7H28XP0KRW');
+  </script>
   <title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>
   <!--POSTWAVE_SEO_HEAD_START-->
   <meta name="description" content="51春梦聚合图文与视频内容，提供最新地址、频道导航和内容更新。">
@@ -730,17 +739,15 @@
     const pager = document.querySelector("#pager");
     const emptyState = document.querySelector("#emptyState");
     const searchInput = document.querySelector("#searchInput");
-    function urlSlug(value, fallback = "post") {
-      const slug = String(value || "")
-        .normalize("NFKC")
-        .toLowerCase()
-        .replace(/[^0-9a-z\u3400-\u9fff]+/gi, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 90);
-      return slug || fallback;
+    function numericPostSlug(value, fallback = "10000000") {
+      const source = String(value || fallback || "post");
+      let hash = 0;
+      for (let index = 0; index < source.length; index += 1) hash = ((hash * 31) + source.charCodeAt(index)) >>> 0;
+      return String((hash % 90000000) + 10000000);
     }
     function postUrl(post) {
-      return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(urlSlug(post.title || post.id || "post"))}`;
+      const fallbackSlug = numericPostSlug(post.id || post.title, "10000000");
+      return `/v/${encodeURIComponent(post.id || "")}/${encodeURIComponent(post.slug || fallbackSlug)}`;
     }
     const blockedTopicTermPattern = /(未成年|幼女|萝莉|小学生|中学生|学生妹|校园|初中|高中|强奸|迷奸|强制|非自愿|强迫|侵犯|侵害|骚扰|偷拍|偷录|盗摄|深伪|换脸|乱伦|亂倫)/i;
     const topicKeywordCatalog = ["吃瓜","今日吃瓜","热门吃瓜","娱乐吃瓜","明星吃瓜","网红吃瓜","情感吃瓜","恋爱吃瓜","婚恋吃瓜","社交吃瓜","朋友圈吃瓜","匿名吃瓜","投稿吃瓜","爆料吃瓜","热点爆料","八卦爆料","网络热点","全网热门吃瓜","最新吃瓜爆料","娱乐圈吃瓜合集","网红吃瓜事件","匿名吃瓜投稿","成人影视","成人视频","免费成人视频","日本AV","欧美视频","国产自拍","中文字幕AV","高清视频","4K视频","手机观看","在线观看","视频合集","图片合集","真实自拍","直播视频","制服主题","办公室主题","剧情视频"];
