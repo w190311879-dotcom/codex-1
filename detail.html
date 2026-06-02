@@ -135,6 +135,10 @@
     .ad-section { margin:28px 0; }
     .section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
     .section-head h2 { margin:0; color:var(--green); font-size:30px; letter-spacing:0; }
+    .video-nav-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
+    .video-nav-link { min-height:58px; display:grid; place-items:center; padding:10px; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--card); font-size:18px; font-weight:900; text-align:center; }
+    .video-nav-link:hover { color:#07110a; border-color:var(--green); background:var(--green); }
+    .announcement-card { min-height:92px; padding:22px; border:1px solid rgba(40,212,176,.48); border-radius:8px; color:var(--text); background:rgba(40,212,176,.08); font-size:20px; font-weight:800; line-height:1.8; white-space:pre-wrap; }
     .square-grid { display:grid; grid-template-columns:repeat(10, 1fr); gap:10px; }
     .square-ad { aspect-ratio:1; position:relative; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:var(--card); }
     .square-ad img,
@@ -210,6 +214,8 @@
       .article-head { padding:28px 0 24px; }
       .article-head h1 { font-size:clamp(28px, 8vw, 40px); }
       .meta { font-size:17px; }
+      .video-nav-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+      .video-nav-link { min-height:52px; font-size:16px; }
       .square-grid { grid-template-columns:repeat(5,1fr); }
       .guess-grid, .prev-next, .footer-icons { grid-template-columns:1fr; }
       .comment-row { flex-direction:column; align-items:stretch; }
@@ -270,8 +276,27 @@
     <section class="ad-stack" id="detailBannerAds"></section>
 
     <section class="ad-section"><div class="section-head"><h2>站长推荐</h2></div><div class="square-grid" id="stationAds"></div></section>
-    <section class="ad-section"><div class="section-head"><h2>最新上架</h2></div><div class="square-grid" id="latestAds"></div></section>
-    <section class="ad-section"><div class="section-head"><h2>瓜友推荐广告</h2></div><div class="square-grid" id="friendAds"></div></section>
+    <section class="ad-section">
+      <div class="section-head"><h2>视频导航</h2></div>
+      <nav class="video-nav-grid" id="videoNavLinks" aria-label="视频导航">
+        <a class="video-nav-link" href="/category/recommended">51春梦推荐</a>
+        <a class="video-nav-link" href="/category/featured">撸管精选</a>
+        <a class="video-nav-link" href="/category/gossip">吃瓜爆料</a>
+        <a class="video-nav-link" href="/category/taboo">伦理禁忌</a>
+        <a class="video-nav-link" href="/category/campus">校园激情</a>
+        <a class="video-nav-link" href="/category/live-show">直播大秀</a>
+        <a class="video-nav-link" href="/category/anime">色漫天堂</a>
+        <a class="video-nav-link" href="/category/influencer">网红黑料</a>
+        <a class="video-nav-link" href="/category/entertainment">看片娱乐</a>
+        <a class="video-nav-link" href="/category/mature">人妻熟女</a>
+        <a class="video-nav-link" href="/category/tanhua">国产探花</a>
+        <a class="video-nav-link" href="/category/edging">寸止挑战</a>
+      </nav>
+    </section>
+    <section class="ad-section">
+      <div class="section-head"><h2>官方公告</h2></div>
+      <div class="announcement-card" id="detailOfficialNotice"></div>
+    </section>
     <section class="ad-section">
       <div class="section-head"><h2>猜你喜欢</h2><button class="refresh" id="refreshGuess">换一换</button></div>
       <div class="guess-grid" id="guessGrid"></div>
@@ -901,8 +926,7 @@
       renderGlobalJsAds();
       await bannerAds();
       document.querySelector("#stationAds").innerHTML = await fillAds("station-square", Number(config.station) || 10);
-      document.querySelector("#latestAds").innerHTML = await fillAds("latest-square", Number(config.latest) || 10);
-      document.querySelector("#friendAds").innerHTML = await fillAds("friend-square", Number(config.friend) || 10);
+      document.querySelector("#detailOfficialNotice").textContent = notice;
     }
     function guess() {
       const shuffled = [...posts].sort(() => Math.random() - .5).slice(0, 4);
@@ -1094,6 +1118,7 @@
       renderContentFlow();
       document.querySelector("#tags").innerHTML = postTopicKeywords(current, 6).map((tag) => `<a class="tag" href="${escapeHtml(tagHref(tag))}" rel="tag">${escapeHtml(tag)}</a>`).join("");
       document.querySelector("#officialNotice").textContent = notice;
+      document.querySelector("#detailOfficialNotice").textContent = notice;
       const prev = index >= 0 && posts.length > 1 ? posts[(index - 1 + posts.length) % posts.length] : null;
       const next = index >= 0 && posts.length > 1 ? posts[(index + 1) % posts.length] : null;
       const prevEl = document.querySelector("#prevPost");

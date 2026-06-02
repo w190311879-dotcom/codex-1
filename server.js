@@ -5237,6 +5237,7 @@ async function renderDetailPage(req, res, next) {
       .replace('<div id="contentFlow"></div>', `<div id="contentFlow">${contentHtml}</div>`)
       .replace('<div class="tags" id="tags"></div>', ssrTags(current))
       .replace('<span id="officialNotice"></span>', `<span id="officialNotice">${htmlEscape(settings.notice || "")}</span>`)
+      .replace('<div class="announcement-card" id="detailOfficialNotice"></div>', `<div class="announcement-card" id="detailOfficialNotice">${htmlEscape(settings.notice || "")}</div>`)
       .replace('<nav class="prev-next"><a class="pn" id="prevPost">上一篇<span></span></a><a class="pn" id="nextPost">下一篇<span></span></a></nav>', ssrPrevNext(req, posts, index));
 
     res.type("html").send(rendered);
