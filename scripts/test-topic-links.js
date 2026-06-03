@@ -56,6 +56,18 @@ const fixturePosts = [
   }
 ];
 
+fixturePosts.push(...Array.from({ length: 40 }, (_, index) => ({
+  id: `long-tail-${index + 1}`,
+  title: `长尾标签测试 ${index + 1}`,
+  body: `这是 extra-tag-${index + 1} 的公开内容。`,
+  cover: `/uploads/long-tail-${index + 1}.jpg`,
+  category: "视频",
+  categories: ["视频"],
+  tags: [`extra-tag-${index + 1}`],
+  status: "已发布",
+  date: "2026/5/29 13:00:00"
+})));
+
 async function waitForServer(child) {
   const started = Date.now();
   while (Date.now() - started < 12000) {
@@ -107,13 +119,17 @@ try {
   const detail = await getText("/v/topic-1");
   assert.equal(detail.response.status, 200, "详情页应正常返回");
   assert.ok(detail.text.includes('rel="tag"'), "详情页应输出 tag 链接");
-  assert.ok(detail.text.includes("/tag/%E7%BD%91%E7%BA%A2%E5%90%83%E7%93%9C"), "详情页应链接主题相关关键词");
-  assert.ok(detail.text.includes("/tag/%E7%83%AD%E7%82%B9%E7%88%86%E6%96%99"), "详情页应链接爆料关键词");
+  assert.ok(detail.text.includes("/tag/wang-hong-chi-gua"), "详情页应链接主题相关关键词");
+  assert.ok(detail.text.includes("/tag/re-dian-bao-liao"), "详情页应链接爆料关键词");
 
-  const tagPage = await getText("/tag/%E7%BD%91%E7%BA%A2%E5%90%83%E7%93%9C");
+  const tagPage = await getText("/tag/wang-hong-chi-gua");
   assert.equal(tagPage.response.status, 200, "tag 列表页应正常返回");
   assert.ok(tagPage.text.includes("网红吃瓜事件后续"), "tag 页面应包含匹配的公开帖子");
   assert.ok(!tagPage.text.includes("草稿里的网红吃瓜"), "tag 页面不应包含草稿帖子");
+
+  const longTailTagPage = await getText("/tag/extra-tag-40");
+  assert.equal(longTailTagPage.response.status, 200, "未进入 sitemap 的长尾 tag 页面仍应可访问");
+  assert.ok(longTailTagPage.text.includes("长尾标签测试 40"), "长尾 tag 页面应展示匹配内容");
 
   const blockedTag = await getText("/tag/%E5%81%B7%E6%8B%8D");
   assert.equal(blockedTag.response.status, 404, "高风险 tag 页面不应公开");
@@ -130,7 +146,10 @@ try {
 
   const sitemapTags = await getText("/sitemap-tags.xml");
   assert.equal(sitemapTags.response.status, 200, "tag sitemap 应正常返回");
-  assert.ok(sitemapTags.text.includes("/tag/%E7%BD%91%E7%BA%A2%E5%90%83%E7%93%9C"), "tag sitemap 应包含主题 tag");
+  const sitemapTagCount = (sitemapTags.text.match(/<url>/g) || []).length;
+  assert.ok(sitemapTagCount <= 30, "tag sitemap 最多提交 30 个核心 tag");
+  assert.ok(sitemapTags.text.includes("/tag/wang-hong-chi-gua"), "tag sitemap 应包含主题 tag");
+  assert.ok(!sitemapTags.text.includes("/tag/extra-tag-40"), "tag sitemap 不应提交长尾 tag");
 
   console.log("Topic link tests passed");
 } catch (error) {

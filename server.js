@@ -3964,7 +3964,7 @@ function topicSlugMapFor({ categories = [], tags = [] } = {}) {
 function topicSlugMapForPosts(posts = [], settings = {}) {
   return topicSlugMapFor({
     categories: sitemapCategoryNames(settings),
-    tags: sitemapTagNames(posts)
+    tags: allTopicTagNames(posts)
   });
 }
 
@@ -4042,6 +4042,8 @@ const topicKeywordCatalog = [
   "办公室主题",
   "剧情视频"
 ];
+const sitemapTagLimit = 30;
+const topicSlugMapTagLimit = 500;
 
 function cleanTopicTerm(value = "") {
   const term = String(value || "")
@@ -4759,20 +4761,44 @@ function sitemapCategoryNames(settings = {}) {
     .filter((name) => name && name !== "首页");
 }
 
-function sitemapTagNames(posts = []) {
+function topicTagEntries(posts = []) {
   const counts = new Map();
+  const coreRanks = new Map(topicKeywordCatalog.map((tag, index) => [topicTermKey(tag), index]));
   posts.forEach((post) => {
     postTopicKeywords(post, { max: 6 }).forEach((tag) => {
       const key = topicTermKey(tag);
       if (!key) return;
       const current = counts.get(key);
-      counts.set(key, { tag, count: (current?.count || 0) + 1 });
+      counts.set(key, {
+        tag,
+        count: (current?.count || 0) + 1,
+        firstIndex: current?.firstIndex ?? counts.size,
+        coreRank: coreRanks.has(key) ? coreRanks.get(key) : Number.POSITIVE_INFINITY
+      });
     });
   });
-  return Array.from(counts.values())
-    .sort((a, b) => (b.count - a.count) || a.tag.localeCompare(b.tag, "zh-CN"))
-    .slice(0, 200)
+  return Array.from(counts.values()).sort((a, b) => {
+    const aCore = Number.isFinite(a.coreRank);
+    const bCore = Number.isFinite(b.coreRank);
+    if (aCore !== bCore) return aCore ? -1 : 1;
+    if (aCore && a.coreRank !== b.coreRank) return a.coreRank - b.coreRank;
+    return (b.count - a.count) || (a.firstIndex - b.firstIndex) || a.tag.localeCompare(b.tag, "zh-CN");
+  });
+}
+
+function topicTagNames(posts = [], { limit = topicSlugMapTagLimit, minCount = 1 } = {}) {
+  return topicTagEntries(posts)
+    .filter((item) => item.count >= minCount)
+    .slice(0, Math.max(0, Number(limit) || 0))
     .map((item) => item.tag);
+}
+
+function allTopicTagNames(posts = []) {
+  return topicTagNames(posts, { limit: topicSlugMapTagLimit, minCount: 1 });
+}
+
+function sitemapTagNames(posts = []) {
+  return topicTagNames(posts, { limit: sitemapTagLimit, minCount: 1 });
 }
 
 function postMatchesCategory(post = {}, category = "") {
@@ -5032,7 +5058,7 @@ async function renderIndexPage(req, res, next) {
     const posts = publicPostsFrom(rawPosts);
     const tabs = settings.siteConfig?.tabs?.length ? settings.siteConfig.tabs : defaultSiteSettings.siteConfig.tabs;
     const categoryNames = sitemapCategoryNames(settings);
-    const tagNames = sitemapTagNames(posts);
+    const tagNames = allTopicTagNames(posts);
     const isTagPage = Object.prototype.hasOwnProperty.call(req.params, "tag");
     const rawTagParam = String(req.params.tag || "").trim();
     const requestedTag = isTagPage ? resolveTagSlug(rawTagParam, tagNames) : "";
