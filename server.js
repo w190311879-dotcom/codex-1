@@ -5119,6 +5119,12 @@ async function renderIndexPage(req, res, next) {
   }
 }
 
+function redirectIndexHtml(req, res) {
+  const queryIndex = String(req.originalUrl || "").indexOf("?");
+  const query = queryIndex >= 0 ? String(req.originalUrl || "").slice(queryIndex) : "";
+  res.redirect(301, `/${query}`);
+}
+
 async function renderRouteSelectPage(req, res, next) {
   try {
     const [settings, html] = await Promise.all([
@@ -5267,7 +5273,8 @@ app.get("/sitemap-categories.xml", renderSitemapCategoriesXml);
 app.get("/sitemap-tags.xml", renderSitemapTagsXml);
 app.get(/^\/sitemap-posts-(\d+)\.xml$/, renderSitemapPostsXml);
 app.get("/route-select.html", renderRouteSelectPage);
-app.get(["/", "/index.html"], renderIndexPage);
+app.get("/", renderIndexPage);
+app.get("/index.html", redirectIndexHtml);
 app.get("/page/:page", renderIndexPage);
 app.get("/category/:category/page/:page", renderIndexPage);
 app.get("/category/:category", renderIndexPage);
