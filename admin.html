@@ -230,8 +230,64 @@
       .workspace { flex-direction: column; overflow: visible; padding: 14px 12px; }
       .left-form, .editor { width: 100%; flex-basis: auto; }
       .editor textarea { min-height: 240px; padding: 22px 18px; font-size: 16px; }
+      #postsView .table { margin: 12px; border: 0; border-radius: 0; overflow: visible; display: grid; gap: 10px; }
+      #postsTable .table-row.header.posts-row { display: none; }
+      #postsTable .table-row.posts-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 9px;
+        padding: 12px;
+        border: 1px solid #dbe4ef;
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: 0 1px 4px rgba(15, 23, 42, .06);
+      }
+      #postsTable .table-row.posts-row > strong {
+        min-width: 0;
+        color: #0f172a;
+        font-size: 16px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      #postsTable .table-row.posts-row > span[data-label] {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: 0;
+        color: #334155;
+        font-size: 14px;
+        font-weight: 800;
+      }
+      #postsTable .table-row.posts-row > span[data-label]::before {
+        content: attr(data-label);
+        flex: 0 0 auto;
+        color: #64748b;
+        font-size: 13px;
+        font-weight: 900;
+      }
+      #postsTable .table-row.posts-row .mini-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding-top: 4px;
+      }
+      #postsTable .table-row.posts-row .mini-actions .btn {
+        width: 100%;
+        height: 38px;
+        min-width: 0;
+        padding: 0 8px;
+        white-space: nowrap;
+      }
       .author-editor { grid-template-columns: 1fr; }
       .webmaster-cards, .webmaster-grid { grid-template-columns: 1fr; }
+      body.admin-dark #postsTable .table-row.posts-row {
+        border-color: #253044;
+        background: #111827;
+        box-shadow: none;
+      }
+      body.admin-dark #postsTable .table-row.posts-row > strong,
+      body.admin-dark #postsTable .table-row.posts-row > span[data-label] { color: #e5e7eb; }
     }
   </style>
 </head>
@@ -1625,15 +1681,15 @@
     function postRows() {
       sortPinnedPostsFirstInPlace();
       if (!storedPosts.length) {
-        return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div><div class="table-row posts-row"><strong>暂无帖子</strong><span>-</span><span>-</span><span>-</span><span>-</span></div>`;
+        return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div><div class="table-row posts-row"><strong>暂无帖子</strong><span data-label="状态">-</span><span data-label="作者">-</span><span data-label="时间">-</span><span class="mini-actions">-</span></div>`;
       }
       const rows = storedPosts;
       return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
         <div class="table-row posts-row">
           <strong>${escapeHtml(item.title)}${item.pinned ? `<br><em class="pin-label">置顶 · ${escapeHtml(postBadgeLabels[item.topBadge] || "角标")}</em>` : ""}</strong>
-          <span>${escapeHtml(item.status)}</span>
-          <span>${escapeHtml(item.author)}</span>
-          <span>${escapeHtml(item.date)}</span>
+          <span data-label="状态">${escapeHtml(item.status)}</span>
+          <span data-label="作者">${escapeHtml(item.author)}</span>
+          <span data-label="时间">${escapeHtml(item.date)}</span>
           <span class="mini-actions">
             <button class="btn" data-add-comment="${index}">增加评论</button>
             <button class="btn" data-edit-post="${index}">编辑</button>
