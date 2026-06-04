@@ -78,9 +78,17 @@
     .pin-label { display: inline-flex; margin-top: 6px; padding: 3px 8px; border-radius: 999px; color: #0f172a; background: #fde68a; font-size: 12px; font-style: normal; font-weight: 900; }
     .hidden { display: none; }
     .table, .settings, .ads { margin: 18px 24px; border: 1px solid #dbe4ef; border-radius: 8px; overflow: hidden; }
+    .post-sort-toolbar { margin: 18px 24px 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid #dbe4ef; border-radius: 8px; background: #f8fafc; }
+    .post-sort-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .post-sort-note { color: #64748b; font-weight: 900; line-height: 1.5; }
     .table-row { display: grid; grid-template-columns: 1fr 120px 140px 150px; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #eef2f7; align-items: center; }
-    .table-row.posts-row { grid-template-columns: 1fr 110px 110px 150px 340px; }
+    .table-row.posts-row { grid-template-columns: 1fr 110px 110px 150px 360px; }
+    .table-row.posts-row.sorting { grid-template-columns: 48px 1fr 110px 110px 150px 170px; cursor: grab; }
+    .table-row.posts-row.sorting.post-sort-dragging { opacity: .62; cursor: grabbing; }
     .table-row.header { color: #64748b; background: #f8fafc; font-weight: 900; }
+    .drag-handle { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid #cbd5e1; border-radius: 8px; color: #475569; background: #fff; cursor: grab; touch-action: none; }
+    .drag-handle:active { cursor: grabbing; }
+    body.post-sort-active-drag { user-select: none; touch-action: none; }
     .settings { padding: 18px; display: grid; gap: 12px; max-width: 620px; }
     .settings.wide { max-width: 980px; }
     .ads { padding: 18px; display: grid; gap: 14px; max-width: 980px; }
@@ -133,6 +141,8 @@
     .media-row small { display: block; margin-top: 4px; color: #64748b; font-size: 12px; font-weight: 800; line-height: 1.45; }
     body.admin-dark .media-controls { border-color: #253044; background: #111827; }
     body.admin-dark .media-filter, body.admin-dark .media-page-btn { color: #e5e7eb; border-color: #334155; background: #0f172a; }
+    body.admin-dark .post-sort-toolbar { border-color: #253044; background: #111827; }
+    body.admin-dark .drag-handle { color: #e5e7eb; border-color: #334155; background: #0f172a; }
     .webmaster-panel { margin: 18px 24px; display: grid; gap: 14px; }
     .webmaster-cards { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 12px; }
     .metric-card { min-height: 112px; display: grid; align-content: space-between; gap: 8px; padding: 16px; border: 1px solid #dbe4ef; border-radius: 8px; background: #fff; }
@@ -230,6 +240,9 @@
       .workspace { flex-direction: column; overflow: visible; padding: 14px 12px; }
       .left-form, .editor { width: 100%; flex-basis: auto; }
       .editor textarea { min-height: 240px; padding: 22px 18px; font-size: 16px; }
+      #postsView .post-sort-toolbar { margin: 12px; align-items: stretch; }
+      #postsView .post-sort-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+      #postsView .post-sort-actions .btn { width: 100%; min-width: 0; padding: 0 10px; }
       #postsView .table { margin: 12px; border: 0; border-radius: 0; overflow: visible; display: grid; gap: 10px; }
       #postsTable .table-row.header.posts-row { display: none; }
       #postsTable .table-row.posts-row {
@@ -241,6 +254,11 @@
         border-radius: 10px;
         background: #fff;
         box-shadow: 0 1px 4px rgba(15, 23, 42, .06);
+      }
+      #postsTable .table-row.posts-row.sorting { cursor: default; }
+      #postsTable .table-row.posts-row.sorting .drag-handle {
+        width: 100%;
+        justify-self: stretch;
       }
       #postsTable .table-row.posts-row > strong {
         min-width: 0;
@@ -381,7 +399,7 @@
         </div>
       </section>
 
-      <section class="view hidden" id="postsView"><div class="table" id="postsTable"></div></section>
+      <section class="view hidden" id="postsView"><div class="post-sort-toolbar" id="postSortToolbar"></div><div class="table" id="postsTable"></div></section>
       <section class="view hidden" id="draftsView"><div class="table" id="draftsTable"></div></section>
       <section class="view hidden" id="videosView">
         <div class="settings">
@@ -659,6 +677,9 @@
     }
     let storedPosts = JSON.parse(localStorage.getItem("postwave_posts") || "[]");
     const storedDrafts = JSON.parse(localStorage.getItem("postwave_drafts") || "[]");
+    let postSortMode = false;
+    let postSortDraft = [];
+    let draggingPostIndex = null;
     let mediaLibrary = [];
     const MEDIA_PAGE_SIZE = 20;
     let mediaFilter = "all";
@@ -1678,12 +1699,52 @@
       const rows = items.length ? items : [{ title: "内容展示站第一版上线检查清单", status: "已发布", date: "2026/5/13 17:12:54", author: "alun" }];
       return `<div class="table-row header"><span>标题</span><span>状态</span><span>作者</span><span>时间</span></div>` + rows.map((item) => `<div class="table-row"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.status)}</span><span>${escapeHtml(item.author)}</span><span>${escapeHtml(item.date)}</span></div>`).join("");
     }
+    function renderPostSortToolbar() {
+      const toolbar = document.querySelector("#postSortToolbar");
+      if (!toolbar) return;
+      if (!storedPosts.length) {
+        toolbar.innerHTML = `<span class="post-sort-note">暂无帖子可排序</span>`;
+        return;
+      }
+      if (!postSortMode) {
+        toolbar.innerHTML = `
+          <span class="post-sort-note">当前按置顶优先和保存顺序展示。大量调整时建议进入排序模式。</span>
+          <span class="post-sort-actions"><button class="btn dark" id="enterPostSortMode" type="button">进入排序模式</button></span>
+        `;
+        return;
+      }
+      toolbar.innerHTML = `
+        <span class="post-sort-note">拖动手柄调整顺序，也可用置顶/置底。点保存前不会影响前台排序。</span>
+        <span class="post-sort-actions">
+          <button class="btn dark" id="savePostSort" type="button">保存排序</button>
+          <button class="btn" id="cancelPostSort" type="button">取消</button>
+        </span>
+      `;
+    }
+    function postRowsSource() {
+      return postSortMode ? postSortDraft : storedPosts;
+    }
     function postRows() {
-      sortPinnedPostsFirstInPlace();
+      if (!postSortMode) sortPinnedPostsFirstInPlace();
       if (!storedPosts.length) {
         return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div><div class="table-row posts-row"><strong>暂无帖子</strong><span data-label="状态">-</span><span data-label="作者">-</span><span data-label="时间">-</span><span class="mini-actions">-</span></div>`;
       }
-      const rows = storedPosts;
+      const rows = postRowsSource();
+      if (postSortMode) {
+        return `<div class="table-row header posts-row sorting"><span></span><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>排序</span></div>` + rows.map((item, index) => `
+          <div class="table-row posts-row sorting ${draggingPostIndex === index ? "post-sort-dragging" : ""}" data-sort-index="${index}">
+            <button class="drag-handle" data-sort-handle="${index}" type="button" title="拖动排序"><i data-lucide="grip-vertical"></i></button>
+            <strong>${escapeHtml(item.title)}${item.pinned ? `<br><em class="pin-label">置顶 · ${escapeHtml(postBadgeLabels[item.topBadge] || "角标")}</em>` : ""}</strong>
+            <span data-label="状态">${escapeHtml(item.status)}</span>
+            <span data-label="作者">${escapeHtml(item.author)}</span>
+            <span data-label="时间">${escapeHtml(item.date)}</span>
+            <span class="mini-actions">
+              <button class="btn" data-sort-top="${index}" type="button">置顶</button>
+              <button class="btn" data-sort-bottom="${index}" type="button">置底</button>
+            </span>
+          </div>
+        `).join("");
+      }
       return `<div class="table-row header posts-row"><span>标题</span><span>状态</span><span>作者</span><span>时间</span><span>操作</span></div>` + rows.map((item, index) => `
         <div class="table-row posts-row">
           <strong>${escapeHtml(item.title)}${item.pinned ? `<br><em class="pin-label">置顶 · ${escapeHtml(postBadgeLabels[item.topBadge] || "角标")}</em>` : ""}</strong>
@@ -1694,8 +1755,8 @@
             <button class="btn" data-add-comment="${index}">增加评论</button>
             <button class="btn" data-edit-post="${index}">编辑</button>
             <button class="btn" data-delete-post="${index}">删除</button>
-            <button class="btn" data-move-post="${index}" data-dir="-1">上移</button>
-            <button class="btn" data-move-post="${index}" data-dir="1">下移</button>
+            <button class="btn" data-quick-top="${index}">置顶</button>
+            <button class="btn" data-quick-bottom="${index}">置底</button>
           </span>
         </div>
       `).join("");
@@ -1909,6 +1970,7 @@
       webmasterPollTimer = setInterval(loadWebmasterStats, 15000);
     }
     function renderTables() {
+      renderPostSortToolbar();
       document.querySelector("#postsTable").innerHTML = postRows();
       document.querySelector("#draftsTable").innerHTML = tableRows(storedDrafts);
       renderMediaTable();
@@ -1916,6 +1978,7 @@
       renderAuthorsTable();
       renderCommentsTable();
       renderAds();
+      window.lucide?.createIcons?.();
     }
     function renderAuthorsTable() {
       document.querySelector("#authorsTable").innerHTML = `<div class="table-row header posts-row"><span>作者名</span><span>账号</span><span>密码</span><span>状态</span><span>操作</span></div>` + (authors.length ? authors.map((author, index) => `
@@ -2024,6 +2087,74 @@
       });
       save("postwave_posts", storedPosts);
       save("postwave_ads", ads);
+    }
+    function enterPostSortMode() {
+      sortPinnedPostsFirstInPlace();
+      postSortDraft = storedPosts.slice();
+      postSortMode = true;
+      draggingPostIndex = null;
+      renderTables();
+      toast("已进入排序模式，拖动手柄调整顺序");
+    }
+    function cancelPostSortMode() {
+      postSortMode = false;
+      postSortDraft = [];
+      draggingPostIndex = null;
+      document.body.classList.remove("post-sort-active-drag");
+      renderTables();
+      toast("已取消排序");
+    }
+    function savePostSortMode() {
+      if (!postSortMode) return;
+      storedPosts.splice(0, storedPosts.length, ...postSortDraft);
+      sortPinnedPostsFirstInPlace();
+      postSortMode = false;
+      postSortDraft = [];
+      draggingPostIndex = null;
+      document.body.classList.remove("post-sort-active-drag");
+      save("postwave_posts", storedPosts);
+      renderTables();
+      toast("帖子排序已保存");
+    }
+    function movePostInArray(list, from, to) {
+      if (!Array.isArray(list)) return;
+      if (from < 0 || from >= list.length || to < 0 || to >= list.length || from === to) return;
+      const [item] = list.splice(from, 1);
+      list.splice(to, 0, item);
+    }
+    function movePostToEdge(list, index, edge) {
+      if (!Array.isArray(list) || index < 0 || index >= list.length) return false;
+      movePostInArray(list, index, edge === "bottom" ? list.length - 1 : 0);
+      return true;
+    }
+    function handleQuickPostMove(index, edge) {
+      if (!movePostToEdge(storedPosts, index, edge)) return;
+      sortPinnedPostsFirstInPlace();
+      save("postwave_posts", storedPosts);
+      renderTables();
+      toast(edge === "bottom" ? "帖子已移到底部" : "帖子已移到顶部");
+    }
+    function handleDraftPostMove(index, edge) {
+      if (!movePostToEdge(postSortDraft, index, edge)) return;
+      draggingPostIndex = null;
+      renderTables();
+      toast(edge === "bottom" ? "已移到排序草稿底部" : "已移到排序草稿顶部");
+    }
+    function endPostDrag() {
+      if (draggingPostIndex === null) return;
+      draggingPostIndex = null;
+      document.body.classList.remove("post-sort-active-drag");
+      renderTables();
+    }
+    function dragPostToPoint(clientX, clientY) {
+      if (!postSortMode || draggingPostIndex === null) return;
+      const target = document.elementFromPoint(clientX, clientY)?.closest?.("[data-sort-index]");
+      if (!target) return;
+      const targetIndex = Number(target.dataset.sortIndex);
+      if (!Number.isInteger(targetIndex) || targetIndex === draggingPostIndex) return;
+      movePostInArray(postSortDraft, draggingPostIndex, targetIndex);
+      draggingPostIndex = targetIndex;
+      renderTables();
     }
     async function renderHomeFeedOrder() {
       const list = document.querySelector("#feedOrderList");
@@ -2412,6 +2543,11 @@
       renderAds();
       toast("首页内容流排序已更新");
     });
+    document.querySelector("#postSortToolbar").addEventListener("click", (event) => {
+      if (event.target.closest("#enterPostSortMode")) enterPostSortMode();
+      if (event.target.closest("#savePostSort")) savePostSortMode();
+      if (event.target.closest("#cancelPostSort")) cancelPostSortMode();
+    });
     document.querySelector("#mediaFilterGroup").addEventListener("click", (event) => {
       const button = event.target.closest("[data-media-filter]");
       if (!button) return;
@@ -2446,11 +2582,44 @@
         toast(error.message || "媒体删除失败");
       }
     });
+    document.querySelector("#postsTable").addEventListener("pointerdown", (event) => {
+      const handle = event.target.closest("[data-sort-handle]");
+      if (!handle || !postSortMode) return;
+      event.preventDefault();
+      draggingPostIndex = Number(handle.dataset.sortHandle);
+      document.body.classList.add("post-sort-active-drag");
+      renderTables();
+    });
+    document.addEventListener("pointermove", (event) => {
+      dragPostToPoint(event.clientX, event.clientY);
+    });
+    document.addEventListener("pointerup", endPostDrag);
+    document.addEventListener("pointercancel", endPostDrag);
     document.querySelector("#postsTable").addEventListener("click", (event) => {
       const addComment = event.target.closest("[data-add-comment]");
       const edit = event.target.closest("[data-edit-post]");
       const del = event.target.closest("[data-delete-post]");
       const move = event.target.closest("[data-move-post]");
+      const quickTop = event.target.closest("[data-quick-top]");
+      const quickBottom = event.target.closest("[data-quick-bottom]");
+      const sortTop = event.target.closest("[data-sort-top]");
+      const sortBottom = event.target.closest("[data-sort-bottom]");
+      if (sortTop) {
+        handleDraftPostMove(Number(sortTop.dataset.sortTop), "top");
+        return;
+      }
+      if (sortBottom) {
+        handleDraftPostMove(Number(sortBottom.dataset.sortBottom), "bottom");
+        return;
+      }
+      if (quickTop) {
+        handleQuickPostMove(Number(quickTop.dataset.quickTop), "top");
+        return;
+      }
+      if (quickBottom) {
+        handleQuickPostMove(Number(quickBottom.dataset.quickBottom), "bottom");
+        return;
+      }
       if (addComment) {
         openCommentModal(Number(addComment.dataset.addComment));
       }
