@@ -8,6 +8,8 @@
     "dev": "node server.js",
     "db:migrate": "node scripts/db-migrate.js",
     "db:backup": "node scripts/db-backup.js",
+    "gsc:auth": "node scripts/gsc-auth.js",
+    "gsc:sync": "node scripts/gsc-sync.js",
     "images:variants": "node scripts/generate-image-variants.js",
     "test:bot-api": "node scripts/test-bot-api.js",
     "test:topic-links": "node scripts/test-topic-links.js"
