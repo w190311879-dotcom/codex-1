@@ -180,8 +180,59 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .sidebar-collapsed .app { grid-template-columns: 0 1fr; }
     .sidebar-collapsed .sidebar { display: none; }
+    .sidebar-backdrop { display: none; }
     @media (max-width: 1280px) { .left-form { flex-basis: 360px; width: 360px; } .editor { width: calc(100% - 374px); } }
-    @media (max-width: 1100px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } .workspace { flex-direction: column; overflow: visible; } .left-form, .editor { width: 100%; flex-basis: auto; } .author-editor { grid-template-columns: 1fr; } .webmaster-cards, .webmaster-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1100px) {
+      body { overflow-x: hidden; }
+      body.sidebar-open { overflow: hidden; }
+      .app, .sidebar-collapsed .app { grid-template-columns: 1fr; }
+      .sidebar,
+      .sidebar-collapsed .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 40;
+        display: flex;
+        width: min(82vw, 286px);
+        max-width: 100%;
+        padding: 18px 12px calc(18px + env(safe-area-inset-bottom));
+        overflow-y: auto;
+        transform: translateX(-104%);
+        transition: transform .22s ease;
+        box-shadow: 18px 0 48px rgba(15, 23, 42, .22);
+      }
+      body.sidebar-open .sidebar { transform: translateX(0); }
+      .sidebar-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        display: block;
+        padding: 0;
+        border: 0;
+        background: rgba(15, 23, 42, .46);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .18s ease;
+      }
+      body.sidebar-open .sidebar-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .main { width: 100%; min-width: 0; }
+      .top { height: auto; min-height: 62px; gap: 10px; padding: 10px 12px; }
+      .top-left { flex: 1 1 auto; min-width: 0; gap: 10px; }
+      .admin-search { flex: 1 1 auto; width: auto; min-width: 0; }
+      .admin-search span { display: none; }
+      .top-actions { flex: 0 0 auto; gap: 8px; }
+      .top-actions a:not(.avatar), .top-actions .top-icon { width: 34px; height: 34px; display: grid; place-items: center; }
+      .tabbar { height: auto; min-height: 56px; padding: 10px 12px; }
+      .page-title { height: auto; min-height: 62px; padding: 12px; gap: 12px; }
+      h1 { font-size: 26px; }
+      .workspace { flex-direction: column; overflow: visible; padding: 14px 12px; }
+      .left-form, .editor { width: 100%; flex-basis: auto; }
+      .editor textarea { min-height: 240px; padding: 22px 18px; font-size: 16px; }
+      .author-editor { grid-template-columns: 1fr; }
+      .webmaster-cards, .webmaster-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -210,6 +261,7 @@
       </nav>
       <div class="user"><span class="avatar"></span><span><strong id="currentAdminName">alun</strong><br><small>作者账号</small></span><i data-lucide="chevrons-up-down"></i></div>
     </aside>
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="关闭侧边栏"></button>
 
     <main class="main">
       <header class="top">
@@ -1241,18 +1293,41 @@
       if (name === "webmaster") startWebmasterPolling();
       else clearInterval(webmasterPollTimer);
     }
+    const mobileSidebarMedia = window.matchMedia("(max-width: 1100px)");
+    function isMobileSidebar() {
+      return mobileSidebarMedia.matches;
+    }
+    function closeMobileSidebar() {
+      document.body.classList.remove("sidebar-open");
+    }
+    function toggleMobileSidebar() {
+      document.body.classList.toggle("sidebar-open");
+      toast(document.body.classList.contains("sidebar-open") ? "侧边栏已展开" : "侧边栏已收起");
+    }
     document.querySelectorAll(".side-link").forEach((link) => {
       link.addEventListener("click", (event) => {
         event.preventDefault();
         document.querySelectorAll(".side-link").forEach((item) => item.classList.remove("active"));
         link.classList.add("active");
         switchView(link.dataset.view, link.textContent.trim());
+        if (isMobileSidebar()) closeMobileSidebar();
       });
     });
 
     document.querySelector("#sidebarToggle").addEventListener("click", () => {
+      if (isMobileSidebar()) {
+        toggleMobileSidebar();
+        return;
+      }
       document.body.classList.toggle("sidebar-collapsed");
       toast(document.body.classList.contains("sidebar-collapsed") ? "侧边栏已折叠" : "侧边栏已展开");
+    });
+    document.querySelector("#sidebarBackdrop").addEventListener("click", closeMobileSidebar);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeMobileSidebar();
+    });
+    mobileSidebarMedia.addEventListener("change", (event) => {
+      if (!event.matches) closeMobileSidebar();
     });
     document.querySelector("#celebrateBtn").addEventListener("click", () => toast("今天也很适合发布内容"));
     document.querySelector("#fullScreenBtn").addEventListener("click", () => {
