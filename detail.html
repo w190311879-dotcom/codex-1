@@ -409,6 +409,7 @@
       normalizeOrigin(appConfig.mediaBaseUrl),
       ...(Array.isArray(appConfig.mediaFallbackOrigins) ? appConfig.mediaFallbackOrigins.map(normalizeOrigin) : [])
     ].filter(Boolean))];
+    const mediaProxyPath = String(appConfig.mediaProxyPath || "/m").replace(/\/+$/, "") || "";
     function mediaUrlCandidates(value = "") {
       const url = safeUrl(value);
       if (!url || !mediaOrigins.length) return [];
@@ -421,6 +422,20 @@
         return mediaOrigins.map((origin) => `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`);
       } catch {
         return [];
+      }
+    }
+    function mediaProxyUrl(value = "") {
+      const url = safeUrl(value);
+      if (!url || !mediaProxyPath || /^data:/i.test(url)) return url;
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const matched = mediaOrigins.some((origin) => {
+          try { return new URL(origin).host === parsed.host; } catch { return false; }
+        });
+        if (!matched) return url;
+        return `${mediaProxyPath}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      } catch {
+        return url;
       }
     }
     function mediaFallbackAttrs(src = "") {
@@ -467,14 +482,15 @@
     function imageVariantSrcset(variants = {}, format = "webp") {
       return imageVariantEntries(variants)
         .map((variant) => {
-          const url = safeUrl(imageVariantUrl(variant, format));
+          const url = mediaProxyUrl(imageVariantUrl(variant, format));
           return url ? `${escapeHtml(url)} ${variant.width}w` : "";
         })
         .filter(Boolean)
         .join(", ");
     }
     function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", sizes = "(max-width: 860px) 100vw, 800px" } = {}) {
-      const safe = safeUrl(src);
+      const originalSafe = safeUrl(src);
+      const safe = mediaProxyUrl(src);
       if (!safe) return "";
       const avif = imageVariantSrcset(variants, "avif");
       const webp = imageVariantSrcset(variants, "webp");
@@ -482,7 +498,7 @@
         avif ? `<source type="image/avif" srcset="${avif}" sizes="${escapeHtml(sizes)}">` : "",
         webp ? `<source type="image/webp" srcset="${webp}" sizes="${escapeHtml(sizes)}">` : ""
       ].filter(Boolean).join("");
-      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs} ${mediaFallbackAttrs(safe)}>`;
+      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs} ${mediaFallbackAttrs(originalSafe)}>`;
       return sources ? `<picture>${sources}${img}</picture>` : img;
     }
     function bodyImageVariantsFor(post = {}, index = 0) {
@@ -854,7 +870,7 @@
     }
     async function mediaUrl(item) {
       if (!item) return "";
-      if (item.url) return item.url;
+      if (item.url) return mediaProxyUrl(item.url);
       if (item.data) return item.data;
       return "";
     }
@@ -1033,7 +1049,7 @@
       video.controls = true;
       video.playsInline = true;
       video.preload = "metadata";
-      if (posterUrl) video.poster = safeUrl(posterUrl);
+      if (posterUrl) video.poster = mediaProxyUrl(posterUrl);
       container.innerHTML = "";
       container.appendChild(video);
       const tryNext = () => {
@@ -1066,7 +1082,7 @@
           container.closest(".media")?.classList.remove("ratio-16-9");
           container.closest(".media")?.classList.add("ratio-9-16");
         }
-        const posterUrl = item?.posterUrl || "";
+        const posterUrl = mediaProxyUrl(item?.posterUrl || "");
         const hls = isHlsMedia(item, url);
         const candidates = mediaUrlCandidates(url);
         const videoUrls = candidates.length > 1 ? candidates : [safeUrl(url)];
@@ -1080,9 +1096,9 @@
             screenshot: false,
             hotkey: true,
             video: {
-              url: safeUrl(url),
+              url: mediaProxyUrl(url),
               type: hls ? "hls" : "auto",
-              pic: posterUrl ? safeUrl(posterUrl) : undefined
+              pic: posterUrl || undefined
             }
           });
           return;
@@ -1148,7 +1164,7 @@
               attrs: imageAttrs({ eager }),
               sizes: "(max-width: 860px) 100vw, 800px"
             });
-            flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><a class="image-original-link" href="${safeUrl(img)}" target="_blank" rel="noopener">${image}</a></div>`);
+            flow.insertAdjacentHTML("beforeend", `<div class="media image-media"><a class="image-original-link" href="${mediaProxyUrl(img)}" target="_blank" rel="noopener">${image}</a></div>`);
           }
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);

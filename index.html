@@ -386,6 +386,7 @@
       normalizeOrigin(appConfig.mediaBaseUrl),
       ...(Array.isArray(appConfig.mediaFallbackOrigins) ? appConfig.mediaFallbackOrigins.map(normalizeOrigin) : [])
     ].filter(Boolean))];
+    const mediaProxyPath = String(appConfig.mediaProxyPath || "/m").replace(/\/+$/, "") || "";
     function mediaUrlCandidates(value = "") {
       const url = safeUrl(value);
       if (!url || !mediaOrigins.length) return [];
@@ -398,6 +399,20 @@
         return mediaOrigins.map((origin) => `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`);
       } catch {
         return [];
+      }
+    }
+    function mediaProxyUrl(value = "") {
+      const url = safeUrl(value);
+      if (!url || !mediaProxyPath || /^data:/i.test(url)) return url;
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const matched = mediaOrigins.some((origin) => {
+          try { return new URL(origin).host === parsed.host; } catch { return false; }
+        });
+        if (!matched) return url;
+        return `${mediaProxyPath}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      } catch {
+        return url;
       }
     }
     function mediaFallbackAttrs(src = "") {
@@ -444,14 +459,15 @@
     function imageVariantSrcset(variants = {}, format = "webp") {
       return imageVariantEntries(variants)
         .map((variant) => {
-          const url = safeUrl(imageVariantUrl(variant, format));
+          const url = mediaProxyUrl(imageVariantUrl(variant, format));
           return url ? `${escapeHtml(url)} ${variant.width}w` : "";
         })
         .filter(Boolean)
         .join(", ");
     }
     function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", sizes = "(max-width: 720px) 100vw, 1200px" } = {}) {
-      const safe = safeUrl(src);
+      const originalSafe = safeUrl(src);
+      const safe = mediaProxyUrl(src);
       if (!safe) return "";
       const avif = imageVariantSrcset(variants, "avif");
       const webp = imageVariantSrcset(variants, "webp");
@@ -459,7 +475,7 @@
         avif ? `<source type="image/avif" srcset="${avif}" sizes="${escapeHtml(sizes)}">` : "",
         webp ? `<source type="image/webp" srcset="${webp}" sizes="${escapeHtml(sizes)}">` : ""
       ].filter(Boolean).join("");
-      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs} ${mediaFallbackAttrs(safe)}>`;
+      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs} ${mediaFallbackAttrs(originalSafe)}>`;
       return sources ? `<picture>${sources}${img}</picture>` : img;
     }
     function normalizeIconName(icon = "", label = "") {
@@ -1089,7 +1105,7 @@
         const img = await adImageUrl(ad);
         if (img) {
           const href = safeUrl(ad.link || "app.html", "app.html");
-          image.src = safeUrl(img);
+          image.src = mediaProxyUrl(img);
           const fallbacks = mediaUrlCandidates(img);
           if (fallbacks.length > 1) {
             image.dataset.mediaFallbackIndex = "0";

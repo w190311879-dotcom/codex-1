@@ -172,6 +172,10 @@ const publicAdminOrigin = (process.env.PUBLIC_ADMIN_ORIGIN || "").replace(/\/+$/
 const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").replace(/\/+$/, "");
 const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl || "").replace(/\/+$/, "");
 const publicMediaFallbackOrigins = uniqueList(splitList(process.env.PUBLIC_MEDIA_FALLBACK_ORIGINS).map(normalizeOrigin));
+const publicMediaProxyPath = process.env.PUBLIC_MEDIA_PROXY_PATH === "0"
+  ? ""
+  : `/${String(process.env.PUBLIC_MEDIA_PROXY_PATH || "m").replace(/^\/+|\/+$/g, "")}`;
+const mediaProxyOrigin = normalizeOrigin(process.env.MEDIA_PROXY_ORIGIN || bunnyCdnBaseUrl || publicMediaBaseUrl);
 const publicUploadOrigin = (process.env.PUBLIC_UPLOAD_ORIGIN || "").replace(/\/+$/, "");
 const routeSelectorOrigin = normalizeOrigin(process.env.ROUTE_SELECTOR_ORIGIN || "");
 const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51春梦";
@@ -2951,6 +2955,7 @@ app.get("/config.js", (req, res) => {
     apiBaseUrl: onLineHost ? "" : publicApiBaseUrl,
     mediaBaseUrl: publicMediaBaseUrl,
     mediaFallbackOrigins: publicMediaFallbackOrigins,
+    mediaProxyPath: publicMediaProxyPath,
     routeSelectorOrigin,
     routeSelectorTitle,
     routeSelectorSubtitle,
@@ -3533,6 +3538,34 @@ function mediaUrlCandidates(value = "") {
   }
 }
 
+function mediaOriginHosts() {
+  return uniqueList([
+    publicMediaBaseUrl,
+    ...publicMediaFallbackOrigins,
+    bunnyCdnBaseUrl,
+    mediaProxyOrigin
+  ].filter(Boolean).map((origin) => {
+    try {
+      return new URL(origin).host;
+    } catch {
+      return "";
+    }
+  }));
+}
+
+function mediaProxyUrl(value = "") {
+  const url = safePublicUrl(value, "");
+  if (!url || !publicMediaProxyPath || /^data:/i.test(url)) return url;
+  try {
+    const parsed = new URL(url, publicSiteOrigin || "https://51cmtv.com");
+    if (parsed.origin === "null") return url;
+    if (!mediaOriginHosts().includes(parsed.host)) return url;
+    return `${publicMediaProxyPath}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
 function mediaFallbackAttrs(src = "") {
   const candidates = mediaUrlCandidates(src);
   if (candidates.length <= 1) return "";
@@ -3774,7 +3807,7 @@ function imageVariantEntries(variants = {}) {
 function imageVariantSrcset(variants = {}, format = "webp") {
   return imageVariantEntries(variants)
     .map((variant) => {
-      const url = safePublicUrl(imageVariantUrl(variant, format), "");
+      const url = mediaProxyUrl(imageVariantUrl(variant, format));
       return url ? `${htmlEscape(url)} ${variant.width}w` : "";
     })
     .filter(Boolean)
@@ -3788,7 +3821,7 @@ function bodyImageVariantsFor(post = {}, index = 0) {
 }
 
 function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", sizes = "(max-width: 720px) 100vw, 1200px" } = {}) {
-  const safeSrc = safePublicUrl(src, "");
+  const safeSrc = mediaProxyUrl(src);
   if (!safeSrc) return "";
   const avifSrcset = imageVariantSrcset(variants, "avif");
   const webpSrcset = imageVariantSrcset(variants, "webp");
@@ -3796,7 +3829,7 @@ function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", 
     avifSrcset ? `<source type="image/avif" srcset="${avifSrcset}" sizes="${htmlEscape(sizes)}">` : "",
     webpSrcset ? `<source type="image/webp" srcset="${webpSrcset}" sizes="${htmlEscape(sizes)}">` : ""
   ].filter(Boolean).join("");
-  const img = `<img src="${htmlEscape(safeSrc)}" alt="${htmlEscape(alt)}" ${attrs} ${mediaFallbackAttrs(safeSrc)}>`;
+  const img = `<img src="${htmlEscape(safeSrc)}" alt="${htmlEscape(alt)}" ${attrs} ${mediaFallbackAttrs(safePublicUrl(src, ""))}>`;
   return sources ? `<picture>${sources}${img}</picture>` : img;
 }
 
@@ -5316,6 +5349,68 @@ app.use((req, res, next) => {
     return;
   }
   next();
+});
+
+function proxiedMediaHeaders(upstream) {
+  const allowed = [
+    "content-type",
+    "content-length",
+    "content-range",
+    "accept-ranges",
+    "etag",
+    "last-modified"
+  ];
+  const headers = {};
+  for (const name of allowed) {
+    const value = upstream.headers.get(name);
+    if (value) headers[name] = value;
+  }
+  headers["cache-control"] = upstream.headers.get("cache-control") || "public, max-age=2592000";
+  headers["access-control-allow-origin"] = "*";
+  return headers;
+}
+
+app.get(`${publicMediaProxyPath || "/m"}/*`, async (req, res, next) => {
+  if (!publicMediaProxyPath || !mediaProxyOrigin) {
+    res.status(404).send("Media proxy is not configured.");
+    return;
+  }
+  try {
+    const requestedPath = String(req.params[0] || "").replace(/^\/+/, "");
+    if (!requestedPath || requestedPath.includes("..")) {
+      res.status(400).send("Invalid media path.");
+      return;
+    }
+    const upstreamUrl = new URL(`${mediaProxyOrigin}/${requestedPath}`);
+    const queryIndex = String(req.originalUrl || "").indexOf("?");
+    if (queryIndex >= 0) upstreamUrl.search = String(req.originalUrl || "").slice(queryIndex + 1);
+    const headers = {};
+    const range = req.headers.range;
+    if (range) headers.Range = range;
+    const upstream = await fetch(upstreamUrl, { headers, redirect: "follow" });
+    res.status(upstream.status);
+    for (const [name, value] of Object.entries(proxiedMediaHeaders(upstream))) {
+      res.setHeader(name, value);
+    }
+    if (!upstream.body) {
+      res.end();
+      return;
+    }
+    const reader = upstream.body.getReader();
+    res.on("close", () => {
+      try { reader.cancel(); } catch {}
+    });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise((resolve) => res.once("drain", resolve));
+      }
+    }
+    res.end();
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get(["/admin.html", "/admin"], requireAdminPage, (_req, res) => {

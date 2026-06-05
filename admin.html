@@ -908,7 +908,7 @@
     }
     async function mediaUrl(item) {
       if (!item) return "";
-      if (item.url) return item.url;
+      if (item.url) return mediaProxyUrl(item.url);
       if (item.data) return item.data;
       return "";
     }
@@ -1160,6 +1160,28 @@
       if (/^(https?:|blob:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
       if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
       return fallback;
+    }
+    function normalizeOrigin(value = "") {
+      return String(value || "").trim().replace(/\/+$/, "");
+    }
+    const mediaOrigins = [...new Set([
+      normalizeOrigin(appConfig.mediaBaseUrl),
+      ...(Array.isArray(appConfig.mediaFallbackOrigins) ? appConfig.mediaFallbackOrigins.map(normalizeOrigin) : [])
+    ].filter(Boolean))];
+    const mediaProxyPath = String(appConfig.mediaProxyPath || "/m").replace(/\/+$/, "") || "";
+    function mediaProxyUrl(value = "") {
+      const url = safeUrl(value);
+      if (!url || !mediaProxyPath || /^data:|^blob:/i.test(url)) return url;
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const matched = mediaOrigins.some((origin) => {
+          try { return new URL(origin).host === parsed.host; } catch { return false; }
+        });
+        if (!matched) return url;
+        return `${mediaProxyPath}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      } catch {
+        return url;
+      }
     }
     function normalizeIconName(icon = "", label = "") {
       const value = String(icon || "").trim();
@@ -1460,7 +1482,7 @@
         currentCoverVariants = media.imageVariants || {};
         const coverBox = document.querySelector("#coverBox");
         coverBox.classList.add("has-image");
-        document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${safeUrl(media.url)}" alt="封面预览"><span class="cover-caption">${escapeHtml(file.name)}</span>`;
+        document.querySelector("#coverText").innerHTML = `<img class="cover-thumb" src="${mediaProxyUrl(media.url)}" alt="封面预览"><span class="cover-caption">${escapeHtml(file.name)}</span>`;
         toast("封面已上传");
       } catch (error) {
         console.error(error);
@@ -2168,7 +2190,7 @@
         let preview = "";
         if (item.type === "ad") {
           const src = await adImageUrl(item.ad);
-          preview = src ? `<br><img class="ad-preview" src="${safeUrl(src)}" alt="${escapeHtml(item.title)}">` : "";
+          preview = src ? `<br><img class="ad-preview" src="${mediaProxyUrl(src)}" alt="${escapeHtml(item.title)}">` : "";
         }
         return `
           <div class="feed-order-item">
@@ -2253,7 +2275,7 @@
     function attachVideoSource(videoEl, item) {
       mediaUrl(item).then((url) => {
         if (!url) return;
-        const safe = safeUrl(url);
+        const safe = mediaProxyUrl(url);
         if ((item?.playbackType === "hls" || /\.m3u8(?:[?#]|$)/i.test(safe)) && window.Hls?.isSupported?.()) {
           const hls = new window.Hls();
           hls.loadSource(safe);
@@ -2276,7 +2298,7 @@
           const index = Number(match[2] || 0);
           const src = currentBodyImages[index] || "";
           return src
-            ? `<div class="preview-card"><img src="${safeUrl(src)}" alt="正文图片 ${index + 1}"><span>图片 ${index + 1}</span></div>`
+            ? `<div class="preview-card"><img src="${mediaProxyUrl(src)}" alt="正文图片 ${index + 1}"><span>图片 ${index + 1}</span></div>`
             : `<div class="preview-card empty">图片 ${index + 1} 不存在</div>`;
         }
         const video = mediaLibrary.find((item) => item.id === match[2]);
@@ -2286,7 +2308,7 @@
       }).join("");
       list.querySelectorAll("[data-preview-video]").forEach((videoEl) => {
         const item = mediaLibrary.find((media) => media.id === videoEl.dataset.previewVideo);
-        if (item?.posterUrl) videoEl.setAttribute("poster", safeUrl(item.posterUrl));
+        if (item?.posterUrl) videoEl.setAttribute("poster", mediaProxyUrl(item.posterUrl));
         attachVideoSource(videoEl, item);
       });
     }
@@ -2647,7 +2669,7 @@
           input.checked = (post.categories || []).includes(input.value) || post.category === input.value;
         });
         document.querySelector("#coverBox").classList.toggle("has-image", Boolean(currentCoverData));
-        document.querySelector("#coverText").innerHTML = currentCoverData ? `<img class="cover-thumb" src="${safeUrl(currentCoverData)}" alt="封面预览"><span class="cover-caption">已载入原封面，可重新上传</span>` : "点击上传封面";
+        document.querySelector("#coverText").innerHTML = currentCoverData ? `<img class="cover-thumb" src="${mediaProxyUrl(currentCoverData)}" alt="封面预览"><span class="cover-caption">已载入原封面，可重新上传</span>` : "点击上传封面";
         renderInsertedMediaPreview();
         document.querySelector('[data-view="publish"]').click();
         toast("已载入帖子，可编辑后重新发布");
