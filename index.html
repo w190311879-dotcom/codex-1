@@ -379,6 +379,46 @@
       if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
       return fallback;
     }
+    function normalizeOrigin(value = "") {
+      return String(value || "").trim().replace(/\/+$/, "");
+    }
+    const mediaOrigins = [...new Set([
+      normalizeOrigin(appConfig.mediaBaseUrl),
+      ...(Array.isArray(appConfig.mediaFallbackOrigins) ? appConfig.mediaFallbackOrigins.map(normalizeOrigin) : [])
+    ].filter(Boolean))];
+    function mediaUrlCandidates(value = "") {
+      const url = safeUrl(value);
+      if (!url || !mediaOrigins.length) return [];
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const matched = mediaOrigins.some((origin) => {
+          try { return new URL(origin).host === parsed.host; } catch { return false; }
+        });
+        if (!matched) return [];
+        return mediaOrigins.map((origin) => `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`);
+      } catch {
+        return [];
+      }
+    }
+    function mediaFallbackAttrs(src = "") {
+      const candidates = mediaUrlCandidates(src);
+      if (candidates.length <= 1) return "";
+      return `data-media-fallback-index="0" data-media-fallbacks="${escapeHtml(JSON.stringify(candidates))}"`;
+    }
+    function handleMediaImageError(img) {
+      if (!img?.dataset?.mediaFallbacks) return;
+      let candidates = [];
+      try { candidates = JSON.parse(img.dataset.mediaFallbacks); } catch { candidates = []; }
+      const nextIndex = (Number(img.dataset.mediaFallbackIndex) || 0) + 1;
+      if (!candidates[nextIndex]) return;
+      img.dataset.mediaFallbackIndex = String(nextIndex);
+      const picture = img.closest("picture");
+      if (picture) picture.querySelectorAll("source").forEach((source) => source.remove());
+      img.src = candidates[nextIndex];
+    }
+    document.addEventListener("error", (event) => {
+      if (event.target?.tagName === "IMG") handleMediaImageError(event.target);
+    }, true);
     function imageAttrs({ eager = false, width = 1200, height = 675 } = {}) {
       const attrs = [
         `width="${Number(width) || 1200}"`,
@@ -419,7 +459,7 @@
         avif ? `<source type="image/avif" srcset="${avif}" sizes="${escapeHtml(sizes)}">` : "",
         webp ? `<source type="image/webp" srcset="${webp}" sizes="${escapeHtml(sizes)}">` : ""
       ].filter(Boolean).join("");
-      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs}>`;
+      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs} ${mediaFallbackAttrs(safe)}>`;
       return sources ? `<picture>${sources}${img}</picture>` : img;
     }
     function normalizeIconName(icon = "", label = "") {
@@ -1050,6 +1090,14 @@
         if (img) {
           const href = safeUrl(ad.link || "app.html", "app.html");
           image.src = safeUrl(img);
+          const fallbacks = mediaUrlCandidates(img);
+          if (fallbacks.length > 1) {
+            image.dataset.mediaFallbackIndex = "0";
+            image.dataset.mediaFallbacks = JSON.stringify(fallbacks);
+          } else {
+            delete image.dataset.mediaFallbackIndex;
+            delete image.dataset.mediaFallbacks;
+          }
           image.alt = ad.title || "弹窗广告";
           link.href = href;
           if (isExternalUrl(href)) {

@@ -171,6 +171,7 @@ const publicSiteOrigins = uniqueList([
 const publicAdminOrigin = (process.env.PUBLIC_ADMIN_ORIGIN || "").replace(/\/+$/, "");
 const publicApiBaseUrl = (process.env.PUBLIC_API_BASE_URL || process.env.API_BASE_URL || "").replace(/\/+$/, "");
 const publicMediaBaseUrl = (process.env.PUBLIC_MEDIA_BASE_URL || bunnyCdnBaseUrl || "").replace(/\/+$/, "");
+const publicMediaFallbackOrigins = uniqueList(splitList(process.env.PUBLIC_MEDIA_FALLBACK_ORIGINS).map(normalizeOrigin));
 const publicUploadOrigin = (process.env.PUBLIC_UPLOAD_ORIGIN || "").replace(/\/+$/, "");
 const routeSelectorOrigin = normalizeOrigin(process.env.ROUTE_SELECTOR_ORIGIN || "");
 const routeSelectorTitle = process.env.ROUTE_SELECTOR_TITLE || "51春梦";
@@ -203,9 +204,9 @@ const routeLines = (routeLineOrigins.length ? routeLineOrigins : publicSiteOrigi
 }));
 let cachedRoutingSettings = { entryHosts: [] };
 const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || "";
-const cspConnectSources = ["'self'", "https:", publicApiBaseUrl, publicMediaBaseUrl, publicAdminOrigin, publicUploadOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
-const cspMediaSources = ["'self'", "blob:", "data:", publicMediaBaseUrl].filter(Boolean);
-const cspImageSources = ["'self'", "data:", "blob:", "https:", publicMediaBaseUrl, "https://images.unsplash.com"].filter(Boolean);
+const cspConnectSources = ["'self'", "https:", publicApiBaseUrl, publicMediaBaseUrl, ...publicMediaFallbackOrigins, publicAdminOrigin, publicUploadOrigin, routeSelectorOrigin, ...publicSiteOrigins, ...routeLineOrigins].filter(Boolean);
+const cspMediaSources = ["'self'", "blob:", "data:", publicMediaBaseUrl, ...publicMediaFallbackOrigins].filter(Boolean);
+const cspImageSources = ["'self'", "data:", "blob:", "https:", publicMediaBaseUrl, ...publicMediaFallbackOrigins, "https://images.unsplash.com"].filter(Boolean);
 const cspScriptSources = ["'self'", "'unsafe-inline'", "https:"];
 const cspStyleSources = ["'self'", "'unsafe-inline'"];
 const defaultAdmins = [
@@ -2949,6 +2950,7 @@ app.get("/config.js", (req, res) => {
     adminOrigin: publicAdminOrigin,
     apiBaseUrl: onLineHost ? "" : publicApiBaseUrl,
     mediaBaseUrl: publicMediaBaseUrl,
+    mediaFallbackOrigins: publicMediaFallbackOrigins,
     routeSelectorOrigin,
     routeSelectorTitle,
     routeSelectorSubtitle,
@@ -3511,6 +3513,32 @@ function safePublicUrl(value = "", fallback = "") {
   return fallback;
 }
 
+function mediaUrlCandidates(value = "") {
+  const url = safePublicUrl(value, "");
+  const origins = uniqueList([publicMediaBaseUrl, ...publicMediaFallbackOrigins].filter(Boolean));
+  if (!url || origins.length <= 1) return [];
+  try {
+    const parsed = new URL(url, publicSiteOrigin || "https://51cmtv.com");
+    const matched = origins.some((origin) => {
+      try {
+        return new URL(origin).host === parsed.host;
+      } catch {
+        return false;
+      }
+    });
+    if (!matched) return [];
+    return origins.map((origin) => `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`);
+  } catch {
+    return [];
+  }
+}
+
+function mediaFallbackAttrs(src = "") {
+  const candidates = mediaUrlCandidates(src);
+  if (candidates.length <= 1) return "";
+  return `data-media-fallback-index="0" data-media-fallbacks="${htmlEscape(JSON.stringify(candidates))}"`;
+}
+
 function ssrJsonScript(data) {
   return `<script>window.POSTWAVE_SSR_DATA=${JSON.stringify(data).replace(/</g, "\\u003c")};</script>`;
 }
@@ -3768,7 +3796,7 @@ function responsiveImageMarkup({ src = "", variants = {}, alt = "", attrs = "", 
     avifSrcset ? `<source type="image/avif" srcset="${avifSrcset}" sizes="${htmlEscape(sizes)}">` : "",
     webpSrcset ? `<source type="image/webp" srcset="${webpSrcset}" sizes="${htmlEscape(sizes)}">` : ""
   ].filter(Boolean).join("");
-  const img = `<img src="${htmlEscape(safeSrc)}" alt="${htmlEscape(alt)}" ${attrs}>`;
+  const img = `<img src="${htmlEscape(safeSrc)}" alt="${htmlEscape(alt)}" ${attrs} ${mediaFallbackAttrs(safeSrc)}>`;
   return sources ? `<picture>${sources}${img}</picture>` : img;
 }
 
@@ -4335,22 +4363,26 @@ function ssrPrevNext(req, posts, index) {
 }
 
 function detailClientPost(post = {}, includeBody = false) {
-  return {
+  const base = {
     id: post.id,
     title: post.title,
     slug: post.slug || numericPostSlug(post.id || post.title, "10000000"),
     cover: post.cover || post.image || "",
+    author: post.author || "alun",
+    date: post.date || "",
+    category: post.category || "",
+    categories: post.categories || []
+  };
+  if (!includeBody) return base;
+  return {
+    ...base,
     coverVariants: compactImageVariants(post.coverVariants || post.imageVariants),
     imageVariants: compactImageVariants(post.imageVariants || post.coverVariants),
-    body: includeBody ? post.body || "" : "",
+    body: post.body || "",
     bodyImages: post.bodyImages || [],
     bodyImageVariants: Array.isArray(post.bodyImageVariants) ? post.bodyImageVariants.map(compactImageVariants) : [],
     video: post.video || "",
     videos: Array.isArray(post.videos) ? post.videos : [],
-    author: post.author || "alun",
-    date: post.date || "",
-    category: post.category || "",
-    categories: post.categories || [],
     keywords: post.keywords || [],
     tags: post.tags || [],
     topicKeywords: postTopicKeywords(post, { max: 6 })

@@ -402,6 +402,46 @@
       if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
       return fallback;
     }
+    function normalizeOrigin(value = "") {
+      return String(value || "").trim().replace(/\/+$/, "");
+    }
+    const mediaOrigins = [...new Set([
+      normalizeOrigin(appConfig.mediaBaseUrl),
+      ...(Array.isArray(appConfig.mediaFallbackOrigins) ? appConfig.mediaFallbackOrigins.map(normalizeOrigin) : [])
+    ].filter(Boolean))];
+    function mediaUrlCandidates(value = "") {
+      const url = safeUrl(value);
+      if (!url || !mediaOrigins.length) return [];
+      try {
+        const parsed = new URL(url, window.location.origin);
+        const matched = mediaOrigins.some((origin) => {
+          try { return new URL(origin).host === parsed.host; } catch { return false; }
+        });
+        if (!matched) return [];
+        return mediaOrigins.map((origin) => `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`);
+      } catch {
+        return [];
+      }
+    }
+    function mediaFallbackAttrs(src = "") {
+      const candidates = mediaUrlCandidates(src);
+      if (candidates.length <= 1) return "";
+      return `data-media-fallback-index="0" data-media-fallbacks="${escapeHtml(JSON.stringify(candidates))}"`;
+    }
+    function handleMediaImageError(img) {
+      if (!img?.dataset?.mediaFallbacks) return;
+      let candidates = [];
+      try { candidates = JSON.parse(img.dataset.mediaFallbacks); } catch { candidates = []; }
+      const nextIndex = (Number(img.dataset.mediaFallbackIndex) || 0) + 1;
+      if (!candidates[nextIndex]) return;
+      img.dataset.mediaFallbackIndex = String(nextIndex);
+      const picture = img.closest("picture");
+      if (picture) picture.querySelectorAll("source").forEach((source) => source.remove());
+      img.src = candidates[nextIndex];
+    }
+    document.addEventListener("error", (event) => {
+      if (event.target?.tagName === "IMG") handleMediaImageError(event.target);
+    }, true);
     function imageAttrs({ eager = false, width = 800, height = 1067 } = {}) {
       const attrs = [
         `width="${Number(width) || 800}"`,
@@ -442,7 +482,7 @@
         avif ? `<source type="image/avif" srcset="${avif}" sizes="${escapeHtml(sizes)}">` : "",
         webp ? `<source type="image/webp" srcset="${webp}" sizes="${escapeHtml(sizes)}">` : ""
       ].filter(Boolean).join("");
-      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs}>`;
+      const img = `<img src="${escapeHtml(safe)}" alt="${escapeHtml(alt)}" ${attrs} ${mediaFallbackAttrs(safe)}>`;
       return sources ? `<picture>${sources}${img}</picture>` : img;
     }
     function bodyImageVariantsFor(post = {}, index = 0) {
@@ -982,7 +1022,13 @@
       if (hls && !window.Hls) await loadScriptOnce("/vendor/hls/hls.min.js", "Hls");
       if (!window.DPlayer) await loadScriptOnce("/vendor/dplayer/DPlayer.min.js", "DPlayer");
     }
-    function attachVideoFallback(container, url, posterUrl, hls) {
+    function attachVideoFallback(container, urls, posterUrl, hls, startIndex = 0) {
+      const candidates = Array.isArray(urls) && urls.length ? urls : [urls].filter(Boolean);
+      const currentUrl = candidates[startIndex];
+      if (!currentUrl) {
+        container.closest(".media")?.remove();
+        return;
+      }
       const video = document.createElement("video");
       video.controls = true;
       video.playsInline = true;
@@ -990,13 +1036,23 @@
       if (posterUrl) video.poster = safeUrl(posterUrl);
       container.innerHTML = "";
       container.appendChild(video);
+      const tryNext = () => {
+        if (candidates[startIndex + 1]) attachVideoFallback(container, candidates, posterUrl, hls, startIndex + 1);
+      };
       if (hls && window.Hls?.isSupported?.()) {
         const player = new window.Hls();
-        player.loadSource(url);
+        player.on(window.Hls.Events.ERROR, (_event, data) => {
+          if (data?.fatal) {
+            player.destroy();
+            tryNext();
+          }
+        });
+        player.loadSource(currentUrl);
         player.attachMedia(video);
         return;
       }
-      video.src = url;
+      video.addEventListener("error", tryNext, { once: true });
+      video.src = currentUrl;
     }
     async function mountVideoPlayer(container, mediaId) {
       try {
@@ -1012,11 +1068,13 @@
         }
         const posterUrl = item?.posterUrl || "";
         const hls = isHlsMedia(item, url);
+        const candidates = mediaUrlCandidates(url);
+        const videoUrls = candidates.length > 1 ? candidates : [safeUrl(url)];
         container.innerHTML = "";
         try {
           await ensureVideoPlayerScripts(hls);
         } catch (_scriptError) {}
-        if (window.DPlayer) {
+        if (window.DPlayer && videoUrls.length <= 1) {
           new window.DPlayer({
             container,
             screenshot: false,
@@ -1029,7 +1087,7 @@
           });
           return;
         }
-        attachVideoFallback(container, safeUrl(url), posterUrl, hls);
+        attachVideoFallback(container, videoUrls, posterUrl, hls);
       } catch (_error) {
         container.closest(".media")?.remove();
       }
