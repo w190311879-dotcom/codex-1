@@ -5352,6 +5352,8 @@ app.use((req, res, next) => {
 });
 
 function proxiedMediaHeaders(upstream) {
+  const edgeTtlSeconds = Math.max(3600, Number(process.env.MEDIA_PROXY_EDGE_TTL_SECONDS || 2592000) || 2592000);
+  const browserTtlSeconds = Math.max(300, Number(process.env.MEDIA_PROXY_BROWSER_TTL_SECONDS || 86400) || 86400);
   const allowed = [
     "content-type",
     "content-length",
@@ -5365,8 +5367,14 @@ function proxiedMediaHeaders(upstream) {
     const value = upstream.headers.get(name);
     if (value) headers[name] = value;
   }
-  headers["cache-control"] = upstream.headers.get("cache-control") || "public, max-age=2592000";
+  const cacheControl = `public, max-age=${browserTtlSeconds}, s-maxage=${edgeTtlSeconds}, immutable`;
+  headers["cache-control"] = cacheControl;
+  headers["cdn-cache-control"] = `public, max-age=${edgeTtlSeconds}`;
+  headers["cloudflare-cdn-cache-control"] = `public, max-age=${edgeTtlSeconds}`;
   headers["access-control-allow-origin"] = "*";
+  headers["access-control-expose-headers"] = "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified";
+  headers["timing-allow-origin"] = "*";
+  headers["x-media-proxy"] = "vps";
   return headers;
 }
 
