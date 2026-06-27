@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.join(__dirname, "..");
 const postsPath = path.join(rootDir, "data", "posts.json");
+const mediaPath = path.join(rootDir, "data", "media.json");
 const port = crypto.randomInt(24001, 30000);
 const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -29,7 +30,7 @@ const fixturePosts = [
   {
     id: "topic-2",
     title: "高清视频合集更新",
-    body: "成人视频与高清视频内容整理。",
+    body: "成人视频与高清视频内容整理。\n[视频:video-1]",
     cover: "/uploads/topic-2.jpg",
     category: "视频",
     categories: ["视频"],
@@ -53,6 +54,19 @@ const fixturePosts = [
     cover: "/uploads/blocked-topic.jpg",
     tags: ["偷拍", "网红吃瓜"],
     status: "已发布"
+  }
+];
+
+const fixtureMedia = [
+  {
+    id: "video-1",
+    kind: "video",
+    mimeType: "application/vnd.apple.mpegurl",
+    url: "/uploads/video-1/master.m3u8",
+    status: "ready",
+    posterUrl: "/uploads/video-1/poster.jpg",
+    aspect: "16-9",
+    playbackType: "hls"
   }
 ];
 
@@ -82,20 +96,23 @@ async function waitForServer(child) {
   throw new Error("测试服务器启动失败");
 }
 
-async function getText(pathname) {
-  const response = await fetch(`${baseUrl}${pathname}`);
+async function getText(pathname, options = {}) {
+  const response = await fetch(`${baseUrl}${pathname}`, options);
   const text = await response.text();
   return { response, text };
 }
 
 let originalPosts = null;
+let originalMedia = null;
 let child = null;
 const output = [];
 
 try {
   originalPosts = await fs.readFile(postsPath, "utf8").catch(() => null);
+  originalMedia = await fs.readFile(mediaPath, "utf8").catch(() => null);
   await fs.mkdir(path.dirname(postsPath), { recursive: true });
   await fs.writeFile(postsPath, JSON.stringify(fixturePosts, null, 2));
+  await fs.writeFile(mediaPath, JSON.stringify(fixtureMedia, null, 2));
 
   child = spawn(process.execPath, ["server.js"], {
     cwd: rootDir,
@@ -122,6 +139,12 @@ try {
   assert.ok(detail.text.includes("/tag/wang-hong-chi-gua"), "详情页应链接主题相关关键词");
   assert.ok(detail.text.includes("/tag/re-dian-bao-liao"), "详情页应链接爆料关键词");
 
+  const videoDetail = await getText("/v/topic-2");
+  assert.equal(videoDetail.response.status, 200, "视频详情页应正常返回");
+  assert.ok(videoDetail.text.includes('data-media-video="video-1"'), "视频详情页应输出视频容器");
+  assert.ok(videoDetail.text.includes("<video controls playsinline"), "视频详情页 SSR 应输出真实 video 标签");
+  assert.ok(videoDetail.text.includes('<source src="/uploads/video-1/master.m3u8"'), "视频详情页 SSR 应输出视频 source");
+
   const tagPage = await getText("/tag/wang-hong-chi-gua");
   assert.equal(tagPage.response.status, 200, "tag 列表页应正常返回");
   assert.ok(tagPage.text.includes("网红吃瓜事件后续"), "tag 页面应包含匹配的公开帖子");
@@ -130,6 +153,10 @@ try {
   const longTailTagPage = await getText("/tag/extra-tag-40");
   assert.equal(longTailTagPage.response.status, 200, "未进入 sitemap 的长尾 tag 页面仍应可访问");
   assert.ok(longTailTagPage.text.includes("长尾标签测试 40"), "长尾 tag 页面应展示匹配内容");
+
+  const staleSafeTag = await getText("/tag/zhong-xin", { redirect: "manual" });
+  assert.equal(staleSafeTag.response.status, 301, "历史安全 tag 404 应重定向到首页");
+  assert.equal(staleSafeTag.response.headers.get("location"), "/", "历史安全 tag 应重定向到首页");
 
   const blockedTag = await getText("/tag/%E5%81%B7%E6%8B%8D");
   assert.equal(blockedTag.response.status, 404, "高风险 tag 页面不应公开");
@@ -164,5 +191,10 @@ try {
     await fs.rm(postsPath, { force: true }).catch(() => {});
   } else {
     await fs.writeFile(postsPath, originalPosts);
+  }
+  if (originalMedia === null) {
+    await fs.rm(mediaPath, { force: true }).catch(() => {});
+  } else {
+    await fs.writeFile(mediaPath, originalMedia);
   }
 }

@@ -226,8 +226,8 @@
       <nav class="nav" id="mainNav" aria-label="主导航"></nav>
       <div class="actions">
         <button class="icon-btn mobile-hide" id="searchToggle" aria-label="搜索" title="搜索"><i data-lucide="search"></i></button>
-        <a class="icon-btn mobile-hide" id="topAppLink" href="app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
-        <a class="icon-btn mobile-hide" id="topGroupLink" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
+        <a class="icon-btn mobile-hide" id="topAppLink" href="/app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
+        <a class="icon-btn mobile-hide" id="topGroupLink" href="/qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
         <a class="icon-btn" id="topTelegramLink" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><span class="svg-icon svg-icon-telegram" aria-hidden="true"></span></a>
         <a class="icon-btn" id="topXLink" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X"><span class="svg-icon svg-icon-x" aria-hidden="true"></span></a>
         <a class="icon-btn mobile-hide" id="topBusinessLink" href="mailto:business@example.com" aria-label="商务合作" title="商务合作"><i data-lucide="handshake"></i></a>
@@ -299,7 +299,7 @@
   <div class="popup-ad-layer" id="popupAdLayer" aria-hidden="true">
     <div class="popup-ad-shell">
       <button class="popup-ad-close" id="popupAdClose" type="button" aria-label="关闭弹窗广告"><i data-lucide="x"></i></button>
-      <a class="popup-ad-link" id="popupAdLink" href="app.html">
+      <a class="popup-ad-link" id="popupAdLink" href="/app.html">
         <img id="popupAdImage" alt="弹窗广告" width="720" height="960" loading="lazy" decoding="async">
       </a>
     </div>
@@ -334,21 +334,21 @@
       introText: defaultFooterIntroText,
       quickLinks: [
         { label: "首页", href: "/", icon: "home" },
-        { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
-        { label: "Q群", href: "qq.html", icon: "message-circle" },
+        { label: "App", href: "/app.html", icon: "smartphone", action: "app-placeholder" },
+        { label: "Q群", href: "/qq.html", icon: "message-circle" },
         { label: "网站导航", href: "#site-map", icon: "map" }
       ],
       footerLinks: [
         { label: "往期回顾", href: "#archive" },
         { label: "回家的路", href: "/" },
-        { label: "我要投稿", href: "admin-login.html" },
+        { label: "我要投稿", href: "/admin-login.html" },
         { label: "商务合作", href: "mailto:business@example.com" },
         { label: "加入我们", href: "mailto:join@example.com" },
         { label: "关于我们", href: "/about.html" }
       ],
       topLinks: {
-        app: { href: "app.html", action: "app-placeholder" },
-        group: { href: "qq.html" },
+        app: { href: "/app.html", action: "app-placeholder" },
+        group: { href: "/qq.html" },
         telegram: { href: "https://t.me/example_group" },
         x: { href: "https://x.com/example" }
       },
@@ -374,10 +374,15 @@
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
     }
     function safeUrl(value, fallback = "") {
-      const url = String(value || "").trim();
-      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
-      if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
-      return fallback;
+      const normalize = (item = "") => {
+        const url = String(item || "").trim();
+        if (!url) return "";
+        if (/^[a-z0-9-]+\.html(?:[?#].*)?$/i.test(url)) return `/${url}`;
+        if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|mailto:|#)/i.test(url)) return url;
+        if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
+        return "";
+      };
+      return normalize(value) || normalize(fallback) || "";
     }
     function normalizeOrigin(value = "") {
       return String(value || "").trim().replace(/\/+$/, "");
@@ -493,9 +498,9 @@
       const labelMatchesFallback = label === String(fallback.label || "").trim();
       return {
         label,
-        href: rawHref === "#about" && fallbackHref === "#site-map" && labelMatchesFallback
+        href: safeUrl(rawHref === "#about" && fallbackHref === "#site-map" && labelMatchesFallback
           ? fallbackHref
-          : rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && labelMatchesFallback ? fallbackHref : rawHref,
+          : rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && labelMatchesFallback ? fallbackHref : rawHref, fallbackHref || "#") || "#",
         icon: normalizeIconName(link.icon || fallback.icon || "", label),
         action: String(link.action || fallback.action || "").trim()
       };
@@ -586,8 +591,8 @@
       document.querySelector("#footerLinks").innerHTML = footerConfig.footerLinks.map((link) => `<a ${linkAttrs(link, "#")}>${escapeHtml(link.label)}</a>`).join("");
       document.querySelector("#socialLinks").innerHTML = footerConfig.socialLinks.map((link) => `<a class="icon-btn" ${linkAttrs(link, "#")} aria-label="${escapeHtml(link.label)}">${iconMarkup(link.icon, link.label) || escapeHtml(link.label)}</a>`).join("");
       document.querySelector("#legalLinks").innerHTML = footerConfig.legalLinks.map((link) => `<a ${linkAttrs(link, "#")}>${escapeHtml(link.label)}</a>`).join("");
-      applyTopLink("#topAppLink", footerConfig.topLinks.app, "app.html");
-      applyTopLink("#topGroupLink", footerConfig.topLinks.group, "qq.html");
+      applyTopLink("#topAppLink", footerConfig.topLinks.app, "/app.html");
+      applyTopLink("#topGroupLink", footerConfig.topLinks.group, "/qq.html");
       applyTopLink("#topTelegramLink", footerConfig.topLinks.telegram, "https://t.me/example_group");
       applyTopLink("#topXLink", footerConfig.topLinks.x, "https://x.com/example");
       applyTopLink("#topBusinessLink", footerLinkByLabel("商务合作", "mailto:business@example.com"), "mailto:business@example.com");
@@ -684,8 +689,8 @@
     }
     let posts = combinedPosts();
     const defaultAds = [
-      { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
-      { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "home-banner" }
+      { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "/app.html", placement: "home-banner" },
+      { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "/admin.html", placement: "home-banner" }
     ];
     let ads = Array.isArray(ssrData.ads) ? ssrData.ads : null;
     function normalizeAdPlacement(ad) {
@@ -721,7 +726,7 @@
         ...ad,
         title: ad.title || "",
         desc: ad.desc || "",
-        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "/app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
         imageVariants: ad.imageVariants || {},
         code,
@@ -786,7 +791,7 @@
         attrs: imageAttrs({ eager, width: 1200, height: 675 }),
         sizes: "(max-width: 720px) 100vw, 1180px"
       });
-      return image ? `<a class="post-row feed-ad" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}<div class="post-content" aria-hidden="true"></div></a>` : "";
+      return image ? `<a class="post-row feed-ad" href="${safeUrl(ad.link || "/app.html", "/app.html")}">${image}<div class="post-content" aria-hidden="true"></div></a>` : "";
     }
     let currentPage = 1;
     let activeCategory = "首页";
@@ -1104,7 +1109,7 @@
         const ad = popupAdQueue[popupAdIndex];
         const img = await adImageUrl(ad);
         if (img) {
-          const href = safeUrl(ad.link || "app.html", "app.html");
+          const href = safeUrl(ad.link || "/app.html", "/app.html");
           image.src = mediaProxyUrl(img);
           const fallbacks = mediaUrlCandidates(img);
           if (fallbacks.length > 1) {
@@ -1159,7 +1164,7 @@
           attrs: imageAttrs({ width: 1300, height: 180 }),
           sizes: "(max-width: 720px) 100vw, 1180px"
         });
-        return image ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}</a>` : "";
+        return image ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "/app.html", "/app.html")}">${image}</a>` : "";
       }));
       document.querySelector("#adStack").innerHTML = rows.join("");
       await renderPopupAds(ads);

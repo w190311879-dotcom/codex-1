@@ -278,8 +278,8 @@ const defaultSiteSettings = {
     ]
   },
   ads: [
-    { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "app.html", placement: "home-banner" },
-    { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "admin.html", placement: "detail-banner" }
+    { title: "长条广告位 01", desc: "这里可以放活动、App 下载、商务合作或频道推广。", link: "/app.html", placement: "home-banner" },
+    { title: "长条广告位 02", desc: "后台可以新增、删除和调整这些广告内容。", link: "/admin.html", placement: "detail-banner" }
   ],
   adConfig: { station: 10, latest: 10, friend: 10 },
   routing: {
@@ -294,21 +294,21 @@ const defaultSiteSettings = {
     introText: defaultFooterIntroText,
     quickLinks: [
       { label: "首页", href: "/", icon: "home" },
-      { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
-      { label: "Q群", href: "qq.html", icon: "message-circle" },
+      { label: "App", href: "/app.html", icon: "smartphone", action: "app-placeholder" },
+      { label: "Q群", href: "/qq.html", icon: "message-circle" },
       { label: "网站导航", href: "#site-map", icon: "map" }
     ],
     footerLinks: [
       { label: "往期回顾", href: "#archive" },
       { label: "回家的路", href: "/" },
-      { label: "我要投稿", href: "admin-login.html" },
+      { label: "我要投稿", href: "/admin-login.html" },
       { label: "商务合作", href: "mailto:business@example.com" },
       { label: "加入我们", href: "mailto:join@example.com" },
       { label: "关于我们", href: "/about.html" }
     ],
     topLinks: {
-      app: { href: "app.html", action: "app-placeholder" },
-      group: { href: "qq.html" },
+      app: { href: "/app.html", action: "app-placeholder" },
+      group: { href: "/qq.html" },
       telegram: { href: "https://t.me/example_group" },
       x: { href: "https://x.com/example" }
     },
@@ -491,7 +491,7 @@ function normalizeSiteSettings(input = {}) {
   const ads = Array.isArray(input.ads) ? input.ads.map((ad) => ({
     title: String(ad?.title || ""),
     desc: String(ad?.desc || ""),
-    link: safePublicUrl(ad?.link || ad?.href || ad?.target || ad?.url || "", "app.html"),
+    link: safePublicUrl(ad?.link || ad?.href || ad?.target || ad?.url || "", "/app.html"),
     image: String(ad?.image || ""),
     imageKey: String(ad?.imageKey || ""),
     imageVariants: ad?.imageVariants && typeof ad.imageVariants === "object" ? ad.imageVariants : {},
@@ -532,7 +532,7 @@ function normalizeSiteSettings(input = {}) {
       : rawHref;
     return {
       label,
-      href,
+      href: safePublicUrl(href, fallbackHref || "#") || "#",
       icon: normalizeIconName(link?.icon || fallback.icon || "", label),
       action: String(link?.action || fallback.action || "").trim()
     };
@@ -3511,11 +3511,17 @@ function htmlEscape(value = "") {
   }[char]));
 }
 
-function safePublicUrl(value = "", fallback = "") {
+function normalizePublicUrlValue(value = "") {
   const url = String(value || "").trim();
-  if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
+  if (!url) return "";
+  if (/^[a-z0-9-]+\.html(?:[?#].*)?$/i.test(url)) return `/${url}`;
+  if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|mailto:|#)/i.test(url)) return url;
   if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
-  return fallback;
+  return "";
+}
+
+function safePublicUrl(value = "", fallback = "") {
+  return normalizePublicUrlValue(value) || normalizePublicUrlValue(fallback) || "";
 }
 
 function mediaUrlCandidates(value = "") {
@@ -3862,7 +3868,7 @@ function normalizeSsrAd(ad = {}) {
     ...ad,
     title: ad.title || "",
     desc: ad.desc || "",
-    link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+    link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "/app.html",
     image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
     code,
     adType: ad.adType || ad.mode || ad.kind || (code ? "code" : "image"),
@@ -3892,7 +3898,7 @@ function ssrFeedAdRow(ad, eager = false) {
     attrs: ssrImageAttrs({ eager, width: 1200, height: 675 }),
     sizes: "(max-width: 720px) 100vw, 1180px"
   });
-  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "app.html", "app.html"))}">${image}<div class="post-content" aria-hidden="true"></div></a>`;
+  return `<a class="post-row feed-ad" href="${htmlEscape(safePublicUrl(ad.link || "/app.html", "/app.html"))}">${image}<div class="post-content" aria-hidden="true"></div></a>`;
 }
 
 function ssrPager(totalPages, currentPage = 1, target = "首页") {
@@ -4302,6 +4308,19 @@ function ssrDetailContent(post, mediaById = new Map()) {
     const cleaned = String(text || "").replace(/^\n+|\n+$/g, "");
     return cleaned.trim() ? `<div class="body">${htmlEscape(cleaned)}</div>` : "";
   };
+  const renderVideo = (videoId) => {
+    const media = mediaById.get(videoId);
+    const ratioClass = media?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
+    const sourceUrl = mediaProxyUrl(media?.url || "");
+    const posterUrl = mediaProxyUrl(media?.posterUrl || "");
+    const sourceType = media?.playbackType === "hls" || /\.m3u8(?:[?#]|$)/i.test(sourceUrl)
+      ? "application/vnd.apple.mpegurl"
+      : String(media?.mimeType || "video/mp4");
+    const posterAttr = posterUrl ? ` poster="${htmlEscape(posterUrl)}"` : "";
+    const source = sourceUrl ? `<source src="${htmlEscape(sourceUrl)}" type="${htmlEscape(sourceType)}">` : "";
+    const video = source ? `<video controls playsinline preload="metadata"${posterAttr}>${source}</video>` : "";
+    return `<div class="media video-media ${ratioClass}"><div class="hls-player" data-media-video="${htmlEscape(videoId)}">${video}</div></div>`;
+  };
   if (!body.includes("[图片") && !body.includes("[视频")) return renderText(body || "暂无内容。");
   let imageCount = 0;
   return body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g).map((part) => {
@@ -4326,16 +4345,21 @@ function ssrDetailContent(post, mediaById = new Map()) {
       const match = part.match(/\[视频(?::([^\]]+))?\]/);
       const videoId = match && match[1] ? String(match[1]).trim() : "";
       if (!videoId) return "";
-      const media = mediaById.get(videoId);
-      const ratioClass = media?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
-      return `<div class="media video-media ${ratioClass}"><div class="hls-player" data-media-video="${htmlEscape(videoId)}"></div></div>`;
+      return renderVideo(videoId);
     }
     return renderText(part);
   }).join("");
 }
 
-function ssrTags(post) {
-  const tags = postTopicKeywords(post, { max: 6 });
+function postResolvableTopicKeywords(post = {}, availableTags = [], max = 6) {
+  const tags = postTopicKeywords(post, { max: Math.max(max * 4, 24) });
+  const available = new Set((availableTags || []).map(topicTermKey).filter(Boolean));
+  if (!available.size) return tags.slice(0, max);
+  return tags.filter((tag) => available.has(topicTermKey(tag))).slice(0, max);
+}
+
+function ssrTags(post, availableTags = []) {
+  const tags = postResolvableTopicKeywords(post, availableTags, 6);
   return `<div class="tags" id="tags">${tags.map((tag) => `<a class="tag" href="${htmlEscape(tagPath(tag))}" rel="tag">${htmlEscape(tag)}</a>`).join("")}</div>`;
 }
 
@@ -5128,6 +5152,10 @@ async function renderIndexPage(req, res, next) {
     const rawTagParam = String(req.params.tag || "").trim();
     const requestedTag = isTagPage ? resolveTagSlug(rawTagParam, tagNames) : "";
     if (isTagPage && !requestedTag) {
+      if (cleanTopicTerm(rawTagParam)) {
+        res.redirect(301, "/");
+        return;
+      }
       sendNotFoundPage(res);
       return;
     }
@@ -5305,6 +5333,7 @@ async function renderDetailPage(req, res, next) {
 
     const videoIds = extractPostVideoIds(current);
     const mediaById = await mediaMapForVideoIds(videoIds);
+    const tagNames = allTopicTagNames(posts);
     const description = detailDescription(current);
     const seo = detailSeoHead(req, current, description, mediaById, settings);
     const contentHtml = ssrDetailContent(current, mediaById);
@@ -5318,21 +5347,21 @@ async function renderDetailPage(req, res, next) {
       ads: settings.ads,
       adConfig: settings.adConfig,
       notice: settings.notice,
-      topicSlugs: topicSlugMapForPosts(posts, settings),
+      topicSlugs: topicSlugMapFor({ categories: sitemapCategoryNames(settings), tags: tagNames }),
       media
     };
 
     const rendered = injectSeoHead(html, seo.meta)
       .replace("<title>51春梦 - 吃瓜爆料 + 成人视频，一站搞定</title>", `<title>${htmlEscape(seo.title)}</title>`)
       .replace("</head>", `${ssrDetailJsonScript(ssrPayload)}\n</head>`)
-      .replace('<nav class="breadcrumb"><a href="index.html">首页</a> &gt; <a href="index.html">内容</a> &gt; <span id="crumbTitle">帖子详情</span></nav>', ssrDetailBreadcrumb(current))
+      .replace('<nav class="breadcrumb"><a href="/">首页</a> &gt; <a href="/">内容</a> &gt; <span id="crumbTitle">帖子详情</span></nav>', ssrDetailBreadcrumb(current))
       .replace('<span id="crumbTitle">帖子详情</span>', `<span id="crumbTitle">${htmlEscape(current.title)}</span>`)
       .replace('<h1 id="title">帖子详情</h1>', `<h1 id="title">${htmlEscape(current.title)}</h1>`)
       .replace('<span id="author"></span>', `<span id="author">${htmlEscape(current.author || "alun")}</span>`)
       .replace('<span id="date"></span>', `<span id="date">${htmlEscape(current.date || "")}</span>`)
       .replace('<span id="category"></span>', `<span id="category">${htmlEscape(categories || "内容")}</span>`)
       .replace('<div id="contentFlow"></div>', `<div id="contentFlow">${contentHtml}</div>`)
-      .replace('<div class="tags" id="tags"></div>', ssrTags(current))
+      .replace('<div class="tags" id="tags"></div>', ssrTags(current, tagNames))
       .replace('<span id="officialNotice"></span>', `<span id="officialNotice">${htmlEscape(settings.notice || "")}</span>`)
       .replace('<div class="announcement-card" id="detailOfficialNotice"></div>', `<div class="announcement-card" id="detailOfficialNotice">${htmlEscape(settings.notice || "")}</div>`)
       .replace('<nav class="prev-next"><a class="pn" id="prevPost">上一篇<span></span></a><a class="pn" id="nextPost">下一篇<span></span></a></nav>', ssrPrevNext(req, posts, index));

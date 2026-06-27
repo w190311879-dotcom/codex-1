@@ -240,8 +240,8 @@
       <nav class="nav" id="mainNav" aria-label="主导航"></nav>
       <div class="actions">
         <button class="icon-btn mobile-hide" id="searchToggle" aria-label="搜索" title="搜索"><i data-lucide="search"></i></button>
-        <a class="icon-btn mobile-hide" id="topAppLink" href="app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
-        <a class="icon-btn mobile-hide" id="topGroupLink" href="qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
+        <a class="icon-btn mobile-hide" id="topAppLink" href="/app.html" aria-label="App 下载" title="App 下载"><i data-lucide="smartphone"></i></a>
+        <a class="icon-btn mobile-hide" id="topGroupLink" href="/qq.html" target="_blank" rel="noreferrer" aria-label="QQ群" title="QQ群"><i data-lucide="message-circle"></i></a>
         <a class="icon-btn" id="topTelegramLink" href="https://t.me/example_group" target="_blank" rel="noreferrer" aria-label="Telegram" title="Telegram"><span class="svg-icon svg-icon-telegram" aria-hidden="true"></span></a>
         <a class="icon-btn" id="topXLink" href="https://x.com/example" target="_blank" rel="noreferrer" aria-label="X" title="X"><span class="svg-icon svg-icon-x" aria-hidden="true"></span></a>
         <a class="icon-btn mobile-hide" id="topBusinessLink" href="mailto:business@example.com" aria-label="商务合作" title="商务合作"><i data-lucide="handshake"></i></a>
@@ -258,7 +258,7 @@
     </section>
   </header>
   <main class="page">
-    <nav class="breadcrumb"><a href="index.html">首页</a> &gt; <a href="index.html">内容</a> &gt; <span id="crumbTitle">帖子详情</span></nav>
+    <nav class="breadcrumb"><a href="/">首页</a> &gt; <a href="/">内容</a> &gt; <span id="crumbTitle">帖子详情</span></nav>
     <header class="article-head">
       <h1 id="title">帖子详情</h1>
       <div class="meta"><span id="author"></span><span>·</span><span id="date"></span><span>·</span><span id="category"></span></div>
@@ -359,21 +359,21 @@
       introText: "51春梦是一个内容展示站，页面结构包含频道导航、搜索、分页内容流、热门推荐、可控广告位、App 与社群入口，以及合规与版权说明区域。",
       quickLinks: [
         { label: "首页", href: "/", icon: "home" },
-        { label: "App", href: "app.html", icon: "smartphone", action: "app-placeholder" },
-        { label: "Q群", href: "qq.html", icon: "message-circle" },
+        { label: "App", href: "/app.html", icon: "smartphone", action: "app-placeholder" },
+        { label: "Q群", href: "/qq.html", icon: "message-circle" },
         { label: "网站导航", href: "#site-map", icon: "map" }
       ],
       footerLinks: [
         { label: "往期回顾", href: "#archive" },
         { label: "回家的路", href: "/" },
-        { label: "我要投稿", href: "admin-login.html" },
+        { label: "我要投稿", href: "/admin-login.html" },
         { label: "商务合作", href: "mailto:business@example.com" },
         { label: "加入我们", href: "mailto:join@example.com" },
         { label: "关于我们", href: "#about" }
       ],
       topLinks: {
-        app: { href: "app.html", action: "app-placeholder" },
-        group: { href: "qq.html" },
+        app: { href: "/app.html", action: "app-placeholder" },
+        group: { href: "/qq.html" },
         telegram: { href: "https://t.me/example_group" },
         x: { href: "https://x.com/example" }
       },
@@ -397,10 +397,15 @@
       return String(value || "").replace(/[&<>"']/g, (char) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[char]));
     }
     function safeUrl(value, fallback = "") {
-      const url = String(value || "").trim();
-      if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|[a-z0-9-]+\.html|mailto:|#)/i.test(url)) return url;
-      if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
-      return fallback;
+      const normalize = (item = "") => {
+        const url = String(item || "").trim();
+        if (!url) return "";
+        if (/^[a-z0-9-]+\.html(?:[?#].*)?$/i.test(url)) return `/${url}`;
+        if (/^(https?:|data:image\/(?:png|jpe?g|gif|webp|avif);|\/|mailto:|#)/i.test(url)) return url;
+        if (/^[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]|$)/i.test(url)) return `https://${url}`;
+        return "";
+      };
+      return normalize(value) || normalize(fallback) || "";
     }
     function normalizeOrigin(value = "") {
       return String(value || "").trim().replace(/\/+$/, "");
@@ -518,9 +523,10 @@
       const label = String(link.label || fallback.label || "").trim();
       const fallbackHref = String(fallback.href || "").trim();
       const rawHref = String(link.href || fallbackHref || "#").trim() || "#";
+      const href = rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim() ? fallbackHref : rawHref;
       return {
         label,
-        href: rawHref.startsWith("#") && fallbackHref && !fallbackHref.startsWith("#") && label === String(fallback.label || "").trim() ? fallbackHref : rawHref,
+        href: safeUrl(href, fallbackHref || "#") || "#",
         icon: normalizeIconName(link.icon || fallback.icon || "", label),
         action: String(link.action || fallback.action || "").trim()
       };
@@ -610,8 +616,8 @@
       document.querySelector("#footerLinks").innerHTML = footerConfig.footerLinks.map((link) => `<a ${linkAttrs(link, "#")}>${escapeHtml(link.label)}</a>`).join("");
       document.querySelector("#socialLinks").innerHTML = footerConfig.socialLinks.map((link) => `<a class="icon-btn" ${linkAttrs(link, "#")} aria-label="${escapeHtml(link.label)}">${iconMarkup(link.icon, link.label) || escapeHtml(link.label)}</a>`).join("");
       document.querySelector("#legalLinks").innerHTML = footerConfig.legalLinks.map((link) => `<a ${linkAttrs(link, "#")}>${escapeHtml(link.label)}</a>`).join("");
-      applyTopLink("#topAppLink", footerConfig.topLinks.app, "app.html");
-      applyTopLink("#topGroupLink", footerConfig.topLinks.group, "qq.html");
+      applyTopLink("#topAppLink", footerConfig.topLinks.app, "/app.html");
+      applyTopLink("#topGroupLink", footerConfig.topLinks.group, "/qq.html");
       applyTopLink("#topTelegramLink", footerConfig.topLinks.telegram, "https://t.me/example_group");
       applyTopLink("#topXLink", footerConfig.topLinks.x, "https://x.com/example");
       applyTopLink("#topBusinessLink", footerLinkByLabel("商务合作", "mailto:business@example.com"), "mailto:business@example.com");
@@ -625,14 +631,14 @@
       const visibleLimit = 15;
       const visibleTabs = tabs.slice(0, visibleLimit);
       const moreTabs = tabs.slice(visibleLimit);
-      document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `<a class="${index === 0 ? "active" : ""}" href="index.html#${encodeURIComponent(tab.name)}">${escapeHtml(tab.name)}</a>`).join("") + (moreTabs.length ? `
+      const categoryHref = (name) => name === "首页" ? "/" : `/category/${encodeURIComponent(topicSlug(name))}`;
+      document.querySelector("#mainNav").innerHTML = visibleTabs.map((tab, index) => `<a class="${index === 0 ? "active" : ""}" href="${categoryHref(tab.name)}">${escapeHtml(tab.name)}</a>`).join("") + (moreTabs.length ? `
         <span class="more-wrap" id="moreWrap">
           <button class="nav-more" type="button" id="moreNav">更多</button>
-          <span class="more-menu">${moreTabs.map((tab) => `<a href="index.html#${encodeURIComponent(tab.name)}">${escapeHtml(tab.name)}</a>`).join("")}</span>
+          <span class="more-menu">${moreTabs.map((tab) => `<a href="${categoryHref(tab.name)}">${escapeHtml(tab.name)}</a>`).join("")}</span>
         </span>
       ` : "");
     }
-    renderNav();
     document.querySelector("#mainNav").addEventListener("click", (event) => {
       if (event.target.closest("#moreNav")) {
         event.preventDefault();
@@ -716,6 +722,12 @@
     function tagHref(tag) {
       const cleanTag = cleanTopicTerm(tag);
       return cleanTag ? `/tag/${encodeURIComponent(topicSlug(cleanTag))}` : "/";
+    }
+    function resolvablePostTopicKeywords(post = {}, max = 6) {
+      const tags = postTopicKeywords(post, Math.max(max * 4, 24));
+      const known = new Set(Object.keys(topicSlugs).map(cleanTopicTerm).filter(Boolean));
+      if (!known.size) return tags.slice(0, max);
+      return tags.filter((tag) => known.has(cleanTopicTerm(tag))).slice(0, max);
     }
     function postTopicKeywords(post = {}, max = 6) {
       if (Array.isArray(post.topicKeywords) && post.topicKeywords.length) {
@@ -809,7 +821,7 @@
         ...ad,
         title: ad.title || "",
         desc: ad.desc || "",
-        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "app.html",
+        link: ad.link || ad.href || ad.target || (!urlIsImage ? possibleUrl : "") || "/app.html",
         image: ad.image || ad.img || ad.src || ad.file || ad.data || (urlIsImage ? possibleUrl : ""),
         imageVariants: ad.imageVariants || {},
         code,
@@ -825,7 +837,7 @@
     let ads = Array.isArray(ssrDetail.ads) ? ssrDetail.ads.map(normalizeAd) : null;
     let config = ssrDetail.adConfig || { station: 10, latest: 10, friend: 10 };
     let notice = typeof ssrDetail.notice === "string" ? ssrDetail.notice : "欢迎来到51春梦。公告内容可在后台维护，适合放置站点说明、更新提醒和重要通知。";
-    const fallbackSquare = Array.from({ length: 30 }, (_, i) => ({ title:`广告 ${i + 1}`, image:images[i % images.length], link:"app.html" }));
+    const fallbackSquare = Array.from({ length: 30 }, (_, i) => ({ title:`广告 ${i + 1}`, image:images[i % images.length], link:"/app.html" }));
     async function adImageUrl(ad) {
       if (!ad) return "";
       if (ad.image) return ad.image;
@@ -947,7 +959,7 @@
       const rows = await Promise.all(source.map(async (ad) => {
         const img = await adImageUrl(ad);
         const image = responsiveImageMarkup({ src: img, variants: ad.imageVariants, alt: ad.title || "广告", attrs: imageAttrs({ width: 320, height: 320 }), sizes: "160px" });
-        return image ? `<a class="square-ad" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}</a>` : "";
+        return image ? `<a class="square-ad" href="${safeUrl(ad.link || "/app.html", "/app.html")}">${image}</a>` : "";
       }));
       return rows.join("");
     }
@@ -955,7 +967,7 @@
       if (isCodeAd(ad)) return `<div class="ad-item has-ad-code">${adCodeFrame(ad, "banner-code-frame")}</div>`;
       const img = await adImageUrl(ad);
       const image = responsiveImageMarkup({ src: img, variants: ad.imageVariants, alt: ad.title || "广告", attrs: imageAttrs({ width: 1300, height: 180 }), sizes: "(max-width: 720px) 100vw, 940px" });
-      return image ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "app.html", "app.html")}">${image}</a>` : "";
+      return image ? `<a class="ad-item has-ad-image" href="${safeUrl(ad.link || "/app.html", "/app.html")}">${image}</a>` : "";
     }
     async function renderBannerPlacement(name, target, fallback) {
       const source = byPlacement(name).filter((ad) => ad.image || isCodeAd(ad)).sort((a, b) => (Number(a.slot) || 0) - (Number(b.slot) || 0));
@@ -968,7 +980,7 @@
         .slice(0, 20);
       document.querySelector("#detailTextAds").innerHTML = source.map((ad) => {
         const text = escapeHtml(ad.title || ad.text || ad.desc || "文字广告");
-        return `<a class="text-ad" href="${safeUrl(ad.link || "app.html", "app.html")}">${text}</a>`;
+        return `<a class="text-ad" href="${safeUrl(ad.link || "/app.html", "/app.html")}">${text}</a>`;
       }).join("");
     }
     async function bannerAds() {
@@ -1133,6 +1145,19 @@
       }, { rootMargin: "480px 0px", threshold: 0.01 });
       players.forEach((playerEl) => videoObserver.observe(playerEl));
     }
+    function videoPlaceholderMarkup(videoId) {
+      const id = String(videoId || "").trim();
+      const item = mediaById.get(id) || mediaLibrary.find((entry) => String(entry.id || "") === id) || null;
+      if (item && !mediaById.has(id)) mediaById.set(id, item);
+      const ratioClass = item?.aspect === "9-16" ? "ratio-9-16" : "ratio-16-9";
+      const sourceUrl = mediaProxyUrl(item?.url || "");
+      const posterUrl = mediaProxyUrl(item?.posterUrl || "");
+      const sourceType = isHlsMedia(item, sourceUrl) ? "application/vnd.apple.mpegurl" : (item?.mimeType || "video/mp4");
+      const posterAttr = posterUrl ? ` poster="${escapeHtml(posterUrl)}"` : "";
+      const source = sourceUrl ? `<source src="${escapeHtml(sourceUrl)}" type="${escapeHtml(sourceType)}">` : "";
+      const video = source ? `<video controls playsinline preload="metadata"${posterAttr}>${source}</video>` : "";
+      return `<div class="media video-media ${ratioClass}"><div class="hls-player" data-media-video="${escapeHtml(id)}">${video}</div></div>`;
+    }
     function renderContentFlow() {
       if (videoObserver) {
         videoObserver.disconnect();
@@ -1169,7 +1194,7 @@
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);
           const videoId = match && match[1] ? match[1] : "";
-          if (videoId) flow.insertAdjacentHTML("beforeend", `<div class="media video-media ratio-16-9"><div class="hls-player" data-media-video="${escapeHtml(videoId)}"></div></div>`);
+          if (videoId) flow.insertAdjacentHTML("beforeend", videoPlaceholderMarkup(videoId));
         } else {
           if (!part.trim()) return;
           const div = document.createElement("div");
@@ -1190,7 +1215,7 @@
       document.querySelector("#date").textContent = current.date;
       document.querySelector("#category").textContent = current.category;
       renderContentFlow();
-      document.querySelector("#tags").innerHTML = postTopicKeywords(current, 6).map((tag) => `<a class="tag" href="${escapeHtml(tagHref(tag))}" rel="tag">${escapeHtml(tag)}</a>`).join("");
+      document.querySelector("#tags").innerHTML = resolvablePostTopicKeywords(current, 6).map((tag) => `<a class="tag" href="${escapeHtml(tagHref(tag))}" rel="tag">${escapeHtml(tag)}</a>`).join("");
       document.querySelector("#officialNotice").textContent = notice;
       document.querySelector("#detailOfficialNotice").textContent = notice;
       const prev = index >= 0 && posts.length > 1 ? posts[(index - 1 + posts.length) % posts.length] : null;
