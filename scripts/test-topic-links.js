@@ -144,6 +144,7 @@ try {
   assert.ok(videoDetail.text.includes('data-media-video="video-1"'), "视频详情页应输出视频容器");
   assert.ok(videoDetail.text.includes("<video controls playsinline"), "视频详情页 SSR 应输出真实 video 标签");
   assert.ok(videoDetail.text.includes('<source src="/uploads/video-1/master.m3u8"'), "视频详情页 SSR 应输出视频 source");
+  assert.ok(videoDetail.text.indexOf('data-media-video="video-1"') < videoDetail.text.indexOf('<div class="body">成人视频与高清视频内容整理'), "视频详情页 SSR 应优先展示视频");
 
   const tagPage = await getText("/tag/wang-hong-chi-gua");
   assert.equal(tagPage.response.status, 200, "tag 列表页应正常返回");

@@ -4323,7 +4323,8 @@ function ssrDetailContent(post, mediaById = new Map()) {
   };
   if (!body.includes("[图片") && !body.includes("[视频")) return renderText(body || "暂无内容。");
   let imageCount = 0;
-  return body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g).map((part) => {
+  const videoBlocks = [];
+  const contentBlocks = body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g).map((part) => {
     if (!part) return "";
     if (part.startsWith("[图片")) {
       const match = part.match(/\[图片(?::(\d+))?\]/);
@@ -4345,10 +4346,12 @@ function ssrDetailContent(post, mediaById = new Map()) {
       const match = part.match(/\[视频(?::([^\]]+))?\]/);
       const videoId = match && match[1] ? String(match[1]).trim() : "";
       if (!videoId) return "";
-      return renderVideo(videoId);
+      videoBlocks.push(renderVideo(videoId));
+      return "";
     }
     return renderText(part);
-  }).join("");
+  });
+  return [...videoBlocks, ...contentBlocks].join("");
 }
 
 function postResolvableTopicKeywords(post = {}, availableTags = [], max = 6) {

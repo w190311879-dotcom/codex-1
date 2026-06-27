@@ -1173,6 +1173,7 @@
       const parts = body.split(/(\[图片(?::\d+)?\]|\[视频(?::[^\]]+)?\])/g);
       flow.innerHTML = "";
       let imageCount = 0;
+      const videoBlocks = [];
       parts.forEach((part) => {
         if (!part) return;
         if (part.startsWith("[图片")) {
@@ -1194,7 +1195,7 @@
         } else if (part.startsWith("[视频")) {
           const match = part.match(/\[视频(?::([^\]]+))?\]/);
           const videoId = match && match[1] ? match[1] : "";
-          if (videoId) flow.insertAdjacentHTML("beforeend", videoPlaceholderMarkup(videoId));
+          if (videoId) videoBlocks.push(videoPlaceholderMarkup(videoId));
         } else {
           if (!part.trim()) return;
           const div = document.createElement("div");
@@ -1203,6 +1204,7 @@
           flow.appendChild(div);
         }
       });
+      if (videoBlocks.length) flow.insertAdjacentHTML("afterbegin", videoBlocks.join(""));
       scheduleVideoPlayers(flow);
     }
     async function renderDetailPage() {
